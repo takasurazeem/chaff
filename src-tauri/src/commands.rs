@@ -209,7 +209,7 @@ pub async fn photo_explanation(
     let db = state.db();
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, String> {
         let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
-        pipeline::explain_photo(&conn, photo_id, 0, false).map_err(err)
+        pipeline::explain_photo(&conn, photo_id).map_err(err)
     })
     .await
     .map_err(err)?

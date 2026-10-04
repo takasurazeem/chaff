@@ -215,6 +215,26 @@ fn persist_score(conn: &Connection, score: &Score, now: i64) -> Result<(), Catal
         SCORER_VERSION,
         now,
     )?;
+    // The shoot context is stored rather than passed in by the caller. It was a
+    // parameter, and the CLI passed the *library* total for it — which read correctly
+    // only because the folder happened to contain exactly one shoot. A caller cannot be
+    // trusted to know something the scorer already knew.
+    store::upsert_score(
+        conn,
+        score.photo_id,
+        "shoot_size",
+        score.shoot_size as f64,
+        SCORER_VERSION,
+        now,
+    )?;
+    store::upsert_score(
+        conn,
+        score.photo_id,
+        "shoot_relative",
+        if score.shoot_relative { 1.0 } else { 0.0 },
+        SCORER_VERSION,
+        now,
+    )?;
     for term in &score.terms {
         // The term label is stable and human-readable; the percentile goes in the same
         // row's value so the UI can show either without a second query.
@@ -248,16 +268,22 @@ pub fn scored_photos(
 ///
 /// Rebuilt rather than stored as text, so that changing how an explanation is worded does
 /// not require re-scoring the library.
-pub fn explain_photo(
-    conn: &Connection,
-    photo_id: i64,
-    shoot_size: usize,
-    shoot_relative: bool,
-) -> Result<Vec<String>, CatalogError> {
+pub fn explain_photo(conn: &Connection, photo_id: i64) -> Result<Vec<String>, CatalogError> {
     let rows = store::scores_for_photo(conn, photo_id, SCORER_VERSION)?;
     if rows.is_empty() {
         return Ok(vec!["not scored".to_string()]);
     }
+
+    let shoot_size = rows
+        .iter()
+        .find(|r| r.metric == "shoot_size")
+        .map(|r| r.value as usize)
+        .unwrap_or(0);
+    let shoot_relative = rows
+        .iter()
+        .find(|r| r.metric == "shoot_relative")
+        .map(|r| r.value > 0.5)
+        .unwrap_or(false);
 
     let composite_value = rows
         .iter()
@@ -561,10 +587,14 @@ mod tests {
         let report = index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
         let photos = store::photos(&conn, report.library_id).unwrap();
 
-        let lines = explain_photo(&conn, photos[0].id, report.scored, true).unwrap();
+        let lines = explain_photo(&conn, photos[0].id).unwrap();
         assert!(lines.len() >= 2, "an explanation needs a verdict and at least one term");
         assert!(lines[0].contains("Keep") || lines[0].contains("Review") || lines[0].contains("Reject"));
-        assert!(lines[0].contains("this shoot"), "the reference must be named: {:?}", lines[0]);
+        assert!(
+            lines[0].contains("this shoot") || lines[0].contains("across the library"),
+            "the reference must be named: {:?}",
+            lines[0]
+        );
     }
 
     #[test]
@@ -578,7 +608,7 @@ mod tests {
         .unwrap();
         let id: i64 = conn.query_row("SELECT id FROM photo LIMIT 1", [], |r| r.get(0)).unwrap();
 
-        let lines = explain_photo(&conn, id, 1, false).unwrap();
+        let lines = explain_photo(&conn, id).unwrap();
         assert_eq!(lines, vec!["not scored".to_string()]);
     }
 }

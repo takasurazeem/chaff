@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+/* Photo tools are dark, and this one is used at night after a shoot. */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #09090b;
+  /* The grid is the only scrolling surface; the window itself must not rubber-band. */
+  overflow: hidden;
+}
