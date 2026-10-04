@@ -107,6 +107,68 @@ def gaussian_blurred(offset: int, radius: float, size=SIZE) -> Image.Image:
     return sharp_texture(offset, size).filter(ImageFilter.GaussianBlur(radius=radius))
 
 
+def broadband_texture(offset: int, size=SIZE) -> Image.Image:
+    """Multi-scale hard-edged texture. A stand-in for the spectrum of a real photograph.
+
+    ## Why this exists
+
+    The grid pattern is highly *directional*: horizontal lines are constant along x, so a
+    horizontal blur leaves them completely untouched. A 13px horizontal smear of the grid
+    retained 83% of its Laplacian variance, whereas the same smear of a real photograph
+    destroys roughly half, because real scenes carry detail in every direction.
+
+    That flaw is invisible while only anisotropy is tested — it is a ratio, and survives
+    the pattern being odd. It becomes fatal the moment you ask whether a motion-blurred
+    frame is *softer* than a sharp one, which is exactly what distinguishes blur from a
+    merely directional scene.
+
+    ## Why hard-edged blocks and not smooth noise
+
+    A first attempt summed octaves of bicubic-upsampled noise. It measured a Laplacian
+    variance of **1.8** — effectively zero. Bicubic interpolation produces a
+    C1-continuous surface, and a smooth surface has no second derivative to speak of, so
+    there was nothing for a sharpness metric to measure. Real photographs are full of
+    edges, and edges are where the Laplacian lives.
+
+    So each octave here is drawn with NEAREST resampling, which preserves hard block
+    boundaries. Seven octaves put the finest blocks at ~2.5px: fine enough to carry real
+    detail, coarse enough that the noise estimator does not mistake them for sensor
+    noise. That last constraint matters — single-pixel detail is physically
+    indistinguishable from noise, which is a lesson already paid for once.
+    """
+    rng = _rng(offset)
+    w, h = size
+    acc = np.zeros((h, w), dtype=np.float64)
+    amplitude = 1.0
+    for octave in range(7):
+        cells = 2 ** (octave + 2)  # 4 .. 256 blocks across the short edge
+        ch = max(2, cells)
+        cw = max(2, int(round(cells * w / h)))
+        grid = rng.random((ch, cw))
+        layer = Image.fromarray((grid * 255).astype(np.uint8), mode="L").resize(
+            (w, h), Image.NEAREST
+        )
+        acc += amplitude * (np.asarray(layer, dtype=np.float64) / 255.0)
+        amplitude *= 0.74
+
+    span = acc.max() - acc.min()
+    if span > 0:
+        acc = (acc - acc.min()) / span
+    arr = (acc * 230.0 + 12.0).astype(np.uint8)
+    return Image.fromarray(arr, mode="L").convert("RGB")
+
+
+def broadband_motion_blurred(offset: int, length: int = 13, size=SIZE) -> Image.Image:
+    """Horizontal smear of broadband texture — how real motion blur actually behaves."""
+    base = np.asarray(broadband_texture(offset, size), dtype=np.float64)
+    return Image.fromarray(np.clip(_box_blur_x(base, length), 0, 255).astype(np.uint8), mode="RGB")
+
+
+def broadband_defocused(offset: int, radius: float = 3.0, size=SIZE) -> Image.Image:
+    """Isotropic defocus of the same texture, as the control for the motion case."""
+    return broadband_texture(offset, size).filter(ImageFilter.GaussianBlur(radius=radius))
+
+
 def _box_blur_x(arr: np.ndarray, length: int) -> np.ndarray:
     """True uniform horizontal box blur via a running sum.
 
@@ -196,6 +258,33 @@ def bokeh_portrait(offset: int, size=SIZE) -> Image.Image:
     return Image.composite(subject, background, mask)
 
 
+def burst_frames(size=SIZE):
+    """One scene, five frames, one of them smeared.
+
+    A burst is the **only** substrate on which shoot-relative motion detection can be
+    validated, because the entire premise of that design is that siblings share a scene,
+    a lens and a lighting setup. The downloaded corpus is 50 unrelated photographs and
+    therefore cannot test it at all — which is exactly the gap this fixture fills.
+
+    Frame-to-frame variation is a one-pixel drift, as a handheld burst would have. The
+    detector does not know which frame is bad, so the baseline is computed from all five.
+    """
+    w, h = size
+    base = broadband_texture(60, size)
+    frames = []
+    # Four good frames, indexed 0,1,2,4 so that frame 3 is the damaged one.
+    for i, dx in ((0, 0), (1, 1), (2, 2), (4, 1)):
+        shifted = base.transform(
+            (w, h), Image.AFFINE, (1, 0, -dx, 0, 1, 0), resample=Image.BILINEAR
+        )
+        frames.append((f"burst_{i}_sharp", shifted))
+    frames.insert(3, ("burst_3_smeared", broadband_motion_blurred(60, size=size)))
+    assert [n for n, _ in frames] == [
+        "burst_0_sharp", "burst_1_sharp", "burst_2_sharp", "burst_3_smeared", "burst_4_sharp"
+    ], [n for n, _ in frames]
+    return frames
+
+
 # --------------------------------------------------------------------------
 # EXIF
 # --------------------------------------------------------------------------
@@ -227,6 +316,18 @@ FIXTURES = [
      {"focus": "very_low", "blur_type": "defocus"}),
     ("blur_motion", lambda: motion_blurred(5), "directional motion blur",
      {"focus": "low", "blur_type": "motion", "anisotropic": True}),
+    # Broadband-spectrum counterparts. The grid fixtures above test the defocus ladder
+    # and the anisotropy ratio; these test whether blur actually reduces detail, which a
+    # grid cannot, because horizontal lines survive a horizontal blur untouched.
+    ("sharp_broadband", lambda: broadband_texture(40),
+     "isotropic broadband texture, in focus",
+     {"focus": "high", "spectrum": "broadband"}),
+    ("blur_motion_broadband", lambda: broadband_motion_blurred(41),
+     "broadband texture with 13px horizontal smear",
+     {"focus": "reduced_by_half", "blur_type": "motion", "anisotropic": True}),
+    ("blur_defocus_broadband", lambda: broadband_defocused(42, 3.0),
+     "broadband texture, isotropically defocused",
+     {"focus": "low", "blur_type": "defocus", "anisotropic": False}),
     ("exposure_over", lambda: exposure_shifted(6, 1.9), "highlights clipped",
      {"exposure": "clipped_high"}),
     ("exposure_under", lambda: exposure_shifted(7, 0.28), "shadows crushed",
@@ -238,6 +339,17 @@ FIXTURES = [
     ("bokeh_portrait", lambda: bokeh_portrait(10), "sharp subject, blurred background",
      {"focus_subject": "high", "focus_whole_frame": "low"}),
 ]
+
+
+# The burst is appended rather than written inline so that the frame set and its
+# ordering stay defined in one place.
+for _name, _img in burst_frames():
+    FIXTURES.append((
+        _name,
+        (lambda im: (lambda: im))(_img),
+        "synthetic burst frame (one scene, five frames, one smeared)",
+        {"burst": "true", "smeared": "true" if "smeared" in _name else "false"},
+    ))
 
 
 def sha256(path: Path) -> str:

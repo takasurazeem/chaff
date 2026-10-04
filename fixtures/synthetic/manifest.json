@@ -57,13 +57,45 @@
       "sha256": "b2d52cbe1a0be9d0f05b11dc0b8be6a3f4f4d271a053927e1365ab19dca99110"
     },
     {
+      "name": "sharp_broadband",
+      "file": "images/sharp_broadband.jpg",
+      "description": "isotropic broadband texture, in focus",
+      "expected": {
+        "focus": "high",
+        "spectrum": "broadband"
+      },
+      "sha256": "87f17f98a64f7ee43130b663410c0b031e025d8dd4d8b1372ab3790c336af40b"
+    },
+    {
+      "name": "blur_motion_broadband",
+      "file": "images/blur_motion_broadband.jpg",
+      "description": "broadband texture with 13px horizontal smear",
+      "expected": {
+        "focus": "reduced_by_half",
+        "blur_type": "motion",
+        "anisotropic": true
+      },
+      "sha256": "f44fd15aa6b210b50a97b95ab64d94190d8c1b535297a33ff920995841df566e"
+    },
+    {
+      "name": "blur_defocus_broadband",
+      "file": "images/blur_defocus_broadband.jpg",
+      "description": "broadband texture, isotropically defocused",
+      "expected": {
+        "focus": "low",
+        "blur_type": "defocus",
+        "anisotropic": false
+      },
+      "sha256": "0edb013b146d78f2d77cea3dccfe6d34d97484861ae873d078e93aa5624081e6"
+    },
+    {
       "name": "exposure_over",
       "file": "images/exposure_over.jpg",
       "description": "highlights clipped",
       "expected": {
         "exposure": "clipped_high"
       },
-      "sha256": "9f9fa14bb74e4b662463886b56efa4e1d30170e3739098c5e92d0439e3a92d0e"
+      "sha256": "933aa98bcdf96690b54bc448f1e417111060374877430e48b25fcf63d86c46f3"
     },
     {
       "name": "exposure_under",
@@ -72,7 +104,7 @@
       "expected": {
         "exposure": "clipped_low"
       },
-      "sha256": "57187dedaca98e1e4ccbc1caa1c11fe84b918e30e7da94e24a58cb308613a577"
+      "sha256": "ea920f4d61d705fca46c00313039fd7b1f32a6209d9ad7b764c94d175e02354e"
     },
     {
       "name": "noise_high_iso",
@@ -82,7 +114,7 @@
         "focus": "high",
         "noise": "high"
       },
-      "sha256": "bcbdaf422ecfaaebb3460d9b74421face5f087aa9fec127ef4ed206761715b6e"
+      "sha256": "641735fe93a640cc1bd7dd5ef456ca8d1397f862ff2e3ea87dcac55e8feecea7"
     },
     {
       "name": "flat_low_contrast",
@@ -92,7 +124,7 @@
         "focus": "low_absolute_high_relative",
         "contrast": "low"
       },
-      "sha256": "3682d445d60255caa375ea242c30b4d9b009a23c4b449895baea427e134b05d8"
+      "sha256": "4bad068442a970984349a5057e033bd1b155366b51ef746dc9da6ab42bd8d0b3"
     },
     {
       "name": "bokeh_portrait",
@@ -102,7 +134,57 @@
         "focus_subject": "high",
         "focus_whole_frame": "low"
       },
-      "sha256": "0cc39ae4c4a539af2336217d13a97f8e3f795686a30fad10db08b103f9f1ab7f"
+      "sha256": "e113f31f93130628e95a250485a49dd857ac7f71b037c114ce91a9009023b7b3"
+    },
+    {
+      "name": "burst_0_sharp",
+      "file": "images/burst_0_sharp.jpg",
+      "description": "synthetic burst frame (one scene, five frames, one smeared)",
+      "expected": {
+        "burst": "true",
+        "smeared": "false"
+      },
+      "sha256": "176b6bcefc85364199c6438b85f3e7c06d8b1410fce2b30321d97431c22d5afc"
+    },
+    {
+      "name": "burst_1_sharp",
+      "file": "images/burst_1_sharp.jpg",
+      "description": "synthetic burst frame (one scene, five frames, one smeared)",
+      "expected": {
+        "burst": "true",
+        "smeared": "false"
+      },
+      "sha256": "baa89212eb0a9bc67469f6c50e5f52cbc24aa0b4a92be74ffbc67f027a4cc3f4"
+    },
+    {
+      "name": "burst_2_sharp",
+      "file": "images/burst_2_sharp.jpg",
+      "description": "synthetic burst frame (one scene, five frames, one smeared)",
+      "expected": {
+        "burst": "true",
+        "smeared": "false"
+      },
+      "sha256": "faf3b464989fb8557b6dc41f1fbe22ad87c1f9487dc131eb7c5470e0556fc13c"
+    },
+    {
+      "name": "burst_3_smeared",
+      "file": "images/burst_3_smeared.jpg",
+      "description": "synthetic burst frame (one scene, five frames, one smeared)",
+      "expected": {
+        "burst": "true",
+        "smeared": "true"
+      },
+      "sha256": "765cd3340813279f9d9a25582002455fa01f32ea700271091e8fceacc2344210"
+    },
+    {
+      "name": "burst_4_sharp",
+      "file": "images/burst_4_sharp.jpg",
+      "description": "synthetic burst frame (one scene, five frames, one smeared)",
+      "expected": {
+        "burst": "true",
+        "smeared": "false"
+      },
+      "sha256": "b93fc0deae27db146c8b7e05e7577cb9d04dc85d8735989b11c3d6db94f1a464"
     }
   ],
   "pairtree": [

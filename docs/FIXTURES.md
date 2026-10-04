@@ -5,8 +5,8 @@ Two tiers, because they answer different questions and conflating them makes bot
 | | `fixtures/synthetic/` | `fixtures/corpus/` |
 |---|---|---|
 | **Built by** | `generate_synthetic.py` | `fetch_corpus.py` |
-| **Content** | Procedural patterns | Real photographs and real camera RAW |
-| **Size** | ~4 MB, committed | ~47 MB, gitignored |
+| **Content** | Procedural patterns + a synthetic burst | Real photographs and real camera RAW |
+| **Size** | ~5 MB, committed | ~47 MB, gitignored |
 | **Needs network** | No | Yes, once |
 | **Reproducible** | Byte-identical, seeded | Seeded URLs, hash-verified |
 | **Used by** | Unit tests | Integration and accuracy tests |
@@ -45,6 +45,32 @@ None of those are visible in a photograph of a beach.
    anisotropy threshold has a 35× margin *on a synthetic grid*. A real picket fence, a
    horizon, or a curtain could narrow that. Only the corpus can tell us.
 6. **Faces** (Phase 2). Synthetic fixtures contain no people and will not be given any.
+
+## What the corpus has actually found
+
+It is worth recording, because the argument for it is otherwise theoretical.
+
+**Nine unrecognised RAW extensions.** The classifier's extension list was written from
+memory and was missing `.ori` (Olympus), `.gpr` (GoPro), `.fff` (Hasselblad), `.cam`
+(Casio), `.arq` (Sony), `.ari` (ARRI), `.lri` (Light), `.mdc` (Minolta) and `.sti`
+(Samsung) — **54 files in the CC0 archive alone**. A missed RAW extension is the
+quietest way this product can fail: the file classifies as `Other`, never enters a
+group, never appears in the grid, and the photographer simply never sees that
+photograph. No synthetic fixture could have revealed it; only a real archive could.
+
+**A motion-blur threshold that did not survive contact with reality.** Calibrated on
+synthetic patterns where every non-motion frame measured anisotropy 1.00–1.74, a
+fixed threshold of 3.0 looked decisive with a 35x margin. On 50 real photographs it
+flagged **9 of them — 18%** — including a well-focused frame. The real distribution
+measured p50 = 1.63, p95 = 6.04, max = 9.39, overlapping the threshold almost
+completely. The design was retracted and replaced with shoot-relative detection; see
+`focus.rs::ShootBaseline`. The single-frame verdict no longer exists in the API, so it
+cannot be reintroduced by accident.
+
+**A corpus cannot test everything either.** Shoot-relative detection needs frames of
+*one scene*, and 50 unrelated photographs are not a shoot. That gap is filled by a
+synthetic burst instead — `burst_0..4`, one scene, five frames, one smeared. Each tier
+covers what the other cannot.
 
 ## Provenance
 

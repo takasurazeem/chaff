@@ -25,10 +25,35 @@ pub enum FileKind {
 /// Deliberately generous: adding an extension here is cheap and a missed raw file is
 /// a photograph the user thinks is missing.
 pub const RAW_EXTS: &[&str] = &[
-    "3fr", "arw", "cr2", "cr3", "crw", "dcr", "dng", "erf", "iiq", "kdc", "mef", "mos",
-    "mrw", "nef", "nrw", "orf", "pef", "raf", "raw", "rw2", "rwl", "sr2", "srf", "srw",
-    "x3f",
+    "3fr", "ari", "arq", "arw", "cam", "cr2", "cr3", "crw", "dcr", "dng", "erf", "fff",
+    "gpr", "iiq", "kdc", "lri", "mdc", "mef", "mos", "mrw", "nef", "nrw", "orf", "ori",
+    "pef", "raf", "raw", "rw2", "rwl", "sr2", "srf", "srw", "sti", "x3f",
 ];
+//
+// The list above was found to be incomplete by the real corpus, not by reasoning, and
+// the gap was substantial: **nine extensions and 54 files in the CC0 catalogue alone**
+// were unrecognised, every one of them a real camera's raw format.
+//
+//     .ori  19  Olympus ORF variant
+//     .gpr  17  GoPro
+//     .fff  11  Hasselblad
+//     .cam   2  Casio
+//     .arq   1  Sony ARQ
+//     .ari   1  ARRI
+//     .lri   1  Light L16
+//     .mdc   1  Minolta
+//     .sti   1  Samsung
+//
+// A missed raw extension is not a cosmetic problem: the file classifies as `Other`,
+// never enters a group, never appears in the grid, and the photographer simply never
+// sees that photograph. It is the quietest way this product can fail. Synthetic
+// fixtures could not have found it — only a real archive could.
+//
+// `.tif` and `.tiff` are deliberately NOT here even though 20 files in that archive are
+// TIFF-wrapped raws (Kodak DCS and similar). The overwhelming majority of TIFF files in
+// a hobbyist's library are rendered images — scans, exports, HDR merges — so treating
+// the extension as raw would misclassify the common case to serve the rare one. A
+// TIFF-wrapped raw is a documented exception rather than a silent one.
 
 /// Rendered-image extensions. One of these plus a raw makes a pair.
 pub const RASTER_EXTS: &[&str] = &[
@@ -85,6 +110,36 @@ mod tests {
         ] {
             assert_eq!(kind(p), FileKind::Raw, "{p} should be Raw");
         }
+    }
+
+    #[test]
+    fn recognises_every_raw_extension_the_real_archive_contains() {
+        // Found by the corpus, not by reasoning. All nine were missing, covering 54 files
+        // in the CC0 catalogue. A missed raw extension makes a photograph invisible:
+        // classified as `Other`, never grouped, never shown. See the note on RAW_EXTS.
+        for ext in ["ori", "gpr", "fff", "cam", "arq", "ari", "lri", "mdc", "sti"] {
+            let path = PathBuf::from(format!("IMG_0001.{ext}"));
+            assert_eq!(
+                classify(&path),
+                FileKind::Raw,
+                ".{ext} is a real camera raw format and must classify as Raw"
+            );
+            assert_eq!(
+                classify(&PathBuf::from(format!("IMG_0001.{}", ext.to_uppercase()))),
+                FileKind::Raw,
+                ".{ext} must classify as Raw in upper case too"
+            );
+        }
+    }
+
+    #[test]
+    fn tiff_is_treated_as_a_rendered_image_not_a_raw() {
+        // Deliberate, documented exception: 20 files in the CC0 archive are TIFF-wrapped
+        // raws, but the overwhelming majority of TIFFs in a hobbyist's library are
+        // rendered images. Classifying the extension as raw would misclassify the common
+        // case to serve the rare one.
+        assert_eq!(kind("scan.tif"), FileKind::Raster);
+        assert_eq!(kind("scan.TIFF"), FileKind::Raster);
     }
 
     #[test]

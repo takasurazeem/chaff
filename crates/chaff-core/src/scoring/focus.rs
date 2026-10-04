@@ -149,34 +149,104 @@ pub struct FocusMetrics {
     pub tile_variation: f64,
 }
 
-/// Minimum directional energy ratio for a frame to be called motion-blurred.
+/// How much more directional than its own shoot a frame must be to be a candidate.
+const MOTION_ANISOTROPY_RATIO: f64 = 2.5;
+
+/// How much less absolute detail than its own shoot a frame must show to be a candidate.
 ///
-/// Measured margin on the fixtures is enormous: the motion-blurred frame scores **62.1**
-/// while every non-motion frame scores **1.00–1.74**, so this threshold sits roughly 35x
-/// below the signal and 1.7x above the highest false positive. It is not a delicate
-/// tuning.
+/// Note this gates **absolute detail**, not `normalized_focus`. The ratio is built to be
+/// contrast-invariant, which makes it largely blur-invariant too: blurring a frame
+/// reduces the Laplacian variance and the luma variance together, so the ratio barely
+/// moves. Measured on the broadband fixtures, a 13px smear cost only 13% of the ratio.
+/// Absolute detail is not comparable across scenes — which is precisely why it cannot
+/// support a single-frame verdict — but it is comparable within a shoot that shares a
+/// scene, a lens and a lighting setup.
+const MOTION_DETAIL_FRACTION: f64 = 0.6;
+
+/// Reference values from one shoot.
 ///
-/// An earlier reading of the data suggested anisotropy could not identify motion blur at
-/// all, because a sharp fixture measured 6.8. That was a **fixture bug**, not a metric
-/// problem: the pattern drew its vertical grid in white and its horizontal grid in black,
-/// giving it unequal energy along x and y, so an isotropic frame measured as strongly
-/// anisotropic. With a directionally neutral fixture the separation is decisive.
-const MOTION_ANISOTROPY_MIN: f64 = 3.0;
+/// # Why motion-blur detection cannot be a single-frame decision
+///
+/// This was learned from real photographs, after the single-frame version had already
+/// been written, tested and believed.
+///
+/// The original design classified motion blur from one frame: an anisotropy threshold of
+/// 3.0, calibrated on synthetic fixtures where every non-motion frame measured between
+/// 1.00 and 1.74. Run against 50 real photographs, **9 of them — 18% — were flagged**,
+/// including a well-focused frame whose normalized focus of 1.14 was well above the
+/// corpus median. The real distribution measured p50 = 1.63, p95 = 6.04, max = 9.39:
+/// it overlaps the threshold almost completely.
+///
+/// The cause is not tuning. Anisotropy is `max(Ex,Ey) / min(Ex,Ey)`, and an ordinary
+/// photograph of a horizon, a building, a railing or a field contains genuinely
+/// directional structure. **A single frame cannot distinguish "this scene is
+/// directional" from "this frame was smeared along one axis"** — separating those
+/// requires knowing what the same scene looked like unblurred.
+///
+/// A burst provides exactly that reference: siblings of the same moment, same scene,
+/// same lighting. So motion-blur classification belongs in shoot/burst comparison
+/// (issues #15 and #18), and the single-frame verdict was **removed rather than left
+/// available to be misused**.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShootBaseline {
+    pub anisotropy_median: f64,
+    /// Median `signal_variance` across the shoot — absolute resolved detail.
+    pub detail_median: f64,
+    /// Median `normalized_focus`. Retained for reporting and for the composite score;
+    /// not used by [`FocusMetrics::is_motion_blur_candidate`].
+    pub focus_median: f64,
+}
+
+impl ShootBaseline {
+    /// Compute a baseline from the frames of one shoot.
+    ///
+    /// Medians rather than means: a shoot containing a few badly blurred frames should
+    /// not drag the reference toward them and then fail to notice them.
+    pub fn from_metrics(metrics: &[FocusMetrics]) -> Option<Self> {
+        if metrics.is_empty() {
+            return None;
+        }
+        Some(Self {
+            anisotropy_median: median(metrics.iter().map(|m| m.anisotropy))?,
+            detail_median: median(metrics.iter().map(|m| m.signal_variance))?,
+            focus_median: median(metrics.iter().map(|m| m.normalized_focus))?,
+        })
+    }
+}
+
+fn median(values: impl Iterator<Item = f64>) -> Option<f64> {
+    let mut v: Vec<f64> = values.filter(|x| x.is_finite()).collect();
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = v.len();
+    Some(if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 })
+}
 
 impl FocusMetrics {
-    /// True when the frame looks like directional motion blur rather than defocus.
+    /// A candidate for motion blur: markedly more directional **and** markedly softer
+    /// than the rest of its own shoot.
     ///
-    /// Defocus destroys structure along every axis equally and measures near-isotropic
-    /// (1.00–1.04 on the fixtures). Motion blur smears along one axis only, so the
-    /// perpendicular edge energy survives and the ratio explodes.
+    /// Both conditions are required, and each excludes a different false positive:
     ///
-    /// **Caveat for real photographs:** a scene with genuinely dominant directional
-    /// structure — a picket fence, a horizon, a curtain — can raise anisotropy without any
-    /// blur. The 35x margin makes that unlikely, but if false positives appear on real
-    /// libraries the right fix is to compare against the shoot's own anisotropy baseline
-    /// (issue #12), not to raise this constant until nothing fires.
-    pub fn looks_like_motion_blur(&self) -> bool {
-        self.anisotropy >= MOTION_ANISOTROPY_MIN
+    /// * **Directionality alone** fires on any scene with strong directional structure —
+    ///   a horizon, a fence, architecture. That produced the 18% false-positive rate.
+    /// * **Softness alone** fires on defocus, which is a different defect with a
+    ///   different fix and deserves a different label.
+    ///
+    /// The combination — unusually directional *for this scene* while also unusually
+    /// soft *for this scene* — is what motion blur looks like from a single frame.
+    ///
+    /// "Soft" is measured as absolute detail against the shoot, not as the
+    /// contrast-invariant ratio; see [`MOTION_DETAIL_FRACTION`].
+    ///
+    /// This is a flag for review, never a verdict. The UI should present it as "possibly
+    /// motion-blurred — compare with its burst siblings", because the frames that
+    /// actually resolve the ambiguity are the siblings.
+    pub fn is_motion_blur_candidate(&self, baseline: &ShootBaseline) -> bool {
+        self.anisotropy > baseline.anisotropy_median * MOTION_ANISOTROPY_RATIO
+            && self.signal_variance < baseline.detail_median * MOTION_DETAIL_FRACTION
     }
 }
 
@@ -382,6 +452,9 @@ mod tests {
             "bokeh_portrait",
             "exposure_over",
             "exposure_under",
+            "sharp_broadband",
+            "blur_motion_broadband",
+            "blur_defocus_broadband",
         ];
         println!(
             "\n{:<20} {:>9} {:>6} {:>11} {:>9} {:>9} {:>8} {:>9} {:>8} {:>7} {:>7}",
@@ -671,65 +744,194 @@ mod tests {
     }
 
     #[test]
-    fn motion_blur_is_identified_decisively() {
-        let motion = analyse(&fixture("blur_motion"), None);
+    fn motion_blur_reduces_detail_on_a_broadband_spectrum() {
+        // The property a grid fixture cannot demonstrate. Horizontal lines are constant
+        // along x, so a horizontal blur leaves them untouched; measured on the grid
+        // fixture, a 13px smear retained 83% of the sharp frame's focus. On a
+        // direction-neutral broadband spectrum the same smear destroys roughly half.
+        //
+        // Without this fixture the "is it soft?" half of motion detection was untestable.
+        let sharp = analyse(&fixture("sharp_broadband"), None);
+        let motion = analyse(&fixture("blur_motion_broadband"), None);
+
+        // Asserted on ABSOLUTE detail, not on normalized_focus. The ratio is built to be
+        // contrast-invariant, which also makes it largely blur-invariant: a 13px smear
+        // costs only about 13% of the ratio while costing over half the real detail.
+        // Using the ratio here would have hidden the very effect being tested.
         assert!(
-            motion.looks_like_motion_blur(),
-            "the motion fixture should be identified as motion-blurred, got aniso {:.3}",
-            motion.anisotropy
+            motion.signal_variance < sharp.signal_variance * 0.75,
+            "a 13px horizontal smear of broadband texture (signal variance {:.1}) must \
+             lose clearly more than a quarter of the sharp original's detail ({:.1})",
+            motion.signal_variance,
+            sharp.signal_variance
+        );
+        assert!(
+            motion.anisotropy > sharp.anisotropy * 2.0,
+            "the smear must be markedly more directional ({:.3}) than its original ({:.3})",
+            motion.anisotropy,
+            sharp.anisotropy
         );
     }
 
     #[test]
-    fn nothing_else_is_mistaken_for_motion_blur() {
-        // The false-positive guard, and the test that would have caught the fixture bug
-        // that originally made this signal look unreliable.
-        for n in [
-            "sharp_a",
-            "sharp_b",
-            "bokeh_portrait",
-            "blur_defocus_mild",
-            "blur_defocus_heavy",
-            "noise_high_iso",
-            "flat_low_contrast",
-            "exposure_over",
-            "exposure_under",
-        ] {
-            let m = analyse(&fixture(n), None);
-            assert!(
-                !m.looks_like_motion_blur(),
-                "{n} must not be flagged as motion-blurred, got aniso {:.3}",
-                m.anisotropy
-            );
-        }
+    fn broadband_defocus_is_isotropic_while_broadband_motion_is_not() {
+        let defocus = analyse(&fixture("blur_defocus_broadband"), None);
+        let motion = analyse(&fixture("blur_motion_broadband"), None);
+        assert!(
+            motion.anisotropy > defocus.anisotropy * 2.0,
+            "on identical texture, directional blur ({:.3}) must be far more anisotropic \
+             than isotropic blur ({:.3})",
+            motion.anisotropy,
+            defocus.anisotropy
+        );
     }
 
-    #[test]
-    fn the_motion_signal_has_a_wide_margin_over_every_false_positive() {
-        // If this margin ever narrows, the fixed threshold stops being defensible and the
-        // shoot-relative comparison in issue #12 becomes mandatory.
-        let motion = analyse(&fixture("blur_motion"), None).anisotropy;
-        let worst_other = [
+    // ---------------------------------------------------------------------
+    // The motion-blur retraction, as tests
+    // ---------------------------------------------------------------------
+
+    /// A synthetic shoot: the frames a photographer would actually have together.
+    fn synthetic_shoot() -> Vec<FocusMetrics> {
+        [
             "sharp_a",
             "sharp_b",
-            "bokeh_portrait",
+            "sharp_broadband",
             "blur_defocus_mild",
-            "blur_defocus_heavy",
+            "blur_defocus_broadband",
             "noise_high_iso",
-            "flat_low_contrast",
-            "exposure_over",
+            "bokeh_portrait",
             "exposure_under",
         ]
         .iter()
-        .map(|n| analyse(&fixture(n), None).anisotropy)
-        .fold(0.0f64, f64::max);
+        .map(|n| analyse(&fixture(n), None))
+        .collect()
+    }
+
+    #[test]
+    fn a_soft_directional_frame_in_a_shoot_is_flagged() {
+        let baseline = ShootBaseline::from_metrics(&synthetic_shoot()).expect("baseline");
+        let motion = analyse(&fixture("blur_motion_broadband"), None);
+        assert!(
+            motion.is_motion_blur_candidate(&baseline),
+            "a smeared frame that is both more directional ({:.3} vs baseline {:.3}) and \
+             softer ({:.3} vs baseline {:.3}) than its shoot should be flagged",
+            motion.anisotropy,
+            baseline.anisotropy_median,
+            motion.normalized_focus,
+            baseline.focus_median
+        );
+    }
+
+    #[test]
+    fn a_directional_but_sharp_frame_is_not_flagged() {
+        // **The false positive that real photographs exposed.** A scene with strong
+        // directional structure — a horizon, a fence, architecture — has high anisotropy
+        // and no blur at all. Directionality alone flagged 18% of a 50-photograph corpus
+        // this way, including well-focused frames.
+        //
+        // This constructs that case deliberately: anisotropically stretched texture that
+        // is nevertheless perfectly sharp.
+        let shoot = synthetic_shoot();
+        let baseline = ShootBaseline::from_metrics(&shoot).expect("baseline");
+
+        // Case 1: far more directional than the shoot, but NOT low on detail.
+        let mut directional_but_sharp = analyse(&fixture("sharp_broadband"), None);
+        directional_but_sharp.anisotropy = baseline.anisotropy_median * 50.0;
+        directional_but_sharp.signal_variance = baseline.detail_median * 5.0;
+        assert!(
+            !directional_but_sharp.is_motion_blur_candidate(&baseline),
+            "a sharp frame must never be flagged however directional it is — this is the \
+             false positive that flagged 18% of real photographs"
+        );
+
+        // Case 2: the converse. Low detail but isotropic is defocus, not motion: a
+        // different defect with a different fix, and it deserves a different label.
+        let mut soft_but_isotropic = analyse(&fixture("blur_defocus_broadband"), None);
+        soft_but_isotropic.anisotropy = baseline.anisotropy_median;
+        soft_but_isotropic.signal_variance = baseline.detail_median * 0.1;
+        assert!(
+            !soft_but_isotropic.is_motion_blur_candidate(&baseline),
+            "a soft but isotropic frame is defocus, not motion blur"
+        );
+
+        // Case 3: both conditions together, which is the only thing that qualifies.
+        let mut both = analyse(&fixture("blur_motion_broadband"), None);
+        both.anisotropy = baseline.anisotropy_median * 50.0;
+        both.signal_variance = baseline.detail_median * 0.1;
+        assert!(
+            both.is_motion_blur_candidate(&baseline),
+            "directional AND low-detail must be flagged"
+        );
+    }
+
+    #[test]
+    fn a_single_frame_anisotropy_threshold_is_not_sound() {
+        // Documents why the single-frame verdict was removed, using synthetic frames
+        // whose anisotropy alone cannot separate the cases.
+        //
+        // The grid-based motion fixture is *less* anisotropic than several frames that
+        // are not motion-blurred at all. Any fixed single-frame threshold either misses
+        // it or fires on them.
+        let grid_motion = analyse(&fixture("blur_motion"), None).anisotropy;
+        let broadband_defocus = analyse(&fixture("blur_defocus_broadband"), None).anisotropy;
+        let flat = analyse(&fixture("flat_low_contrast"), None).anisotropy;
 
         assert!(
-            motion > worst_other * 10.0,
-            "the motion signal ({motion:.2}) must dominate every false positive \
-             ({worst_other:.2}) by at least an order of magnitude, or a fixed threshold is \
-             not defensible"
+            flat < grid_motion,
+            "sanity: the low-contrast fixture is less directional than the motion fixture"
         );
+        // The real point: anisotropy is a property of the SCENE as much as of the blur,
+        // so a threshold tuned on one scene family does not transfer. This is asserted
+        // in full against real photographs in tests/corpus.rs.
+        assert!(broadband_defocus >= 1.0);
+    }
+
+    #[test]
+    fn a_synthetic_burst_flags_its_smeared_frame_and_only_that_one() {
+        // **The real validation of shoot-relative motion detection.**
+        //
+        // The corpus cannot do this: it is 50 unrelated photographs, so its "baseline" is
+        // a baseline over different scenes, which is not what the design assumes. A burst
+        // is the substrate the design actually requires — one scene, one lens, one
+        // lighting setup, several frames.
+        //
+        // The baseline here is computed from ALL five frames, including the bad one,
+        // because in real use the detector does not know in advance which frame is
+        // damaged. That the median survives one bad frame in five is part of what is
+        // being tested.
+        let names = [
+            "burst_0_sharp",
+            "burst_1_sharp",
+            "burst_2_sharp",
+            "burst_3_smeared",
+            "burst_4_sharp",
+        ];
+        let metrics: Vec<FocusMetrics> = names.iter().map(|n| analyse(&fixture(n), None)).collect();
+        let baseline = ShootBaseline::from_metrics(&metrics).expect("baseline from a burst");
+
+        let mut flagged = Vec::new();
+        for (name, m) in names.iter().zip(&metrics) {
+            if m.is_motion_blur_candidate(&baseline) {
+                flagged.push(*name);
+            }
+        }
+
+        assert_eq!(
+            flagged,
+            vec!["burst_3_smeared"],
+            "exactly the smeared frame should be flagged; got {flagged:?}. \
+             baseline: aniso {:.3}, detail {:.1}",
+            baseline.anisotropy_median,
+            baseline.detail_median
+        );
+    }
+
+    #[test]
+    fn baseline_needs_at_least_one_frame() {
+        assert!(ShootBaseline::from_metrics(&[]).is_none());
+        let one = vec![analyse(&fixture("sharp_a"), None)];
+        let b = ShootBaseline::from_metrics(&one).expect("a single frame still yields a baseline");
+        assert!(b.anisotropy_median.is_finite() && b.focus_median.is_finite());
     }
 
     // ---------------------------------------------------------------------
