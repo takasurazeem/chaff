@@ -26,10 +26,10 @@ use crate::exif;
 use crate::imaging::{Luma, Region};
 use crate::indexer::{self, IndexError};
 use crate::scoring::{
-    composite::{self, BandThresholds, Score, ScoreWeights},
+    composite::{self, BandThresholds, Score},
     exposure::{self, Levels},
     focus::{self, FocusMetrics},
-    shoot::{self, FrameMeasurement, Normalised, DEFAULT_SHOOT_GAP_SECONDS},
+    shoot::{self, FrameMeasurement, DEFAULT_SHOOT_GAP_SECONDS},
 };
 use crate::thumb;
 
@@ -45,6 +45,8 @@ pub enum PipelineError {
     Index(#[from] IndexError),
     #[error(transparent)]
     Catalog(#[from] CatalogError),
+    #[error(transparent)]
+    Normalise(#[from] shoot::NormaliseError),
 }
 
 /// What one pipeline run did.
@@ -148,7 +150,7 @@ pub fn index_and_score(
     }
 
     // Ranking is a property of the set, so it can only happen once everything is measured.
-    let normalised = shoot::normalise(&measured, DEFAULT_SHOOT_GAP_SECONDS);
+    let normalised = shoot::normalise(&measured, DEFAULT_SHOOT_GAP_SECONDS)?;
 
     let preset = composite::default_preset();
     let thresholds = BandThresholds::default();
@@ -312,12 +314,6 @@ pub fn explain_photo(conn: &Connection, photo_id: i64) -> Result<Vec<String>, Ca
         out.push(format!("  {name}: {}th percentile", r.value.round() as i64));
     }
     Ok(out)
-}
-
-/// Score a single set of frames without touching the database. Used by tests.
-pub fn score_frames(frames: &[FrameMeasurement], weights: &ScoreWeights) -> Vec<Score> {
-    let normalised: Vec<Normalised> = shoot::normalise(frames, DEFAULT_SHOOT_GAP_SECONDS);
-    composite::score_all(&normalised, weights, &BandThresholds::default(), "Balanced")
 }
 
 #[cfg(test)]

@@ -212,7 +212,11 @@ where
             FileKind::Raster => group.rasters.push(owned),
             FileKind::Sidecar => group.sidecars.push(owned),
             FileKind::Video => group.videos.push(owned),
-            FileKind::Other => unreachable!("filtered above"),
+            // Filtered before this point, so it cannot arrive. Handled rather than
+            // asserted: `unreachable!` is a panic, and a panic in a library takes down
+            // the window over a bookkeeping slip. Doing nothing is the correct behaviour
+            // for a file kind this function has no opinion about.
+            FileKind::Other => {}
         }
     }
 
@@ -227,8 +231,10 @@ where
             (1, 1) => GroupState::Pair,
             (1, 0) => GroupState::RawOnly,
             (0, 1) => GroupState::RasterOnly,
-            (0, 0) => unreachable!("a group exists only because a file was added to it"),
             (r, _) if r > 1 => GroupState::Ambiguous,
+            // Includes (0, 0) — a group with nothing in it. It cannot arise, because a
+            // group is created only when a file is added to it, but reaching it must not
+            // be a panic.
             _ => GroupState::Ambiguous,
         };
 

@@ -683,15 +683,15 @@ mod tests {
         let id = photos(&conn, lib).unwrap()[0].id;
 
         // Nothing set yet.
-        let previous = set_decision(&conn, id, Decision { rating: 4, rejected: false }, 200).unwrap();
+        let previous = set_decision(&conn, id, Decision { rating: Rating::new(4), rejected: false }, 200).unwrap();
         assert!(previous.is_unrated(), "the first decision replaces nothing");
 
-        let previous = set_decision(&conn, id, Decision { rating: 5, rejected: false }, 300).unwrap();
-        assert_eq!(previous, Decision { rating: 4, rejected: false });
+        let previous = set_decision(&conn, id, Decision { rating: Rating::new(5), rejected: false }, 300).unwrap();
+        assert_eq!(previous, Decision { rating: Rating::new(4), rejected: false });
 
         assert_eq!(
             decision_for_photo(&conn, id).unwrap(),
-            Some(Decision { rating: 5, rejected: false })
+            Some(Decision { rating: Rating::new(5), rejected: false })
         );
     }
 
@@ -705,11 +705,11 @@ mod tests {
         index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
         let id = photos(&conn, lib).unwrap()[0].id;
 
-        set_decision(&conn, id, Decision { rating: 3, rejected: false }, 200).unwrap();
-        set_decision(&conn, id, Decision { rating: 3, rejected: true }, 300).unwrap();
+        set_decision(&conn, id, Decision { rating: Rating::new(3), rejected: false }, 200).unwrap();
+        set_decision(&conn, id, Decision { rating: Rating::new(3), rejected: true }, 300).unwrap();
 
         let d = decision_for_photo(&conn, id).unwrap().unwrap();
-        assert_eq!(d.rating, 3, "rejecting must not clear the rating");
+        assert_eq!(d.rating.get(), 3, "rejecting must not clear the rating");
         assert!(d.rejected);
     }
 
@@ -724,7 +724,7 @@ mod tests {
 
         index(&mut conn, lib, &files, &meta, 100);
         let id = photos(&conn, lib).unwrap()[0].id;
-        set_decision(&conn, id, Decision { rating: 5, rejected: false }, 150).unwrap();
+        set_decision(&conn, id, Decision { rating: Rating::new(5), rejected: false }, 150).unwrap();
 
         // Re-index, and re-score at a new version for good measure.
         index(&mut conn, lib, &files, &meta, 200);
@@ -734,7 +734,7 @@ mod tests {
         assert_eq!(after, id, "a re-index of unchanged files keeps the same photograph row");
         assert_eq!(
             decision_for_photo(&conn, id).unwrap(),
-            Some(Decision { rating: 5, rejected: false }),
+            Some(Decision { rating: Rating::new(5), rejected: false }),
             "re-indexing must not disturb the user's judgement"
         );
     }
@@ -746,7 +746,7 @@ mod tests {
         let files = ["/lib/IMG_0001.CR3"];
         index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
         let id = photos(&conn, lib).unwrap()[0].id;
-        set_decision(&conn, id, Decision { rating: 4, rejected: false }, 200).unwrap();
+        set_decision(&conn, id, Decision { rating: Rating::new(4), rejected: false }, 200).unwrap();
 
         conn.execute("DELETE FROM photo WHERE id = ?1", params![id]).unwrap();
         assert_eq!(decision_for_photo(&conn, id).unwrap(), None);
@@ -760,12 +760,12 @@ mod tests {
         index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
         let all = photos(&conn, lib).unwrap();
 
-        set_decision(&conn, all[0].id, Decision { rating: 5, rejected: false }, 200).unwrap();
-        set_decision(&conn, all[1].id, Decision { rating: 0, rejected: true }, 200).unwrap();
+        set_decision(&conn, all[0].id, Decision { rating: Rating::new(5), rejected: false }, 200).unwrap();
+        set_decision(&conn, all[1].id, Decision { rating: Rating::new(0), rejected: true }, 200).unwrap();
 
         let map = decisions_for_library(&conn, lib).unwrap();
         assert_eq!(map.len(), 2, "the third photograph is undecided and must be absent");
-        assert_eq!(map[&all[0].id].rating, 5);
+        assert_eq!(map[&all[0].id].rating.get(), 5);
         assert!(map[&all[1].id].rejected);
         assert!(!map.contains_key(&all[2].id));
     }
@@ -799,9 +799,9 @@ mod tests {
 
         assert_eq!(decision_count(&conn, lib).unwrap(), 0);
         // An explicit zero is the same as undecided, and must not be counted as a decision.
-        set_decision(&conn, all[0].id, Decision { rating: 0, rejected: false }, 200).unwrap();
+        set_decision(&conn, all[0].id, Decision { rating: Rating::new(0), rejected: false }, 200).unwrap();
         assert_eq!(decision_count(&conn, lib).unwrap(), 0);
-        set_decision(&conn, all[1].id, Decision { rating: 1, rejected: false }, 200).unwrap();
+        set_decision(&conn, all[1].id, Decision { rating: Rating::new(1), rejected: false }, 200).unwrap();
         assert_eq!(decision_count(&conn, lib).unwrap(), 1);
     }
 
@@ -813,7 +813,7 @@ mod tests {
         let fa = ["/a/IMG_0001.CR3"];
         index(&mut conn, a, &fa, &meta_for(&fa, 1, 1), 100);
         let id = photos(&conn, a).unwrap()[0].id;
-        set_decision(&conn, id, Decision { rating: 5, rejected: false }, 200).unwrap();
+        set_decision(&conn, id, Decision { rating: Rating::new(5), rejected: false }, 200).unwrap();
 
         assert_eq!(decisions_for_library(&conn, b).unwrap().len(), 0);
         assert_eq!(decision_count(&conn, b).unwrap(), 0);
@@ -1048,6 +1048,55 @@ pub fn delete_scores_at_version(
 // ---------------------------------------------------------------------------
 // Decisions — the user's own judgement
 // ---------------------------------------------------------------------------
+/// A star rating, guaranteed to be in range.
+///
+/// A newtype rather than a bare `u8`, so an out-of-range rating is **unrepresentable**
+/// rather than merely rejected later. The `CHECK` constraint in the schema stays — defence
+/// in depth costs nothing — but a value that cannot be constructed cannot reach it.
+///
+/// This replaced a bare `u8` plus a `rating.min(5)` at the call site. The test for that
+/// clamp read `assert_eq!(9u8.min(5), 5)`, which asserts the Rust standard library rather
+/// than this crate, and clippy said so out loud ("`9u8` is never smaller than `5`"). The
+/// clamp now lives in one place and is tested through the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Rating(u8);
+
+impl Rating {
+    /// The highest rating, and the value an out-of-range input becomes.
+    pub const MAX: u8 = 5;
+
+    /// Build a rating, clamping anything above [`Self::MAX`].
+    ///
+    /// Clamps rather than rejects: the input comes from a keystroke, and a user pressing
+    /// `9` should get five stars rather than an error dialog. A database read also passes
+    /// through here, where an out-of-range value means corruption — and a visible
+    /// degradation beats a panic.
+    pub fn new(value: u8) -> Self {
+        Self(value.min(Self::MAX))
+    }
+
+    pub fn get(self) -> u8 {
+        self.0
+    }
+
+    /// True when no rating has been given. Distinct from one star.
+    pub fn is_unrated(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl From<Rating> for u8 {
+    fn from(r: Rating) -> u8 {
+        r.0
+    }
+}
+
+impl std::fmt::Display for Rating {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// What a person decided about a photograph.
 ///
 /// Distinct from [`super::super::scoring::composite::Band`], which is what the *engine*
@@ -1055,20 +1104,19 @@ pub fn delete_scores_at_version(
 /// rated five. Both are stored, and neither overwrites the other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Decision {
-    /// 0 means unrated, which is distinct from one star.
-    pub rating: u8,
+    pub rating: Rating,
     pub rejected: bool,
 }
 
 impl Decision {
     pub fn is_unrated(&self) -> bool {
-        self.rating == 0 && !self.rejected
+        self.rating.is_unrated() && !self.rejected
     }
 
     /// The XMP `xmp:Rating` value this maps to. Kept here so the interop path (#54) and
     /// the UI cannot disagree about what a rating means.
     pub fn xmp_rating(&self) -> u8 {
-        self.rating
+        self.rating.get()
     }
 }
 
@@ -1092,7 +1140,7 @@ pub fn set_decision(
              rating     = excluded.rating,
              rejected   = excluded.rejected,
              decided_at = excluded.decided_at",
-        params![photo_id, decision.rating as i64, i64::from(decision.rejected), now],
+        params![photo_id, decision.rating.get() as i64, i64::from(decision.rejected), now],
     )?;
     Ok(previous)
 }
@@ -1106,7 +1154,7 @@ pub fn decision_for_photo(
     let mut rows = stmt.query(params![photo_id])?;
     match rows.next()? {
         Some(r) => Ok(Some(Decision {
-            rating: r.get::<_, i64>(0)? as u8,
+            rating: Rating::new(r.get::<_, i64>(0)?.clamp(0, u8::MAX as i64) as u8),
             rejected: r.get::<_, i64>(1)? != 0,
         })),
         None => Ok(None),
@@ -1131,7 +1179,10 @@ pub fn decisions_for_library(
     let rows = stmt.query_map(params![library_id], |r| {
         Ok((
             r.get::<_, i64>(0)?,
-            Decision { rating: r.get::<_, i64>(1)? as u8, rejected: r.get::<_, i64>(2)? != 0 },
+            Decision {
+                rating: Rating::new(r.get::<_, i64>(1)?.clamp(0, u8::MAX as i64) as u8),
+                rejected: r.get::<_, i64>(2)? != 0,
+            },
         ))
     })?;
     Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)

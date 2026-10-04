@@ -688,7 +688,8 @@ fn the_full_scoring_pipeline_runs_over_real_photographs() {
 
     assert_eq!(measurements.len(), files.len());
 
-    let normalised = shoot::normalise(&measurements, shoot::DEFAULT_SHOOT_GAP_SECONDS);
+    let normalised =
+        shoot::normalise(&measurements, shoot::DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
     assert_eq!(normalised.len(), measurements.len());
 
     for n in &normalised {
@@ -750,8 +751,8 @@ fn shoot_normalisation_over_the_real_corpus_is_deterministic() {
             .collect()
     };
 
-    let a = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS);
-    let b = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS);
+    let a = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
+    let b = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
     assert_eq!(a, b, "the same photographs must rank the same on every run");
 }
 
@@ -773,7 +774,8 @@ fn real_scores() -> Vec<chaff_core::scoring::composite::Score> {
         })
         .collect();
 
-    let normalised = shoot::normalise(&measurements, shoot::DEFAULT_SHOOT_GAP_SECONDS);
+    let normalised =
+        shoot::normalise(&measurements, shoot::DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
     let preset = composite::default_preset();
     composite::score_all(&normalised, &preset.weights, &BandThresholds::default(), preset.name)
 }

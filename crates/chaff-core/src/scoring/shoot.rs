@@ -38,6 +38,7 @@
 //! admitting the information is not there.
 
 use std::collections::BTreeMap;
+use thiserror::Error;
 
 use crate::exif::ExifData;
 
@@ -389,10 +390,26 @@ pub fn percentile_ranks(values: &[f64]) -> Vec<f64> {
     ranks
 }
 
+/// A frame that grouping failed to place.
+///
+/// This was a `panic!`. A library must not take down its caller, and here the caller is a
+/// window showing someone their library — crashing it over a bookkeeping slip is worse
+/// than reporting one frame as unranked. It stays an *error* rather than being silently
+/// skipped, because a frame missing from a ranking is a bug that would otherwise go
+/// unnoticed.
+#[derive(Debug, Error)]
+pub enum NormaliseError {
+    #[error("frame {index} was not assigned to any shoot — grouping is broken")]
+    UnassignedFrame { index: usize },
+}
+
 /// Normalise a set of frames within their shoots.
 ///
 /// Returns one entry per input frame, in input order.
-pub fn normalise(frames: &[FrameMeasurement], gap_seconds: i64) -> Vec<Normalised> {
+pub fn normalise(
+    frames: &[FrameMeasurement],
+    gap_seconds: i64,
+) -> Result<Vec<Normalised>, NormaliseError> {
     let shoots = group_into_shoots(frames, gap_seconds);
 
     // Library-wide ranks, computed once. `vec![]` per metric rather than an array
@@ -444,13 +461,13 @@ pub fn normalise(frames: &[FrameMeasurement], gap_seconds: i64) -> Vec<Normalise
         }
     }
 
-    // Every frame belongs to exactly one shoot, so this cannot be None. If it ever is,
-    // that is a bug in grouping and silently dropping the frame would hide it.
+    // Every frame belongs to exactly one shoot, so none of these should be `None`. The
+    // failure is reported rather than asserted, and rather than dropped: a frame missing
+    // from a ranking is a bug that would otherwise go unnoticed, but it is not a reason to
+    // bring down the window.
     out.into_iter()
         .enumerate()
-        .map(|(i, o)| {
-            o.unwrap_or_else(|| panic!("frame {i} was not assigned to any shoot — grouping is broken"))
-        })
+        .map(|(index, entry)| entry.ok_or(NormaliseError::UnassignedFrame { index }))
         .collect()
 }
 
@@ -669,7 +686,7 @@ mod tests {
         let frames: Vec<_> = (0..10)
             .map(|i| frame(i, "/lib", Some("X"), Some(1000 + i), i as f64))
             .collect();
-        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
 
         assert!(n.iter().all(|x| x.shoot_relative), "ten frames is enough to rank");
         // Frame 9 has the highest focus and must rank above frame 0.
@@ -689,7 +706,7 @@ mod tests {
             (10..30).map(|i| frame(i, "/big", Some("Y"), Some(5000 + i), i as f64)),
         );
 
-        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         let small: Vec<_> = n.iter().filter(|x| x.shoot_size == 3).collect();
         assert_eq!(small.len(), 3);
         assert!(
@@ -710,7 +727,7 @@ mod tests {
         let frames: Vec<_> = (0..MIN_SHOOT_SIZE)
             .map(|i| frame(i as i64, "/lib", Some("X"), Some(1000 + i as i64), i as f64))
             .collect();
-        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         assert!(n.iter().all(|x| x.shoot_relative));
         assert_eq!(n[0].shoot_size, MIN_SHOOT_SIZE);
     }
@@ -726,7 +743,7 @@ mod tests {
             f.set(Metric::Noise, i as f64 * 10.0); // frame 9 is noisiest
         }
 
-        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         assert!(
             n[9].shoot_percentile(Metric::Noise) > n[0].shoot_percentile(Metric::Noise),
             "the raw rank follows the value"
@@ -764,7 +781,7 @@ mod tests {
         for (i, f) in frames.iter_mut().enumerate() {
             f.set(Metric::ExposureMean, i as f64 / 10.0); // frame 9 is blown
         }
-        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         assert_eq!(
             n[9].score_percentile(Metric::ExposureMean),
             None,
@@ -785,8 +802,8 @@ mod tests {
             .map(|i| frame(i, "/lib", Some("X"), Some(1000 + i), (i % 4) as f64))
             .collect();
         assert_eq!(
-            normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS),
-            normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS)
+            normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise"),
+            normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise")
         );
     }
 
@@ -812,7 +829,7 @@ mod tests {
             .collect();
 
         let all: Vec<_> = noisy.iter().chain(quiet.iter()).cloned().collect();
-        let n = normalise(&all, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = normalise(&all, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
 
         // The least noisy frame of the noisy shoot should score well *within its shoot*.
         let best_noisy = n.iter().filter(|x| x.shoot_id == 0).min_by(|a, b| {
@@ -831,7 +848,7 @@ mod tests {
         for f in frames.iter_mut() {
             f.camera = None;
         }
-        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         assert_eq!(n.len(), 10);
         assert!(n.iter().all(|x| x.shoot_relative), "ten frames, even untimed, can rank");
     }
@@ -856,9 +873,11 @@ mod tests {
 
     #[test]
     fn exif_identity_is_trimmed_and_empties_become_none() {
-        let mut e = ExifData::default();
-        e.make = Some("  Canon  ".into());
-        e.model = Some("".into());
+        let e = ExifData {
+            make: Some("  Canon  ".into()),
+            model: Some("".into()),
+            ..Default::default()
+        };
         let f = FrameMeasurement::new(1, "/lib").with_exif(Some(&e));
         assert_eq!(f.camera.as_deref(), Some("Canon"), "empty model falls back to make");
     }

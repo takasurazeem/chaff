@@ -1115,7 +1115,7 @@ mod tests {
         let plan = trash.plan(&files, &hashes(&files), 1_700_000_000).unwrap();
         trash.commit(&plan, "test", 1_700_000_000).unwrap();
 
-        let receipt = trash.purge(&[plan.op_id.clone()]).unwrap();
+        let receipt = trash.purge(std::slice::from_ref(&plan.op_id)).unwrap();
         assert_eq!(receipt.operations, 1);
         assert_eq!(receipt.removed, 3);
         assert!(receipt.bytes > 0);
@@ -1152,7 +1152,7 @@ mod tests {
         let b = trash.plan(&files[1..], &h, 1_700_000_100).unwrap();
         trash.commit(&b, "second", 1_700_000_100).unwrap();
 
-        trash.purge(&[a.op_id.clone()]).unwrap();
+        trash.purge(std::slice::from_ref(&a.op_id)).unwrap();
 
         for m in &a.moves {
             assert!(!m.destination.exists());
@@ -1196,7 +1196,7 @@ mod tests {
 
         let second = trash.plan(&files, &h, 1_700_000_000).unwrap();
         trash.commit(&second, "cull again", 1_700_000_000).unwrap();
-        trash.purge(&[second.op_id.clone()]).unwrap();
+        trash.purge(std::slice::from_ref(&second.op_id)).unwrap();
         for f in &files {
             assert!(!f.exists());
         }

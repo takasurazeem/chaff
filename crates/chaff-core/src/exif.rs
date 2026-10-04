@@ -394,35 +394,39 @@ mod tests {
         assert_eq!(d.camera_key().as_deref(), Some("Canon EOS R5"));
 
         // Two bodies of one make must not collapse into the same burst key.
-        let mut other = ExifData::default();
-        other.make = Some("Canon".into());
-        other.model = Some("Canon EOS R6".into());
+        let other = ExifData {
+            make: Some("Canon".into()),
+            model: Some("Canon EOS R6".into()),
+            ..Default::default()
+        };
         assert_ne!(d.camera_key(), other.camera_key());
     }
 
     #[test]
     fn an_empty_model_falls_back_to_the_make_rather_than_becoming_a_key() {
-        let mut d = ExifData::default();
-        d.make = Some("Canon".into());
-        d.model = Some("   ".into());
+        let d = ExifData {
+            make: Some("Canon".into()),
+            model: Some("   ".into()),
+            ..Default::default()
+        };
         assert_eq!(
             d.camera_key().as_deref(),
             Some("Canon"),
             "a whitespace model must not become a shoot key of its own"
         );
 
-        let mut empty = ExifData::default();
-        empty.make = Some("".into());
-        empty.model = Some("".into());
+        let empty = ExifData {
+            make: Some("".into()),
+            model: Some("".into()),
+            ..Default::default()
+        };
         assert_eq!(empty.camera_key(), None, "nothing usable means no key, not an empty one");
     }
 
     #[test]
     fn camera_key_trims_padding_so_one_body_is_one_key() {
-        let mut a = ExifData::default();
-        a.model = Some("NIKON Z 6".into());
-        let mut b = ExifData::default();
-        b.model = Some("NIKON Z 6   ".into());
+        let a = ExifData { model: Some("NIKON Z 6".into()), ..Default::default() };
+        let b = ExifData { model: Some("NIKON Z 6   ".into()), ..Default::default() };
         assert_eq!(a.camera_key(), b.camera_key());
     }
 
@@ -441,8 +445,7 @@ mod tests {
     #[test]
     fn an_empty_dataset_is_recognised() {
         assert!(ExifData::default().is_empty());
-        let mut d = ExifData::default();
-        d.iso = Some(100);
+        let d = ExifData { iso: Some(100), ..Default::default() };
         assert!(!d.is_empty());
     }
 

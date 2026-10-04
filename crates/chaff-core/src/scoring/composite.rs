@@ -586,7 +586,7 @@ mod tests {
                 f
             })
             .collect();
-        shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS)
+        shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise")
     }
 
     // ---------------------------------------------------------------------
@@ -712,7 +712,7 @@ mod tests {
                 f
             })
             .collect();
-        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         let s = score_all(&n, &default_preset().weights, &BandThresholds::default(), "Balanced");
         assert!(s[9].composite > 90.0, "best frame scored {}", s[9].composite);
         assert!(s[0].composite < 10.0, "worst frame scored {}", s[0].composite);
@@ -737,7 +737,7 @@ mod tests {
                 f
             })
             .collect();
-        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         let s = score_all(&n, &default_preset().weights, &BandThresholds::default(), "Balanced");
         let first = s[0].composite;
         assert!(
@@ -770,7 +770,7 @@ mod tests {
                 f
             })
             .collect();
-        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         let s = score_all(&n, &default_preset().weights, &BandThresholds::default(), "Balanced");
 
         let clip = s[9].terms.iter().find(|t| t.kind == TermKind::Clipping).unwrap();
@@ -810,7 +810,7 @@ mod tests {
                 f
             })
             .collect();
-        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
 
         let wildlife = score_with_preset(&n, "Wildlife", &BandThresholds::default()).unwrap();
         let portrait = score_with_preset(&n, "Portrait", &BandThresholds::default()).unwrap();
@@ -1105,7 +1105,7 @@ mod tests {
         let frames = vec![FrameMeasurement::new(1, "/lib")
             .with_camera(Some("X".into()))
             .with_capture_time(Some(1000))];
-        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        let n = shoot::normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS).expect("normalise");
         let s = score_all(&n, &default_preset().weights, &BandThresholds::default(), "Balanced");
         assert_eq!(s.len(), 1);
         assert!(s[0].composite.is_finite());

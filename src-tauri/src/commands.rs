@@ -103,7 +103,7 @@ pub struct DecisionView {
 
 impl From<store::Decision> for DecisionView {
     fn from(d: store::Decision) -> Self {
-        Self { rating: d.rating, rejected: d.rejected }
+        Self { rating: d.rating.get(), rejected: d.rejected }
     }
 }
 
@@ -182,7 +182,7 @@ pub async fn list_photos(
                     needs_review: p.needs_review,
                     composite,
                     band: composite.map(band_of),
-                    rating: d.rating,
+                    rating: d.rating.get(),
                     rejected: d.rejected,
                 }
             })
@@ -262,7 +262,7 @@ pub async fn set_decision(
         let previous = store::set_decision(
             &conn,
             photo_id,
-            store::Decision { rating: rating.min(5), rejected },
+            store::Decision { rating: store::Rating::new(rating), rejected },
             now,
         )
         .map_err(err)?;
@@ -377,15 +377,6 @@ pub fn initialise(app: &tauri::AppHandle) -> Result<AppState, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_rating_above_five_is_clamped_rather_than_stored() {
-        // The schema rejects six stars, so an out-of-range value from a buggy frontend
-        // would surface as a database error rather than as a wrong rating. Clamping here
-        // means the user sees a five-star photograph and a working application.
-        let clamped = 9u8.min(5);
-        assert_eq!(clamped, 5);
-    }
 
     #[test]
     fn size_names_map_to_the_three_sizes() {

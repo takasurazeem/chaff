@@ -324,9 +324,8 @@ fn walk_jpeg(data: &[u8], start: usize) -> Option<JpegSpan> {
 
         if marker == 0xDA {
             // Start of scan. Entropy-coded data runs until the real end-of-image.
-            if dims.is_none() {
-                return None; // no frame header seen, so this is not a usable stream
-            }
+            // A start-of-scan before any frame header is not a usable stream.
+            dims?;
             let mut k = after_marker + len;
             loop {
                 if k + 1 >= data.len() {

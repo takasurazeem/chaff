@@ -166,8 +166,8 @@ pub const DEFAULT_CAP_BYTES: u64 = 512 * 1024 * 1024;
 
 /// JPEG quality for stored thumbnails.
 ///
-/// 82. High enough that a grid cell is not visibly artefacted, low enough that the cache
-/// stays small. These are previews, not deliverables — the original is always there.
+/// Set to 82: high enough that a grid cell is not visibly artefacted, low enough that the
+/// cache stays small. These are previews, not deliverables — the original is always there.
 pub const THUMB_QUALITY: u8 = 82;
 
 /// A bounded, content-addressed thumbnail store on disk.
@@ -199,12 +199,18 @@ impl ThumbnailCache {
         self.cap_bytes
     }
 
+    /// The shard directory holding a given key and size.
+    ///
+    /// Separate from [`Self::path_for`] so a caller that needs the directory does not have
+    /// to take the file path apart and `expect` a parent — which is a panic in a library,
+    /// however certain the invariant.
+    fn dir_for(&self, key: &CacheKey, size: ThumbSize) -> PathBuf {
+        self.root.join(size.dir_name()).join(key.shard())
+    }
+
     /// Where a given key and size live.
     pub fn path_for(&self, key: &CacheKey, size: ThumbSize) -> PathBuf {
-        self.root
-            .join(size.dir_name())
-            .join(key.shard())
-            .join(format!("{}.jpg", key.as_str()))
+        self.dir_for(key, size).join(format!("{}.jpg", key.as_str()))
     }
 
     /// Look up a thumbnail, marking it as recently used.
@@ -250,10 +256,10 @@ impl ThumbnailCache {
     /// would be served as a corrupt thumbnail and would never be regenerated, because the
     /// cache would consider the key present.
     pub fn put(&self, key: &CacheKey, size: ThumbSize, bytes: &[u8]) -> Result<PathBuf, ThumbError> {
-        let path = self.path_for(key, size);
-        let dir = path.parent().expect("path always has a parent");
-        std::fs::create_dir_all(dir).map_err(|source| ThumbError::Io {
-            path: dir.to_path_buf(),
+        let dir = self.dir_for(key, size);
+        let path = dir.join(format!("{}.jpg", key.as_str()));
+        std::fs::create_dir_all(&dir).map_err(|source| ThumbError::Io {
+            path: dir.clone(),
             source,
         })?;
 
@@ -517,6 +523,22 @@ mod tests {
         ThumbnailCache::open(dir.join("thumbs"), cap).expect("open cache")
     }
 
+    /// Set a file's modification time.
+    ///
+    /// **Opened for writing, not read-only.** On Unix `futimens` works through a read-only
+    /// descriptor; on Windows `SetFileTime` needs `FILE_WRITE_ATTRIBUTES`, so
+    /// `File::open(..).set_modified(..)` fails there and succeeds here. Three eviction
+    /// tests passed on macOS and Linux for six rounds while failing on Windows, because
+    /// this is the kind of difference a single-platform test run cannot see.
+    fn set_mtime(path: &Path, t: SystemTime) {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .expect("open for mtime")
+            .set_modified(t)
+            .expect("set mtime");
+    }
+
     /// A tiny but real JPEG, so generation paths are exercised rather than stubbed.
     fn source_jpeg(w: u32, h: u32) -> Vec<u8> {
         let img = image::RgbImage::from_fn(w, h, |x, y| {
@@ -646,7 +668,7 @@ mod tests {
 
         // Backdate it past the interval and it must be re-stamped.
         let old = SystemTime::now() - TOUCH_INTERVAL - Duration::from_secs(60);
-        std::fs::File::open(&path).unwrap().set_modified(old).unwrap();
+        set_mtime(&path, old);
         let _ = c.get(&key, ThumbSize::Grid);
         let after = std::fs::metadata(&path).unwrap().modified().unwrap();
         assert!(after > old, "a stale entry must be re-stamped so LRU stays accurate");
@@ -698,7 +720,7 @@ mod tests {
         let base = SystemTime::now() - Duration::from_secs(3600);
         for (i, p) in paths.iter().enumerate() {
             let t = base + Duration::from_secs(i as u64 * 60);
-            std::fs::File::open(p).unwrap().set_modified(t).unwrap();
+            set_mtime(p, t);
         }
 
         let report = c.evict_to_cap().unwrap();
@@ -743,7 +765,7 @@ mod tests {
         let base = SystemTime::now() - TOUCH_INTERVAL - Duration::from_secs(600);
         for (i, p) in paths.iter().enumerate() {
             let t = base + Duration::from_secs(i as u64 * 100);
-            std::fs::File::open(p).unwrap().set_modified(t).unwrap();
+            set_mtime(p, t);
         }
 
         // Use the oldest one, making it the most recently used.
