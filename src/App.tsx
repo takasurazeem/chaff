@@ -83,7 +83,20 @@ export default function App() {
   const columns = useRef<number>(1);
 
   const chooseFolder = useCallback(async () => {
-    const picked = await openFolderDialog({ directory: true, multiple: false });
+    // **Inside the try, not outside it.** This call used to sit above the try/catch, so a
+    // failure to open the picker — which is what an unregistered plugin causes — rejected
+    // silently and the button did nothing with no explanation. A dialog that cannot open
+    // must say so.
+    let picked: string | string[] | null;
+    try {
+      picked = await openFolderDialog({ directory: true, multiple: false });
+    } catch (e) {
+      setStatus({
+        kind: "error",
+        message: `Could not open the folder picker: ${String(e)}`,
+      });
+      return;
+    }
     if (typeof picked !== "string") return;
 
     setStatus({ kind: "indexing", root: picked });

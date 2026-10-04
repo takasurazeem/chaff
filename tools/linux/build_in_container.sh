@@ -39,11 +39,18 @@ fi
 echo "rustc: $(rustc --version 2>/dev/null || echo MISSING)"
 '
 
+echo "=== building the frontend ==="
+# The release binary embeds ../dist. Building it without the frontend present produces a
+# binary that starts and shows an empty window.
+( cd "$SRC" && pnpm build )
+
 echo "=== building ==="
 distrobox enter "$CONTAINER" -- bash -lc "
 set -e
 cd '$SRC'
-cargo build --release -p chaff
+# **--features custom-protocol is not optional.** Without it the binary serves devUrl
+# instead of the embedded frontend and fails with 'Could not connect to localhost'.
+cargo build --release -p chaff --features custom-protocol
 ls -la target/release/chaff
 "
 

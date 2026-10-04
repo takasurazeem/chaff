@@ -17,6 +17,14 @@ pub use chaff_core;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // **The folder picker.** The dependency and the JS package were both installed and
+        // this line was missing, so `openFolderDialog()` invoked a command that did not
+        // exist. The promise rejected, the rejection was outside a try/catch, and the
+        // button did nothing at all — which is exactly how it behaved.
+        //
+        // Every plugin the frontend calls has to be registered here. A plugin that is
+        // installed but not registered fails at runtime and only at runtime.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // The catalog and the thumbnail cache live under the app data directory, never
             // inside the user's library. Nothing Chaff writes is written beside their

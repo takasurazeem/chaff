@@ -26,3 +26,14 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2.8.1"
+
+[features]
+# **Required for a release build.** Without it the binary serves `devUrl`
+# (`http://localhost:1420`) instead of the bundled frontend, so a standalone build shows
+# "Could not connect to localhost: Connection Refused".
+#
+# `tauri build` enables this automatically, which is why the macOS bundle worked and the
+# Linux one — built with a bare `cargo build --release` — did not. Any build that does not
+# go through the Tauri CLI must pass `--features custom-protocol`.
+default = []
+custom-protocol = ["tauri/custom-protocol"]
