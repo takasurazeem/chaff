@@ -89,15 +89,35 @@ pub const ALL_METRICS: [Metric; 8] = [
 
 const N_METRICS: usize = ALL_METRICS.len();
 
-/// Which metrics are better when *lower*, so callers do not have to remember.
+/// Which way a metric points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    HigherIsBetter,
+    LowerIsBetter,
+    /// Neither direction is better. The value is a diagnostic and must not be ranked.
+    NotRanked,
+}
+
+/// Which way a metric points.
 ///
 /// Getting this backwards inverts a ranking silently, and an inverted ranking looks
-/// exactly like a working one until someone checks the keepers.
-pub fn higher_is_better(metric: Metric) -> bool {
-    matches!(
-        metric,
-        Metric::Focus | Metric::Detail | Metric::ExposureRange | Metric::ExposureMean
-    )
+/// exactly like a working one until someone checks the keepers. Three variants rather
+/// than a bool, because two of these metrics genuinely have no better direction and
+/// forcing them into "higher is better" was a bug:
+///
+/// * **`ExposureMean`** — a mean level of 0.9 is not better than 0.5, it is blown. The
+///   first version of this function returned `true` for it, which would have rewarded
+///   overexposure. Exposure *quality* is carried by `ExposureRange` and the clipping
+///   fractions; the mean is reported so a human can see it.
+/// * **`Anisotropy`** — a high value can mean motion blur or a genuinely directional
+///   scene, and a single frame cannot tell them apart (see `focus::ShootBaseline`).
+///   Ranking it would reward whichever it happened to be.
+pub fn direction(metric: Metric) -> Direction {
+    match metric {
+        Metric::Focus | Metric::Detail | Metric::ExposureRange => Direction::HigherIsBetter,
+        Metric::ClippedHigh | Metric::ClippedLow | Metric::Noise => Direction::LowerIsBetter,
+        Metric::ExposureMean | Metric::Anisotropy => Direction::NotRanked,
+    }
 }
 
 /// One frame's raw measurements plus the identity needed to group it.
@@ -282,6 +302,13 @@ pub struct Normalised {
     pub in_shoot: [f64; N_METRICS],
     /// Percentile rank across the whole library, 0..100. The fallback reference.
     pub in_library: [f64; N_METRICS],
+    /// The raw measurement each rank was computed from.
+    ///
+    /// Carried through so an explanation can quote the actual number — "3.1% of pixels
+    /// clipped" rather than "the 12th percentile". Without it, a caller wanting to
+    /// explain a score has only the rank and ends up printing a percentile as though it
+    /// were a measurement, which is how "2100% of the range used" gets shown to a user.
+    pub raw: [f64; N_METRICS],
 }
 
 impl Normalised {
@@ -291,6 +318,11 @@ impl Normalised {
 
     pub fn library_percentile(&self, metric: Metric) -> f64 {
         self.in_library[metric as usize]
+    }
+
+    /// The underlying measurement, in its own units.
+    pub fn raw_value(&self, metric: Metric) -> f64 {
+        self.raw[metric as usize]
     }
 
     /// The percentile a caller should actually use, given whether the shoot was large
@@ -305,14 +337,15 @@ impl Normalised {
 
     /// Percentile oriented so that higher is always better, in 0..100.
     ///
-    /// The orientation is applied here, once, so no caller has to remember which metrics
-    /// are inverted. An inverted ranking is invisible until someone inspects the keepers.
-    pub fn score_percentile(&self, metric: Metric) -> f64 {
+    /// Returns `None` for a metric with no better direction, rather than inventing one.
+    /// The type is what stops a caller ranking `ExposureMean` and rewarding a blown
+    /// frame — the previous boolean version silently returned `true` for it.
+    pub fn score_percentile(&self, metric: Metric) -> Option<f64> {
         let p = self.effective_percentile(metric);
-        if higher_is_better(metric) {
-            p
-        } else {
-            100.0 - p
+        match direction(metric) {
+            Direction::HigherIsBetter => Some(p),
+            Direction::LowerIsBetter => Some(100.0 - p),
+            Direction::NotRanked => None,
         }
     }
 }
@@ -393,8 +426,10 @@ pub fn normalise(frames: &[FrameMeasurement], gap_seconds: i64) -> Vec<Normalise
                 row[mi] = in_shoot[mi][pos];
             }
             let mut lib = [0.0; N_METRICS];
-            for mi in 0..N_METRICS {
+            let mut raw = [0.0; N_METRICS];
+            for (mi, metric) in ALL_METRICS.iter().enumerate() {
                 lib[mi] = library[mi][frame_idx];
+                raw[mi] = frames[frame_idx].get(*metric);
             }
 
             out[frame_idx] = Some(Normalised {
@@ -404,6 +439,7 @@ pub fn normalise(frames: &[FrameMeasurement], gap_seconds: i64) -> Vec<Normalise
                 shoot_relative,
                 in_shoot: row,
                 in_library: lib,
+                raw,
             });
         }
     }
@@ -638,8 +674,8 @@ mod tests {
         assert!(n.iter().all(|x| x.shoot_relative), "ten frames is enough to rank");
         // Frame 9 has the highest focus and must rank above frame 0.
         assert!(n[9].shoot_percentile(Metric::Focus) > n[0].shoot_percentile(Metric::Focus));
-        assert!(n[9].score_percentile(Metric::Focus) > 87.0);
-        assert!(n[0].score_percentile(Metric::Focus) < 13.0);
+        assert!(n[9].score_percentile(Metric::Focus).unwrap() > 87.0);
+        assert!(n[0].score_percentile(Metric::Focus).unwrap() < 13.0);
     }
 
     #[test]
@@ -696,23 +732,51 @@ mod tests {
             "the raw rank follows the value"
         );
         assert!(
-            n[9].score_percentile(Metric::Noise) < n[0].score_percentile(Metric::Noise),
+            n[9].score_percentile(Metric::Noise).unwrap()
+                < n[0].score_percentile(Metric::Noise).unwrap(),
             "but the oriented score must invert it: noisier is worse"
         );
-        assert!(n[0].score_percentile(Metric::Noise) > 87.0, "the cleanest frame scores best");
+        assert!(
+            n[0].score_percentile(Metric::Noise).unwrap() > 87.0,
+            "the cleanest frame scores best"
+        );
     }
 
     #[test]
-    fn higher_is_better_is_declared_for_every_metric() {
-        // Exhaustive so that adding a metric forces a decision rather than defaulting to
-        // "higher is better" for something like noise.
-        for m in ALL_METRICS {
-            let _ = higher_is_better(m);
+    fn every_metric_declares_a_direction() {
+        assert_eq!(direction(Metric::Focus), Direction::HigherIsBetter);
+        assert_eq!(direction(Metric::Detail), Direction::HigherIsBetter);
+        assert_eq!(direction(Metric::ExposureRange), Direction::HigherIsBetter);
+        assert_eq!(direction(Metric::Noise), Direction::LowerIsBetter);
+        assert_eq!(direction(Metric::ClippedHigh), Direction::LowerIsBetter);
+        assert_eq!(direction(Metric::ClippedLow), Direction::LowerIsBetter);
+    }
+
+    #[test]
+    fn a_blown_mean_is_not_ranked_as_better_than_a_correct_one() {
+        // The bug this replaced: `higher_is_better(ExposureMean)` returned true, which
+        // would have rewarded overexposure. A mean of 0.9 is not better than 0.5.
+        assert_eq!(direction(Metric::ExposureMean), Direction::NotRanked);
+
+        let mut frames: Vec<_> = (0..10)
+            .map(|i| frame(i, "/lib", Some("X"), Some(1000 + i), 1.0))
+            .collect();
+        for (i, f) in frames.iter_mut().enumerate() {
+            f.set(Metric::ExposureMean, i as f64 / 10.0); // frame 9 is blown
         }
-        assert!(higher_is_better(Metric::Focus));
-        assert!(!higher_is_better(Metric::Noise));
-        assert!(!higher_is_better(Metric::ClippedHigh));
-        assert!(!higher_is_better(Metric::ClippedLow));
+        let n = normalise(&frames, DEFAULT_SHOOT_GAP_SECONDS);
+        assert_eq!(
+            n[9].score_percentile(Metric::ExposureMean),
+            None,
+            "an unrankable metric must say so rather than pick a direction"
+        );
+    }
+
+    #[test]
+    fn anisotropy_is_not_ranked() {
+        // High anisotropy is motion blur or a directional scene, and one frame cannot
+        // tell them apart. Ranking it would reward whichever it happened to be.
+        assert_eq!(direction(Metric::Anisotropy), Direction::NotRanked);
     }
 
     #[test]
@@ -755,9 +819,9 @@ mod tests {
             a.shoot_percentile(Metric::Noise).partial_cmp(&b.shoot_percentile(Metric::Noise)).unwrap()
         }).unwrap();
         assert!(
-            best_noisy.score_percentile(Metric::Noise) > 80.0,
+            best_noisy.score_percentile(Metric::Noise).unwrap() > 80.0,
             "the cleanest frame of a noisy shoot must score well within that shoot, got {:.1}",
-            best_noisy.score_percentile(Metric::Noise)
+            best_noisy.score_percentile(Metric::Noise).unwrap()
         );
     }
 

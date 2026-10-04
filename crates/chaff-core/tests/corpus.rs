@@ -698,11 +698,15 @@ fn the_full_scoring_pipeline_runs_over_real_photographs() {
                 p.is_finite() && (0.0..=100.0).contains(&p),
                 "percentile for {metric:?} was {p}"
             );
-            let oriented = n.score_percentile(metric);
-            assert!(
-                oriented.is_finite() && (0.0..=100.0).contains(&oriented),
-                "oriented score for {metric:?} was {oriented}"
-            );
+            // `score_percentile` is `Option` because some metrics have no better
+            // direction (a blown mean is not "better" than a correct one). When it is
+            // Some it must be a usable percentage.
+            if let Some(oriented) = n.score_percentile(metric) {
+                assert!(
+                    oriented.is_finite() && (0.0..=100.0).contains(&oriented),
+                    "oriented score for {metric:?} was {oriented}"
+                );
+            }
         }
     }
 
@@ -749,4 +753,103 @@ fn shoot_normalisation_over_the_real_corpus_is_deterministic() {
     let a = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS);
     let b = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS);
     assert_eq!(a, b, "the same photographs must rank the same on every run");
+}
+
+// ---------------------------------------------------------------------------
+// Composite scoring and explanations over real photographs
+// ---------------------------------------------------------------------------
+fn real_scores() -> Vec<chaff_core::scoring::composite::Score> {
+    use chaff_core::scoring::composite::{self, BandThresholds};
+    use chaff_core::scoring::shoot::{self, FrameMeasurement};
+
+    let measurements: Vec<FrameMeasurement> = jpegs()
+        .iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let meas = measurements_for(path);
+            let mut m = FrameMeasurement::from_focus(i as i64, "/corpus", &meas.focus);
+            m.from_exposure(&meas.exposure);
+            m
+        })
+        .collect();
+
+    let normalised = shoot::normalise(&measurements, shoot::DEFAULT_SHOOT_GAP_SECONDS);
+    let preset = composite::default_preset();
+    composite::score_all(&normalised, &preset.weights, &BandThresholds::default(), preset.name)
+}
+
+#[test]
+#[ignore]
+fn real_corpus_score_report() {
+    if skip("score report") {
+        return;
+    }
+    let mut scores = real_scores();
+    scores.sort_by(|a, b| b.composite.partial_cmp(&a.composite).unwrap());
+
+    println!("\n{:<8} {:>6} {:>7}  explanation", "photo", "score", "band");
+    println!("{}", "-".repeat(96));
+    for s in &scores {
+        let lines = s.explain();
+        println!("{:<8} {:>6.1} {:>7}  {}", format!("#{}", s.photo_id), s.composite, s.band.label(), lines[1].trim());
+        for l in &lines[2..] {
+            println!("{:<8} {:>6} {:>7}  {}", "", "", "", l.trim());
+        }
+    }
+
+    let bands = |b| scores.iter().filter(|s| s.band == b).count();
+    println!(
+        "\nKeep {} | Review {} | Reject {}  (of {})",
+        bands(chaff_core::scoring::composite::Band::Keep),
+        bands(chaff_core::scoring::composite::Band::Review),
+        bands(chaff_core::scoring::composite::Band::Reject),
+        scores.len()
+    );
+    println!();
+}
+
+#[test]
+fn real_photographs_get_scores_bands_and_explanations() {
+    if skip("real scoring") {
+        return;
+    }
+    use chaff_core::scoring::composite::{Band, BandThresholds};
+
+    let scores = real_scores();
+    assert_eq!(scores.len(), jpegs().len());
+
+    for s in &scores {
+        assert!(s.composite.is_finite() && (0.0..=100.0).contains(&s.composite));
+        assert_eq!(s.terms.len(), 5, "every score must carry all five terms");
+        assert!(BandThresholds::default().is_valid());
+
+        // Every score must be explainable, and the explanation must account for the
+        // number. A score that cannot be attributed is one the user cannot check.
+        let lines = s.explain();
+        assert!(lines.len() >= 3, "an explanation needs a verdict and at least one term");
+        let sum: f64 = s.terms.iter().map(|t| t.contribution).sum();
+        assert!(
+            (sum - s.composite).abs() < 1e-9,
+            "photo {}: contributions sum to {sum}, composite is {}",
+            s.photo_id,
+            s.composite
+        );
+    }
+
+    // The bands must not all be the same, or the scoring is not separating anything.
+    let distinct: std::collections::BTreeSet<&str> =
+        scores.iter().map(|s| s.band.label()).collect();
+    assert!(
+        distinct.len() >= 2,
+        "every real photograph landed in one band ({distinct:?}) — the composite is not \
+         discriminating"
+    );
+}
+
+#[test]
+fn real_photograph_scoring_is_deterministic() {
+    if skip("real scoring determinism") {
+        return;
+    }
+    assert_eq!(real_scores(), real_scores());
 }
