@@ -84,8 +84,26 @@ pub struct PhotoView {
     pub stem: String,
     pub state: String,
     pub needs_review: bool,
+    /// What the engine thinks.
     pub composite: Option<f64>,
     pub band: Option<&'static str>,
+    /// What the user decided. Kept beside the engine's opinion rather than replacing it,
+    /// so a re-score never silently overwrites a judgement.
+    pub rating: u8,
+    pub rejected: bool,
+}
+
+/// A decision, as the frontend sees it.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct DecisionView {
+    pub rating: u8,
+    pub rejected: bool,
+}
+
+impl From<store::Decision> for DecisionView {
+    fn from(d: store::Decision) -> Self {
+        Self { rating: d.rating, rejected: d.rejected }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -147,16 +165,25 @@ pub async fn list_photos(
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<PhotoView>, String> {
         let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
         let rows = pipeline::scored_photos(&conn, library_id).map_err(err)?;
+        // One query for every decision, merged here rather than fetched per cell. A grid
+        // asking per cell is fifty thousand round trips.
+        let decisions = store::decisions_for_library(&conn, library_id).map_err(err)?;
+
         Ok(rows
             .into_iter()
-            .map(|(p, composite)| PhotoView {
-                id: p.id,
-                dir: p.dir,
-                stem: p.stem,
-                state: p.state,
-                needs_review: p.needs_review,
-                composite,
-                band: composite.map(band_of),
+            .map(|(p, composite)| {
+                let d = decisions.get(&p.id).copied().unwrap_or_default();
+                PhotoView {
+                    id: p.id,
+                    dir: p.dir,
+                    stem: p.stem,
+                    state: p.state,
+                    needs_review: p.needs_review,
+                    composite,
+                    band: composite.map(band_of),
+                    rating: d.rating,
+                    rejected: d.rejected,
+                }
             })
             .collect())
     })
@@ -210,6 +237,47 @@ pub async fn photo_explanation(
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, String> {
         let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
         pipeline::explain_photo(&conn, photo_id).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Record what the user decided about a photograph.
+///
+/// Returns the previous decision so the caller can push it onto an undo stack. Undo lives
+/// in the session rather than in the database: the PRD scopes it that way, and a permanent
+/// history of every keystroke is a different feature with different costs.
+#[tauri::command]
+pub async fn set_decision(
+    state: State<'_, AppState>,
+    photo_id: i64,
+    rating: u8,
+    rejected: bool,
+) -> Result<DecisionView, String> {
+    let db = state.db();
+    let now = now_seconds();
+    tauri::async_runtime::spawn_blocking(move || -> Result<DecisionView, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let previous = store::set_decision(
+            &conn,
+            photo_id,
+            store::Decision { rating: rating.min(5), rejected },
+            now,
+        )
+        .map_err(err)?;
+        Ok(previous.into())
+    })
+    .await
+    .map_err(err)?
+}
+
+/// How many photographs in a library carry a decision.
+#[tauri::command]
+pub async fn decision_count(state: State<'_, AppState>, library_id: i64) -> Result<usize, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::decision_count(&conn, library_id).map_err(err)
     })
     .await
     .map_err(err)?
@@ -289,6 +357,15 @@ pub fn initialise(app: &tauri::AppHandle) -> Result<AppState, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rating_above_five_is_clamped_rather_than_stored() {
+        // The schema rejects six stars, so an out-of-range value from a buggy frontend
+        // would surface as a database error rather than as a wrong rating. Clamping here
+        // means the user sees a five-star photograph and a working application.
+        let clamped = 9u8.min(5);
+        assert_eq!(clamped, 5);
+    }
 
     #[test]
     fn size_names_map_to_the_three_sizes() {

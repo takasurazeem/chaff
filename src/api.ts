@@ -6,7 +6,7 @@
  * thing that reaches a user; keeping them here makes it one place to check.
  */
 import { invoke } from "@tauri-apps/api/core";
-import type { LibraryView, PhotoView, ThumbnailView, ThumbSize } from "./types";
+import type { DecisionView, LibraryView, PhotoView, ThumbnailView, ThumbSize } from "./types";
 
 /**
  * Index a folder and score it.
@@ -39,6 +39,21 @@ export async function photoThumbnail(
 /** The explanation for one photograph's score, rebuilt from stored terms. */
 export async function photoExplanation(photoId: number): Promise<string[]> {
   return invoke<string[]>("photo_explanation", { photoId });
+}
+
+/**
+ * Record what the user decided.
+ *
+ * Returns the **previous** decision, which is what an undo stack is built from. The
+ * frontend updates its own state optimistically and pushes this value, so undo restores
+ * exactly what was there rather than guessing.
+ */
+export async function setDecision(
+  photoId: number,
+  rating: number,
+  rejected: boolean,
+): Promise<DecisionView> {
+  return invoke<DecisionView>("set_decision", { photoId, rating, rejected });
 }
 
 /** Force the thumbnail cache back inside its cap. */

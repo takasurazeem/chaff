@@ -35,6 +35,15 @@ export interface PhotoView {
   needs_review: boolean;
   composite: number | null;
   band: Band | null;
+  /** What the user decided. Kept beside the engine's opinion, not instead of it. */
+  rating: number;
+  rejected: boolean;
+}
+
+/** A decision, as the Rust side reports it. */
+export interface DecisionView {
+  rating: number;
+  rejected: boolean;
 }
 
 /** A rendered thumbnail's location inside the cache. */

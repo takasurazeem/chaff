@@ -17,6 +17,9 @@ import { Tile } from "./Tile";
 interface GridProps {
   photos: PhotoView[];
   selected: Set<number>;
+  /** The user's decisions, keyed by photograph id. Held apart from `photos` so a
+   *  keystroke does not rebuild a fifty-thousand-element array. */
+  decisions: Map<number, { rating: number; rejected: boolean }>;
   onActivate: (photo: PhotoView, event: React.MouseEvent) => void;
   onScrollingChange?: (scrolling: boolean) => void;
   /** Reported upward so arrow-key navigation can move by a row. */
@@ -30,6 +33,7 @@ const GAP = 8;
 export function Grid({
   photos,
   selected,
+  decisions,
   onActivate,
   onScrollingChange,
   onColumnsChange,
@@ -112,17 +116,22 @@ export function Grid({
               paddingRight: GAP,
             }}
           >
-            {cells.map((photo) => (
-              <Tile
-                key={photo.id}
-                photo={photo}
-                width={cellWidth}
-                height={cellHeight}
-                selected={selected.has(photo.id)}
-                scrolling={scrolling}
-                onActivate={handleActivate}
-              />
-            ))}
+            {cells.map((photo) => {
+              const decision = decisions.get(photo.id);
+              return (
+                <Tile
+                  key={photo.id}
+                  photo={photo}
+                  width={cellWidth}
+                  height={cellHeight}
+                  selected={selected.has(photo.id)}
+                  scrolling={scrolling}
+                  rating={decision?.rating ?? photo.rating}
+                  rejected={decision?.rejected ?? photo.rejected}
+                  onActivate={handleActivate}
+                />
+              );
+            })}
           </div>
         ))}
       </div>

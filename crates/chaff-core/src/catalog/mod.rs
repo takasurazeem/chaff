@@ -55,6 +55,7 @@ pub enum CatalogError {
 pub const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("../../migrations/001_init.sql")),
     (2, include_str!("../../migrations/002_exif.sql")),
+    (3, include_str!("../../migrations/003_decision.sql")),
 ];
 
 /// Highest schema version this build understands.

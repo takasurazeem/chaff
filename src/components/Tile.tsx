@@ -8,6 +8,7 @@
 import { memo } from "react";
 import type { PhotoView } from "../types";
 import { useThumbnail } from "../hooks/useThumbnails";
+import { Stars } from "./Stars";
 
 interface TileProps {
   photo: PhotoView;
@@ -17,6 +18,9 @@ interface TileProps {
   selected: boolean;
   /** True while the grid is scrolling: thumbnails are deferred until it settles. */
   scrolling: boolean;
+  /** The user's decision, which is separate from the engine's band. */
+  rating: number;
+  rejected: boolean;
   onActivate: (photo: PhotoView, event: React.MouseEvent) => void;
 }
 
@@ -32,7 +36,16 @@ const BAND_LABEL: Record<string, string> = {
   reject: "X",
 };
 
-function TileInner({ photo, width, height, selected, scrolling, onActivate }: TileProps) {
+function TileInner({
+  photo,
+  width,
+  height,
+  selected,
+  scrolling,
+  rating,
+  rejected,
+  onActivate,
+}: TileProps) {
   // Deferred while scrolling. A fast scroll mounts and unmounts cells faster than a
   // thumbnail can be rendered, so fetching for them is pure waste — and it competes for
   // the same thread pool as the cells the user has actually stopped on.
@@ -54,7 +67,14 @@ function TileInner({ photo, width, height, selected, scrolling, onActivate }: Ti
           : "ring-zinc-800 hover:ring-zinc-600 focus-visible:ring-2 focus-visible:ring-sky-400",
         "focus:outline-none",
       ].join(" ")}
-      aria-label={`${photo.stem}${score === null ? "" : `, score ${score}`}`}
+      aria-label={[
+        photo.stem,
+        score === null ? null : `score ${score}`,
+        rating > 0 ? `${rating} stars` : null,
+        rejected ? "rejected" : null,
+      ]
+        .filter(Boolean)
+        .join(", ")}
       aria-pressed={selected}
     >
       {thumb.status === "ready" ? (
@@ -72,6 +92,21 @@ function TileInner({ photo, width, height, selected, scrolling, onActivate }: Ti
             {thumb.status === "unavailable" ? photo.stem : ""}
           </span>
         </div>
+      )}
+
+      {/* Rejected is a state of the photograph, not a tint: the cell dims and takes a
+          rose edge, so it reads as "set aside" at a glance without hiding the image. */}
+      {rejected && (
+        <>
+          <span className="pointer-events-none absolute inset-0 bg-rose-950/45" />
+          <span className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-rose-500/80" />
+        </>
+      )}
+
+      {rating > 0 && (
+        <span className="absolute left-1 top-1 rounded bg-black/65 px-1 py-px">
+          <Stars rating={rating} />
+        </span>
       )}
 
       {photo.needs_review && (

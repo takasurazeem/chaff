@@ -670,6 +670,155 @@ mod tests {
         assert_eq!(stats_total_files(&conn, lib), 0, "files must cascade with the photo");
     }
 
+    // ---------------------------------------------------------------------
+    // Decisions
+    // ---------------------------------------------------------------------
+    #[test]
+    fn setting_a_decision_returns_what_it_replaced() {
+        // The previous value is what an undo stack is built from.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+
+        // Nothing set yet.
+        let previous = set_decision(&conn, id, Decision { rating: 4, rejected: false }, 200).unwrap();
+        assert!(previous.is_unrated(), "the first decision replaces nothing");
+
+        let previous = set_decision(&conn, id, Decision { rating: 5, rejected: false }, 300).unwrap();
+        assert_eq!(previous, Decision { rating: 4, rejected: false });
+
+        assert_eq!(
+            decision_for_photo(&conn, id).unwrap(),
+            Some(Decision { rating: 5, rejected: false })
+        );
+    }
+
+    #[test]
+    fn a_reject_flag_keeps_the_rating_beside_it() {
+        // A flag beside the stars, not a rating value. Every photo tool behaves this way
+        // and a rejected photograph that silently lost its rating would be a surprise.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+
+        set_decision(&conn, id, Decision { rating: 3, rejected: false }, 200).unwrap();
+        set_decision(&conn, id, Decision { rating: 3, rejected: true }, 300).unwrap();
+
+        let d = decision_for_photo(&conn, id).unwrap().unwrap();
+        assert_eq!(d.rating, 3, "rejecting must not clear the rating");
+        assert!(d.rejected);
+    }
+
+    #[test]
+    fn decisions_survive_a_re_index_that_recomputes_everything_else() {
+        // **The property that matters most.** Scores are derived and get rewritten on
+        // every pass. Decisions exist nowhere else and must not be touched.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3", "/lib/IMG_0001.JPG"];
+        let meta = meta_for(&files, 10, 1);
+
+        index(&mut conn, lib, &files, &meta, 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+        set_decision(&conn, id, Decision { rating: 5, rejected: false }, 150).unwrap();
+
+        // Re-index, and re-score at a new version for good measure.
+        index(&mut conn, lib, &files, &meta, 200);
+        upsert_score(&conn, id, "composite", 12.0, 99, 200).unwrap();
+
+        let after = photos(&conn, lib).unwrap()[0].id;
+        assert_eq!(after, id, "a re-index of unchanged files keeps the same photograph row");
+        assert_eq!(
+            decision_for_photo(&conn, id).unwrap(),
+            Some(Decision { rating: 5, rejected: false }),
+            "re-indexing must not disturb the user's judgement"
+        );
+    }
+
+    #[test]
+    fn deleting_a_photograph_takes_its_decision_with_it() {
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+        set_decision(&conn, id, Decision { rating: 4, rejected: false }, 200).unwrap();
+
+        conn.execute("DELETE FROM photo WHERE id = ?1", params![id]).unwrap();
+        assert_eq!(decision_for_photo(&conn, id).unwrap(), None);
+    }
+
+    #[test]
+    fn decisions_can_be_listed_for_a_whole_library_at_once() {
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3", "/lib/IMG_0002.CR3", "/lib/IMG_0003.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let all = photos(&conn, lib).unwrap();
+
+        set_decision(&conn, all[0].id, Decision { rating: 5, rejected: false }, 200).unwrap();
+        set_decision(&conn, all[1].id, Decision { rating: 0, rejected: true }, 200).unwrap();
+
+        let map = decisions_for_library(&conn, lib).unwrap();
+        assert_eq!(map.len(), 2, "the third photograph is undecided and must be absent");
+        assert_eq!(map[&all[0].id].rating, 5);
+        assert!(map[&all[1].id].rejected);
+        assert!(!map.contains_key(&all[2].id));
+    }
+
+    #[test]
+    fn the_rating_range_is_enforced_by_the_schema() {
+        // A CHECK constraint rather than trust. Six stars is not a rating, and a value
+        // that escaped the UI would be stored happily without it.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+
+        for bad in [-1i64, 6, 99] {
+            let r = conn.execute(
+                "INSERT INTO decision (photo_id, rating, rejected, decided_at) VALUES (?1, ?2, 0, 1)",
+                params![id, bad],
+            );
+            assert!(r.is_err(), "rating {bad} must be rejected by the schema");
+        }
+    }
+
+    #[test]
+    fn the_decision_count_ignores_unrated_unrejected_rows() {
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3", "/lib/IMG_0002.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let all = photos(&conn, lib).unwrap();
+
+        assert_eq!(decision_count(&conn, lib).unwrap(), 0);
+        // An explicit zero is the same as undecided, and must not be counted as a decision.
+        set_decision(&conn, all[0].id, Decision { rating: 0, rejected: false }, 200).unwrap();
+        assert_eq!(decision_count(&conn, lib).unwrap(), 0);
+        set_decision(&conn, all[1].id, Decision { rating: 1, rejected: false }, 200).unwrap();
+        assert_eq!(decision_count(&conn, lib).unwrap(), 1);
+    }
+
+    #[test]
+    fn decisions_in_one_library_are_invisible_to_another() {
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let a = upsert_library(&conn, Path::new("/a"), 100).unwrap();
+        let b = upsert_library(&conn, Path::new("/b"), 100).unwrap();
+        let fa = ["/a/IMG_0001.CR3"];
+        index(&mut conn, a, &fa, &meta_for(&fa, 1, 1), 100);
+        let id = photos(&conn, a).unwrap()[0].id;
+        set_decision(&conn, id, Decision { rating: 5, rejected: false }, 200).unwrap();
+
+        assert_eq!(decisions_for_library(&conn, b).unwrap().len(), 0);
+        assert_eq!(decision_count(&conn, b).unwrap(), 0);
+    }
+
     #[test]
     fn stems_are_stored_normalised_so_platforms_agree() {
         // The same Unicode-correction that pair.rs applies must survive into storage,
@@ -894,4 +1043,107 @@ pub fn delete_scores_at_version(
 ) -> Result<usize, CatalogError> {
     let n = conn.execute("DELETE FROM score WHERE scorer_version = ?1", params![scorer_version])?;
     Ok(n)
+}
+
+// ---------------------------------------------------------------------------
+// Decisions — the user's own judgement
+// ---------------------------------------------------------------------------
+/// What a person decided about a photograph.
+///
+/// Distinct from [`super::super::scoring::composite::Band`], which is what the *engine*
+/// thinks. A photograph can be scored `Keep` and rated one star, or scored `Reject` and
+/// rated five. Both are stored, and neither overwrites the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Decision {
+    /// 0 means unrated, which is distinct from one star.
+    pub rating: u8,
+    pub rejected: bool,
+}
+
+impl Decision {
+    pub fn is_unrated(&self) -> bool {
+        self.rating == 0 && !self.rejected
+    }
+
+    /// The XMP `xmp:Rating` value this maps to. Kept here so the interop path (#54) and
+    /// the UI cannot disagree about what a rating means.
+    pub fn xmp_rating(&self) -> u8 {
+        self.rating
+    }
+}
+
+/// Set a photograph's decision, returning what it was before.
+///
+/// The previous value is returned so a caller can push it onto an undo stack. Undo lives
+/// in the session rather than in the database — the PRD scopes it that way, and a
+/// permanent history of every keystroke is a different feature with different costs.
+pub fn set_decision(
+    conn: &Connection,
+    photo_id: i64,
+    decision: Decision,
+    now: i64,
+) -> Result<Decision, CatalogError> {
+    let previous = decision_for_photo(conn, photo_id)?.unwrap_or_default();
+
+    conn.execute(
+        "INSERT INTO decision (photo_id, rating, rejected, decided_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (photo_id) DO UPDATE SET
+             rating     = excluded.rating,
+             rejected   = excluded.rejected,
+             decided_at = excluded.decided_at",
+        params![photo_id, decision.rating as i64, i64::from(decision.rejected), now],
+    )?;
+    Ok(previous)
+}
+
+pub fn decision_for_photo(
+    conn: &Connection,
+    photo_id: i64,
+) -> Result<Option<Decision>, CatalogError> {
+    let mut stmt =
+        conn.prepare("SELECT rating, rejected FROM decision WHERE photo_id = ?1")?;
+    let mut rows = stmt.query(params![photo_id])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(Decision {
+            rating: r.get::<_, i64>(0)? as u8,
+            rejected: r.get::<_, i64>(1)? != 0,
+        })),
+        None => Ok(None),
+    }
+}
+
+/// Every decision in a library, keyed by photograph.
+///
+/// One query rather than one per cell: the grid asks about fifty thousand photographs at
+/// once, and a round trip per cell is the difference between a grid that appears and one
+/// that crawls.
+pub fn decisions_for_library(
+    conn: &Connection,
+    library_id: i64,
+) -> Result<std::collections::HashMap<i64, Decision>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT d.photo_id, d.rating, d.rejected
+           FROM decision d
+           JOIN photo p ON p.id = d.photo_id
+          WHERE p.library_id = ?1",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            Decision { rating: r.get::<_, i64>(1)? as u8, rejected: r.get::<_, i64>(2)? != 0 },
+        ))
+    })?;
+    Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)
+}
+
+/// How many photographs in a library carry any decision at all.
+pub fn decision_count(conn: &Connection, library_id: i64) -> Result<usize, CatalogError> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM decision d JOIN photo p ON p.id = d.photo_id
+          WHERE p.library_id = ?1 AND (d.rating > 0 OR d.rejected = 1)",
+        params![library_id],
+        |r| r.get(0),
+    )?;
+    Ok(n as usize)
 }

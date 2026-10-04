@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-import { listPhotos, openLibrary } from "./api";
+import { listPhotos, openLibrary, setDecision } from "./api";
 import type { LibraryView, PhotoView } from "./types";
 import { Grid } from "./components/Grid";
 import "./index.css";
@@ -23,6 +23,31 @@ export default function App() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
+  /**
+   * The user's decisions, held apart from `photos`.
+   *
+   * A keystroke must not rebuild a fifty-thousand-element array, and it must not
+   * invalidate the memoised tiles either. A map keyed by id means one entry changes and
+   * only the tiles reading it re-render.
+   */
+  const [decisions, setDecisions] = useState<Map<number, { rating: number; rejected: boolean }>>(
+    new Map(),
+  );
+
+  /**
+   * Session undo stack.
+   *
+   * Holds the decision each action *replaced*, so undo restores exactly what was there
+   * rather than guessing a default. Bounded, because an unbounded stack over a long
+   * culling session is a slow memory leak — and the last few hundred actions are the ones
+   * anyone ever reaches for.
+   */
+  const undoStack = useRef<Array<{ photoId: number; previous: { rating: number; rejected: boolean } }>>(
+    [],
+  );
+  const [undoDepth, setUndoDepth] = useState(0);
+  const UNDO_LIMIT = 500;
+
   // Cursor for keyboard navigation: the photograph the arrow keys move from.
   const cursor = useRef<number>(0);
   const columns = useRef<number>(1);
@@ -37,6 +62,10 @@ export default function App() {
       const list = await listPhotos(view.library_id);
       setLibrary(view);
       setPhotos(list);
+      // Seed from what the catalog already holds, so a reopened library shows its ratings.
+      setDecisions(new Map(list.map((p) => [p.id, { rating: p.rating, rejected: p.rejected }])));
+      undoStack.current = [];
+      setUndoDepth(0);
       setSelected(new Set());
       cursor.current = 0;
       setStatus({ kind: "ready" });
@@ -74,6 +103,81 @@ export default function App() {
     [photos],
   );
 
+  /**
+   * Apply a decision to the current selection.
+   *
+   * Optimistic: the grid updates immediately and the write follows. A culling session is
+   * thousands of keystrokes, and waiting on a round trip per key makes the tool feel
+   * broken on a slow disk. If the write fails the change is rolled back and the reason is
+   * shown, because a rating that silently did not save is worse than one that visibly did
+   * not.
+   */
+  const applyDecision = useCallback(
+    async (mutate: (current: { rating: number; rejected: boolean }) => {
+      rating: number;
+      rejected: boolean;
+    }) => {
+      if (selected.size === 0) return;
+
+      const targets = photos.filter((p) => selected.has(p.id));
+      const before: Array<{ photoId: number; previous: { rating: number; rejected: boolean } }> = [];
+
+      setDecisions((prev) => {
+        const next = new Map(prev);
+        for (const p of targets) {
+          const current = next.get(p.id) ?? { rating: p.rating, rejected: p.rejected };
+          before.push({ photoId: p.id, previous: current });
+          next.set(p.id, mutate(current));
+        }
+        return next;
+      });
+
+      undoStack.current.push(...before);
+      if (undoStack.current.length > UNDO_LIMIT) {
+        undoStack.current.splice(0, undoStack.current.length - UNDO_LIMIT);
+      }
+      setUndoDepth(undoStack.current.length);
+
+      try {
+        await Promise.all(
+          before.map((b) => {
+            const d = mutate(b.previous);
+            return setDecision(b.photoId, d.rating, d.rejected);
+          }),
+        );
+      } catch (e) {
+        // Roll back to what was there before this action.
+        setDecisions((prev) => {
+          const next = new Map(prev);
+          for (const b of before) next.set(b.photoId, b.previous);
+          return next;
+        });
+        undoStack.current.splice(undoStack.current.length - before.length, before.length);
+        setUndoDepth(undoStack.current.length);
+        setStatus({ kind: "error", message: String(e) });
+      }
+    },
+    [photos, selected],
+  );
+
+  const undo = useCallback(async () => {
+    const entry = undoStack.current.pop();
+    if (!entry) return;
+    setUndoDepth(undoStack.current.length);
+
+    setDecisions((prev) => {
+      const next = new Map(prev);
+      next.set(entry.photoId, entry.previous);
+      return next;
+    });
+
+    try {
+      await setDecision(entry.photoId, entry.previous.rating, entry.previous.rejected);
+    } catch (e) {
+      setStatus({ kind: "error", message: String(e) });
+    }
+  }, []);
+
   // Arrow-key navigation. Kept here rather than in the grid because it moves the
   // selection, and the selection is the app's.
   useEffect(() => {
@@ -81,6 +185,26 @@ export default function App() {
       if (photos.length === 0) return;
       const cols = Math.max(1, columns.current);
       let next = cursor.current;
+
+      // Culling keys come first, so a rating key never doubles as navigation.
+      if (e.key >= "0" && e.key <= "5") {
+        e.preventDefault();
+        const rating = Number(e.key);
+        void applyDecision((c) => ({ ...c, rating }));
+        return;
+      }
+      switch (e.key.toLowerCase()) {
+        case "x":
+          e.preventDefault();
+          void applyDecision((c) => ({ ...c, rejected: !c.rejected }));
+          return;
+        case "u":
+          e.preventDefault();
+          void undo();
+          return;
+        default:
+          break;
+      }
 
       switch (e.key) {
         case "ArrowRight": next += 1; break;
@@ -108,7 +232,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [photos]);
+  }, [photos, applyDecision, undo]);
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-200">
@@ -149,7 +273,18 @@ export default function App() {
         )}
 
         {selected.size > 0 && (
-          <span className="ml-auto text-xs text-zinc-400">{selected.size} selected</span>
+          <span className="ml-auto flex items-center gap-3 text-xs text-zinc-400">
+            <span>{selected.size} selected</span>
+            {undoDepth > 0 && (
+              <button
+                type="button"
+                onClick={() => void undo()}
+                className="rounded bg-zinc-800 px-2 py-0.5 hover:bg-zinc-700"
+              >
+                Undo ({undoDepth})
+              </button>
+            )}
+          </span>
         )}
       </header>
 
@@ -161,6 +296,13 @@ export default function App() {
               Chaff reads the folder and writes nothing into it. Its catalog and thumbnails
               live in the application data directory, and the originals are untouched until
               you explicitly remove something.
+            </p>
+            <p className="mt-2 max-w-prose text-xs text-zinc-600">
+              <kbd className="rounded bg-zinc-800 px-1">0</kbd>–
+              <kbd className="rounded bg-zinc-800 px-1">5</kbd> rate ·{" "}
+              <kbd className="rounded bg-zinc-800 px-1">X</kbd> reject ·{" "}
+              <kbd className="rounded bg-zinc-800 px-1">U</kbd> undo ·{" "}
+              <kbd className="rounded bg-zinc-800 px-1">↑↓←→</kbd> move
             </p>
           </div>
         )}
@@ -192,6 +334,7 @@ export default function App() {
           <Grid
             photos={photos}
             selected={selected}
+            decisions={decisions}
             onActivate={activate}
             onColumnsChange={(c) => {
               columns.current = c;
