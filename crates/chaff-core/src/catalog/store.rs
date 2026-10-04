@@ -807,3 +807,91 @@ pub fn capture_times(
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
+
+// ---------------------------------------------------------------------------
+// Scores
+// ---------------------------------------------------------------------------
+/// One metric for one photograph.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScoreRow {
+    pub metric: String,
+    pub value: f64,
+    pub scorer_version: i64,
+}
+
+/// Write a frame's scores.
+///
+/// Keyed by `scorer_version`, so re-scoring after a metric changes writes *new* rows
+/// rather than overwriting the old ones. That keeps "why did this photograph's score
+/// change?" answerable, and makes a scorer regression reversible by reverting the version
+/// instead of by re-deriving what the numbers used to be.
+pub fn upsert_score(
+    conn: &Connection,
+    photo_id: i64,
+    metric: &str,
+    value: f64,
+    scorer_version: i64,
+    now: i64,
+) -> Result<(), CatalogError> {
+    conn.execute(
+        "INSERT INTO score (photo_id, metric, value, scorer_version, computed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT (photo_id, metric, scorer_version) DO UPDATE SET
+             value       = excluded.value,
+             computed_at = excluded.computed_at",
+        params![photo_id, metric, value, scorer_version, now],
+    )?;
+    Ok(())
+}
+
+/// Every score recorded for a photograph at a given scorer version.
+pub fn scores_for_photo(
+    conn: &Connection,
+    photo_id: i64,
+    scorer_version: i64,
+) -> Result<Vec<ScoreRow>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT metric, value, scorer_version FROM score
+          WHERE photo_id = ?1 AND scorer_version = ?2
+          ORDER BY metric",
+    )?;
+    let rows = stmt.query_map(params![photo_id, scorer_version], |r| {
+        Ok(ScoreRow { metric: r.get(0)?, value: r.get(1)?, scorer_version: r.get(2)? })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// Every photograph's composite score, as a map for the grid.
+///
+/// One query rather than one per row: a 50,000-photo grid asking per cell is 50,000
+/// round trips through SQLite, which is the difference between a grid that appears and
+/// one that crawls.
+pub fn composites(
+    conn: &Connection,
+    library_id: i64,
+    scorer_version: i64,
+) -> Result<std::collections::HashMap<i64, f64>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT s.photo_id, s.value
+           FROM score s
+           JOIN photo p ON p.id = s.photo_id
+          WHERE p.library_id = ?1 AND s.metric = 'composite' AND s.scorer_version = ?2",
+    )?;
+    let rows = stmt.query_map(params![library_id, scorer_version], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
+    })?;
+    Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)
+}
+
+/// Remove scores from an older scorer version.
+///
+/// Explicit rather than automatic: keeping a previous version's numbers is how a
+/// regression gets diagnosed, so discarding them is the user's decision and not a
+/// side effect of re-scoring.
+pub fn delete_scores_at_version(
+    conn: &Connection,
+    scorer_version: i64,
+) -> Result<usize, CatalogError> {
+    let n = conn.execute("DELETE FROM score WHERE scorer_version = ?1", params![scorer_version])?;
+    Ok(n)
+}

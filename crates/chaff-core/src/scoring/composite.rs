@@ -27,7 +27,7 @@
 //! renormalise the others and claim a complete score. [`unimplemented_dimensions`]
 //! reports them so the UI can say what is missing.
 
-use super::shoot::{direction, Direction, Metric, Normalised};
+use super::shoot::{Metric, Normalised};
 
 // ---------------------------------------------------------------------------
 // Weights
@@ -564,7 +564,9 @@ pub fn score_with_preset(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scoring::shoot::{self, FrameMeasurement, DEFAULT_SHOOT_GAP_SECONDS};
+    use crate::scoring::shoot::{
+        self, direction, Direction, FrameMeasurement, DEFAULT_SHOOT_GAP_SECONDS,
+    };
 
     /// A shoot of `n` frames where every metric improves with index, so the ordering of
     /// the resulting scores is known by construction.

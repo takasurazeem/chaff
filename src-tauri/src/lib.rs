@@ -6,21 +6,33 @@
 //!
 //! Keep it that way: anything added here becomes unavailable to the fast test path.
 
+pub mod commands;
+
+use tauri::Manager;
+
 /// Re-exported so the app and its integration tests share one engine instance.
 pub use chaff_core;
-
-/// Placeholder command retained from the scaffold so the IPC surface is wired and
-/// testable end to end. Replaced by real commands as Phase 1 lands.
-#[tauri::command]
-fn app_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![app_version])
+        .setup(|app| {
+            // The catalog and the thumbnail cache live under the app data directory, never
+            // inside the user's library. Nothing Chaff writes is written beside their
+            // photographs unless they explicitly ask for a sidecar.
+            let state = commands::initialise(app.handle())
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            app.manage(state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::open_library,
+            commands::list_photos,
+            commands::photo_thumbnail,
+            commands::photo_explanation,
+            commands::trim_thumbnail_cache,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

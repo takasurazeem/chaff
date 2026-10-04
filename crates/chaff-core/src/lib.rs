@@ -7,12 +7,18 @@
 //! See ADR-0001 for why the engine is a separate crate rather than a module of the app.
 
 pub mod burst;
+/// Re-exported so callers of the engine — the Tauri shell, integration tests — do not
+/// need their own `rusqlite` dependency. Two crates depending on two versions of a
+/// database library is a class of bug with no upside.
+pub use rusqlite;
+
 pub mod catalog;
 pub mod exif;
 pub mod ext;
 pub mod indexer;
 pub mod imaging;
 pub mod pair;
+pub mod pipeline;
 pub mod preview;
 pub mod scoring;
 pub mod thumb;
