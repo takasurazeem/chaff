@@ -1,0 +1,18 @@
+# Build artefacts
+node_modules/
+target/
+dist/
+
+# Test corpus: LARGE, downloaded, licence-verified by tools/fixtures/fetch_corpus.sh.
+# Regenerate with that script rather than committing hundreds of MB of photographs.
+fixtures/corpus/
+
+# Synthetic fixtures are deliberately NOT ignored: they are tiny, deterministic and
+# byte-reproducible from tools/fixtures/generate_synthetic.py, and the test suite
+# needs them present offline. If they ever grow past a few MB, regenerate instead.
+
+# OS / editor noise
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json

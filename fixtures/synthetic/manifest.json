@@ -1,0 +1,132 @@
+{
+  "seed": 20261004,
+  "size": [
+    640,
+    480
+  ],
+  "images": [
+    {
+      "name": "sharp_a",
+      "file": "images/sharp_a.jpg",
+      "description": "high-frequency detail, in focus",
+      "expected": {
+        "focus": "high",
+        "contrast": "normal"
+      },
+      "sha256": "b1986a0bd13b6abb32028ea8fdde4e163ae7c3f722431db6f80859c0047dc95d"
+    },
+    {
+      "name": "sharp_b",
+      "file": "images/sharp_b.jpg",
+      "description": "second independent sharp frame",
+      "expected": {
+        "focus": "high",
+        "contrast": "normal"
+      },
+      "sha256": "ef85c54e7442e2130b2629cf36fc0f6e442342e83d8e0dbebd5c934952bb0eb3"
+    },
+    {
+      "name": "blur_defocus_mild",
+      "file": "images/blur_defocus_mild.jpg",
+      "description": "mild defocus",
+      "expected": {
+        "focus": "low",
+        "blur_type": "defocus"
+      },
+      "sha256": "fbc3b4c0eb0632bb1c92e10ebaf73dca5d3352e19fec4cc3d014c07a767ad59d"
+    },
+    {
+      "name": "blur_defocus_heavy",
+      "file": "images/blur_defocus_heavy.jpg",
+      "description": "heavy defocus",
+      "expected": {
+        "focus": "very_low",
+        "blur_type": "defocus"
+      },
+      "sha256": "e9f011ce9daaf1c2cc8b347c64c3f7bc79bb4095dbe189e6229e1f60570f68c5"
+    },
+    {
+      "name": "blur_motion",
+      "file": "images/blur_motion.jpg",
+      "description": "directional motion blur",
+      "expected": {
+        "focus": "low",
+        "blur_type": "motion",
+        "anisotropic": true
+      },
+      "sha256": "86abd9558b4f441f94da2422261c2fdf97d9dc53dc8cfe9da59caca26e8aa0a9"
+    },
+    {
+      "name": "exposure_over",
+      "file": "images/exposure_over.jpg",
+      "description": "highlights clipped",
+      "expected": {
+        "exposure": "clipped_high"
+      },
+      "sha256": "ec7835106fd8aad4d299c7f0f5b7c34d50bcddea3f9d7cbf0816434a482bd581"
+    },
+    {
+      "name": "exposure_under",
+      "file": "images/exposure_under.jpg",
+      "description": "shadows crushed",
+      "expected": {
+        "exposure": "clipped_low"
+      },
+      "sha256": "9a8af0cd5973ba46a4b2216794702fa854d154ca12b0327f10329e2fbb59d191"
+    },
+    {
+      "name": "noise_high_iso",
+      "file": "images/noise_high_iso.jpg",
+      "description": "heavy noise, still in focus",
+      "expected": {
+        "focus": "high",
+        "noise": "high"
+      },
+      "sha256": "7822f1bf17f65cdb2a8d1fad13e78d756fe30aba79f4c3d44eaf03483acc02ae"
+    },
+    {
+      "name": "flat_low_contrast",
+      "file": "images/flat_low_contrast.jpg",
+      "description": "sharp but very low contrast",
+      "expected": {
+        "focus": "low_absolute_high_relative",
+        "contrast": "low"
+      },
+      "sha256": "3682d445d60255caa375ea242c30b4d9b009a23c4b449895baea427e134b05d8"
+    },
+    {
+      "name": "bokeh_portrait",
+      "file": "images/bokeh_portrait.jpg",
+      "description": "sharp subject, blurred background",
+      "expected": {
+        "focus_subject": "high",
+        "focus_whole_frame": "low"
+      },
+      "sha256": "61ea0dbf2b4f6d5ac4d58eb0dc6e53635dd7ef4ab3c406481e7ffbaad64f6699"
+    }
+  ],
+  "pairtree": [
+    "shoot_a/IMG_0001.CR3",
+    "shoot_a/IMG_0001.JPG",
+    "shoot_a/IMG_0001.XMP",
+    "shoot_a/IMG_0002.CR3",
+    "shoot_a/IMG_0002.JPG",
+    "shoot_a/IMG_0003.CR3",
+    "shoot_a/IMG_0004.JPG",
+    "shoot_a/IMG_0005.CR3",
+    "shoot_a/IMG_0005.NEF",
+    "shoot_a/IMG_0005.JPG",
+    "shoot_a/IMG_0006.CR3",
+    "shoot_a/IMG_0006.JPG",
+    "shoot_a/IMG_0006 (1).CR3",
+    "shoot_a/notes.txt",
+    "shoot_a/IMG_0007.CR3",
+    "shoot_a/IMG_0007.JPG",
+    "shoot_a/IMG_0007.MP4",
+    "shoot_b/IMG_0001.CR3",
+    "shoot_b/IMG_0001.JPG",
+    "shoot_b/caf\u00e9.CR3",
+    "shoot_b/cafe\u0301.JPG"
+  ],
+  "pairtree_note": "Raw-extension files here are path fixtures with placeholder content. They are NOT valid RAW files and must never be used for decode tests. Use fixtures/corpus/raw/ for decoding."
+}

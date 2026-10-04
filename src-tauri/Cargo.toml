@@ -1,0 +1,38 @@
+[package]
+name = "chaff"
+version = "0.1.0"
+description = "Local-first, cross-platform photo culling workstation"
+authors = ["Sameer"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name (Windows).
+name = "chaff_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Unicode NFC normalisation. macOS (APFS) stores filenames decomposed while Linux and
+# Windows do not; without this, a RAW+JPEG pair matches on Linux and silently fails to
+# match on a Mac after a copy. This is a correctness dependency, not a nicety.
+unicode-normalization = "0.1"
+walkdir = "2"
+blake3 = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
