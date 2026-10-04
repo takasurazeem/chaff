@@ -8,7 +8,8 @@ photograph is a test that fails on a plane, fails in CI behind a proxy, and fail
 differently tomorrow when the remote image changes. So:
 
   fixtures/synthetic/   generated here, tiny, committed. Unit + integration tests.
-  fixtures/corpus/      downloaded by fetch_corpus.sh, large, gitignored.
+  fixtures/corpus/      downloaded by fetch_corpus.py, large, gitignored.
+                        Accuracy and decode tests against real camera files.
                         Accuracy and decode tests against real camera files.
 
 WHAT THESE ARE NOT
