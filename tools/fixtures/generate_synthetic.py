@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, TiffImagePlugin
 
 SEED = 20261004
 SIZE = (640, 480)
@@ -301,7 +301,8 @@ def burst_frames(size=SIZE):
 # --------------------------------------------------------------------------
 # EXIF
 # --------------------------------------------------------------------------
-def exif_for(capture_time: str, model: str = "Chaff Test Body") -> Image.Exif:
+def exif_for(capture_time: str, model: str = "Chaff Test Body",
+             exposure_seconds: float = 1.0 / 250.0) -> Image.Exif:
     """EXIF written the way a camera writes it.
 
     The IFD split matters and is not cosmetic. IFD0 carries identity — make, model,
@@ -331,7 +332,13 @@ def exif_for(capture_time: str, model: str = "Chaff Test Body") -> Image.Exif:
     sub[0x9004] = capture_time       # DateTimeDigitized
     sub[0x8827] = 400                # PhotographicSensitivity (ISO)
     sub[0x829D] = (28, 10)           # FNumber = f/2.8
-    sub[0x829A] = (1, 250)           # ExposureTime = 1/250 s
+    # Written as true RATIONALs, which is what a camera emits and what the EXIF
+    # specification requires. Passing a Python tuple here makes Pillow store a pair of
+    # SHORTs instead — a real-world quirk covered separately by `exif_shortpair`.
+    denom = int(round(1.0 / exposure_seconds)) if exposure_seconds > 0 else 250
+    sub[0x829A] = TiffImagePlugin.IFDRational(1, max(1, denom))  # ExposureTime
+    sub[0x829D] = TiffImagePlugin.IFDRational(28, 10)            # FNumber = f/2.8
+    sub[0x920A] = TiffImagePlugin.IFDRational(35, 1)             # FocalLength = 35 mm
     sub[0x920A] = (35, 1)            # FocalLength = 35 mm
     sub[0x9209] = 0                  # Flash: did not fire
     return exif
@@ -387,6 +394,18 @@ FIXTURES = [
 ]
 
 
+# A bracket: one scene, three exposures a full stop apart, with matching EXIF.
+#
+# Distinct from the burst fixtures. A burst is redundancy and should be culled; a bracket
+# is intent and must not be. They look similar in a grid and are told apart only by the
+# exposure sequence, so both need real files to test against.
+BRACKET_FIXTURES = [
+    ("bracket_m1", lambda: broadband_exposed(70, 0.5), 1.0 / 500.0, "one stop under"),
+    ("bracket_0", lambda: broadband_exposed(70, 1.0), 1.0 / 250.0, "nominal exposure"),
+    ("bracket_p1", lambda: broadband_exposed(70, 2.0), 1.0 / 125.0, "one stop over"),
+]
+
+
 # The burst is appended rather than written inline so that the frame set and its
 # ordering stay defined in one place.
 for _name, _img in burst_frames():
@@ -431,6 +450,52 @@ def main() -> int:
             "sha256": sha256(path),
         })
         print(f"  {name:22s} {path.stat().st_size:>7d} bytes  {desc}")
+
+    # A writer that emits SHORT pairs instead of RATIONALs.
+    #
+    # Pillow does this when handed a tuple, and so do some other tools. It is not valid
+    # EXIF, and a reader that takes the first element reads 1/500 s as one full second —
+    # a factor of 500, silently. This fixture exists so the tolerant path stays covered
+    # by a real file rather than by a comment.
+    shortpair = broadband_exposed(80, 1.0)
+    sp_exif = Image.Exif()
+    sp_exif[0x010F] = "Chaff"
+    sp_exif[0x0110] = "Short Pair Writer"
+    sp_exif[0x0132] = "2026:10:04 15:00:00"
+    sp_sub = sp_exif.get_ifd(0x8769)
+    sp_sub[0x9003] = "2026:10:04 15:00:00"
+    sp_sub[0x8827] = 400
+    sp_sub[0x829A] = (1, 500)   # SHORT pair, not a RATIONAL
+    sp_sub[0x829D] = (28, 10)
+    sp_path = images_dir / "exif_shortpair.jpg"
+    shortpair.save(sp_path, "JPEG", quality=95, exif=sp_exif)
+    manifest["images"].append({
+        "name": "exif_shortpair",
+        "file": "images/exif_shortpair.jpg",
+        "description": "EXIF written as SHORT pairs rather than RATIONALs",
+        "expected": {"exposure_seconds": 1.0 / 500.0, "f_number": 2.8, "encoding": "short-pair"},
+        "sha256": sha256(sp_path),
+    })
+    print(f"  {'exif_shortpair':22s} {sp_path.stat().st_size:>7d} bytes  1/500s as a SHORT pair")
+
+    print(f"generating bracket frames -> {images_dir}")
+    for name, build, exposure, desc in BRACKET_FIXTURES:
+        img = build()
+        path = images_dir / f"{name}.jpg"
+        img.save(
+            path,
+            "JPEG",
+            quality=95,
+            exif=exif_for("2026:10:04 14:00:00", exposure_seconds=exposure),
+        )
+        manifest["images"].append({
+            "name": name,
+            "file": f"images/{name}.jpg",
+            "description": f"bracket frame: {desc}",
+            "expected": {"bracket": "true", "exposure_seconds": exposure},
+            "sha256": sha256(path),
+        })
+        print(f"  {name:22s} {path.stat().st_size:>7d} bytes  1/{int(round(1/exposure))}s  {desc}")
 
     # ----------------------------------------------------------------------
     # Pairing tree — PATH LOGIC ONLY.

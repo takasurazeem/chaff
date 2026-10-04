@@ -198,10 +198,36 @@ fn field_u32(exif: &exif::Exif, tag: exif::Tag) -> Option<u32> {
     }
 }
 
+/// Read a rational-valued tag.
+///
+/// ## The two-element integer case is not optional
+///
+/// Some writers — Pillow among them — store a rational as a pair of SHORTs rather than
+/// as a RATIONAL. kamadak-exif faithfully reports that as `Short([1, 500])`.
+///
+/// Taking the first element, which is what a naive scalar fallback does, reads **1/500
+/// of a second as one full second** and f/2.8 as f/28. That is not a rounding error: it
+/// is a wrong number by a factor of 500, it silently breaks exposure-bracket detection,
+/// and nothing about the result looks suspicious. Found by a real fixture, not by
+/// reasoning.
+///
+/// A two-element array is therefore interpreted as numerator over denominator. That is
+/// safe here because this function is only called for tags the EXIF specification
+/// defines as rational; a tag that genuinely holds two unrelated SHORTs (YCbCr
+/// subsampling, for instance) is not read through this path.
 fn field_rational(exif: &exif::Exif, tag: exif::Tag) -> Option<f64> {
+    fn pair_to_f64(n: f64, d: f64) -> Option<f64> {
+        if d == 0.0 {
+            None
+        } else {
+            Some(n / d)
+        }
+    }
     match &field(exif, tag)?.value {
         exif::Value::Rational(v) => v.first().map(|r| r.to_f64()),
         exif::Value::SRational(v) => v.first().map(|r| r.to_f64()),
+        exif::Value::Short(v) if v.len() == 2 => pair_to_f64(v[0] as f64, v[1] as f64),
+        exif::Value::Long(v) if v.len() == 2 => pair_to_f64(v[0] as f64, v[1] as f64),
         exif::Value::Short(v) => v.first().map(|x| *x as f64),
         _ => None,
     }
@@ -468,6 +494,36 @@ mod tests {
             Some("Chaff Test Body"),
             "burst grouping keys on the body"
         );
+    }
+
+    #[test]
+    fn a_rational_stored_as_two_shorts_is_not_read_as_its_numerator() {
+        // The bug this guards. Pillow writes ExposureTime as Short([1, 500]); reading the
+        // first element gives one full second instead of 1/500, and the only symptom is
+        // that bracket detection stops working.
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/synthetic/images");
+
+        // Both encodings, because both occur in the wild and they fail differently.
+        for (name, what) in [
+            ("exif_shortpair", "SHORT pair (Pillow's default, and some other tools)"),
+            ("bracket_m1", "true RATIONAL (what a camera emits)"),
+        ] {
+            let path = base.join(format!("{name}.jpg"));
+            if !path.is_file() {
+                eprintln!("SKIP: run tools/fixtures/generate_synthetic.py first");
+                return;
+            }
+            let read_result = read(&path).expect("read");
+            let d = read_result.data().unwrap_or_else(|| panic!("{name} carries EXIF"));
+
+            let t = d.exposure_time.unwrap_or_else(|| panic!("{name}: ExposureTime must be read"));
+            assert!(
+                (t - 1.0 / 500.0).abs() < 1e-9,
+                "{name} ({what}): 1/500 s must read as 0.002, not as its numerator. Got {t}"
+            );
+            let f = d.f_number.unwrap_or_else(|| panic!("{name}: FNumber must be read"));
+            assert!((f - 2.8).abs() < 1e-9, "{name} ({what}): f/2.8 must read as 2.8, got {f}");
+        }
     }
 
     #[test]

@@ -13,7 +13,7 @@
         "focus": "high",
         "contrast": "normal"
       },
-      "sha256": "4cdcd96e2fa57ace268bd893dd880c8c3e62a0a4a0cca5022f76ece5be55fd99"
+      "sha256": "addc22023c700c084c0ff6b55a5e6bab32cdf4602dc015a6675780f3ad8aa924"
     },
     {
       "name": "sharp_b",
@@ -23,7 +23,7 @@
         "focus": "high",
         "contrast": "normal"
       },
-      "sha256": "23fa1b354e63c1cb2dec88333903f09f1bf4b749b2b4fe0499a2f29b6ea84da3"
+      "sha256": "be6f0d1ac85837a519a9aaacbb0498d4bb937a6edcd2dfc6a173095ceee4c947"
     },
     {
       "name": "blur_defocus_mild",
@@ -33,7 +33,7 @@
         "focus": "low",
         "blur_type": "defocus"
       },
-      "sha256": "4c4e003b4b9600361fb227ebf6c1b46529e4451a70638811bc5871734c77f534"
+      "sha256": "5df4eb74cbeeb55a74411fa18898e9b5a34dbdfb630fdd3e70013dbc306b6f4a"
     },
     {
       "name": "blur_defocus_heavy",
@@ -43,7 +43,7 @@
         "focus": "very_low",
         "blur_type": "defocus"
       },
-      "sha256": "de64daaf6e4eb77fe83c963076aaa89150822869698a0ce37be2961a44dd9aec"
+      "sha256": "645efda297394cf146c2bd06debcc3c919e9a7fd00b9c556ab87908793cc21ee"
     },
     {
       "name": "blur_motion",
@@ -54,7 +54,7 @@
         "blur_type": "motion",
         "anisotropic": true
       },
-      "sha256": "6c187677940b0837b01d585dd66c42e2eeeb35eae9acf87daa4c68f225b79fda"
+      "sha256": "78dbcd951d9498b852dc859ea21599d854cef378ccbc9bd2937d5304e4579ef2"
     },
     {
       "name": "sharp_broadband",
@@ -64,7 +64,7 @@
         "focus": "high",
         "spectrum": "broadband"
       },
-      "sha256": "9c664001b0d368d98087d74da857ea0d8a1d6a9b948f4682e1777ebd2c3a1da3"
+      "sha256": "5dd82d2104981a83ba354c3bd0b754e7e697a4ad23292834daa69c990bf71ac7"
     },
     {
       "name": "blur_motion_broadband",
@@ -75,7 +75,7 @@
         "blur_type": "motion",
         "anisotropic": true
       },
-      "sha256": "59c3d14430b8f7f46a37957d1a5252d44e72d8df7444988c5b8cc9ea55b3adfe"
+      "sha256": "cdc56e6d8badfb3aa3e11173b32f157e328457e1ed35271ec89b96846ba7247e"
     },
     {
       "name": "blur_defocus_broadband",
@@ -86,7 +86,7 @@
         "blur_type": "defocus",
         "anisotropic": false
       },
-      "sha256": "043f3e6cb7b3b355abfc146725fa763cdccb4959276015fe31a8884fa1a127d5"
+      "sha256": "2321d4f0952486bfeed6aa0e25499d9438b6158b3f693f0a07c38912f9659501"
     },
     {
       "name": "exp_normal",
@@ -95,7 +95,7 @@
       "expected": {
         "exposure": "normal"
       },
-      "sha256": "e7ee24c55f201ae6489d2e3665bca9de4b72bb221c783bc3b293cdb562095d83"
+      "sha256": "1b667e5fbaf5d15873f6eb83bfc092e4518f1e2cd11d951b502e487dd25890ae"
     },
     {
       "name": "exp_over",
@@ -104,7 +104,7 @@
       "expected": {
         "exposure": "clipped_high"
       },
-      "sha256": "c680c33f5538da72efcbdac45e1d5b7385fc2a987b205f4bc45a1be929772d48"
+      "sha256": "977b3cf8dddffda3c7ecef9e910556cdb3acdcc227ae8a94a0ff26ccd7fb6cfc"
     },
     {
       "name": "exp_under",
@@ -113,7 +113,7 @@
       "expected": {
         "exposure": "clipped_low"
       },
-      "sha256": "c44439d5f4c884f536af61d30f319e8ebccfc8b8aa493fdf3e5e69eb771fb968"
+      "sha256": "d9d52874afcc075a8dc087a0e804fc7bdf29345e6a20bd719945c7dc3e9a2398"
     },
     {
       "name": "exposure_over",
@@ -122,7 +122,7 @@
       "expected": {
         "exposure": "clipped_high"
       },
-      "sha256": "bb891cfd862f1a66c165f85ec2084edd6d87d4d828d4496d5279694afc4d27f5"
+      "sha256": "9a1e3824c4e21087336103f06fde86b0ebdc29c90ef6df3650cd28724f44086c"
     },
     {
       "name": "exposure_under",
@@ -131,7 +131,7 @@
       "expected": {
         "exposure": "clipped_low"
       },
-      "sha256": "5435294f0fbc9ce7ccb0c63671984e04d2b7c810f9c1d264aa1eeb489a50e06d"
+      "sha256": "0f0d31571a3fb4430c9ed1df8bf632e2680f255c7c27ee8de93a66ada861220f"
     },
     {
       "name": "noise_high_iso",
@@ -141,7 +141,7 @@
         "focus": "high",
         "noise": "high"
       },
-      "sha256": "d8048dc2316eecd5b8e790f7921e02ffd712162728a8f2ad68cf0358c0059b01"
+      "sha256": "321e0a56a09bfff4c4817630574eab971c6a593ea194b4ab9b79b83d408001e3"
     },
     {
       "name": "flat_low_contrast",
@@ -151,7 +151,7 @@
         "focus": "low_absolute_high_relative",
         "contrast": "low"
       },
-      "sha256": "3bffb6e7794c0015e5359e0b7555765d9c333996381542f4378363d9f8ee6403"
+      "sha256": "522220f9dcc73b0e6f3a6f83f744f82a36775057740974779ba5d8607ba8a7a9"
     },
     {
       "name": "bokeh_portrait",
@@ -161,7 +161,7 @@
         "focus_subject": "high",
         "focus_whole_frame": "low"
       },
-      "sha256": "b54cbd81adfb7b1e61a84dfdb621b194a00b84cc229752eeebf7960c532f45e3"
+      "sha256": "d08f9106d1a26c81d2650834d45f250bcf8055c26d67bdf50c9076344e7776b8"
     },
     {
       "name": "burst_0_sharp",
@@ -171,7 +171,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "0dc6dc4039386f8b32d673eeb98ded276791ec9338d015cb384d2fcdfb9963df"
+      "sha256": "3ba4b79988a29e3a0e525141a8c715634baebc94879ca57890ed5cdcf3f90f39"
     },
     {
       "name": "burst_1_sharp",
@@ -181,7 +181,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "87d34ac47ed9dfc6db836d72ef74d7fe8611d76bb106db9e1819f56203a8da5d"
+      "sha256": "40ed0bd109387b946d87f94889adb2ef27cb12843f7e976249f7bcc89be6c172"
     },
     {
       "name": "burst_2_sharp",
@@ -191,7 +191,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "a239da62eee8d64e2b0ee8f1ce1ecba41cbdb7722113a52ac43a820baa555a4d"
+      "sha256": "6b092d67d9648e0287fb0e416020cac8f41f0f7b6faf2967d62da133f40392ac"
     },
     {
       "name": "burst_3_smeared",
@@ -201,7 +201,7 @@
         "burst": "true",
         "smeared": "true"
       },
-      "sha256": "fc53898efa73c784d398b887831b47be04d2c5607da959f408bbbdd491db5006"
+      "sha256": "48b5fe06e8643cdbec048eebe739bc2c063f9521a038286b4e5149f46e639193"
     },
     {
       "name": "burst_4_sharp",
@@ -211,7 +211,48 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "2925dd22f299b09941eaf504e0b1d3c9e06dd75c92bac36efd5effcbd88f03d4"
+      "sha256": "396a12fa92fb1132323b255eab81b9914ab4f0e9cf51f87af86b5bee3b98634c"
+    },
+    {
+      "name": "exif_shortpair",
+      "file": "images/exif_shortpair.jpg",
+      "description": "EXIF written as SHORT pairs rather than RATIONALs",
+      "expected": {
+        "exposure_seconds": 0.002,
+        "f_number": 2.8,
+        "encoding": "short-pair"
+      },
+      "sha256": "30cf491a1efe9ee0152bb16c0ac2142c4673e19bc19d81cdb602dc1a94870db5"
+    },
+    {
+      "name": "bracket_m1",
+      "file": "images/bracket_m1.jpg",
+      "description": "bracket frame: one stop under",
+      "expected": {
+        "bracket": "true",
+        "exposure_seconds": 0.002
+      },
+      "sha256": "9aafee460e270ff57a24fc15179841c37f9c4123d8fc095ca9359337433127f1"
+    },
+    {
+      "name": "bracket_0",
+      "file": "images/bracket_0.jpg",
+      "description": "bracket frame: nominal exposure",
+      "expected": {
+        "bracket": "true",
+        "exposure_seconds": 0.004
+      },
+      "sha256": "f40895b22dc2fdaac2015354ed95341d7cc7eba76a23939db47fb27be308214d"
+    },
+    {
+      "name": "bracket_p1",
+      "file": "images/bracket_p1.jpg",
+      "description": "bracket frame: one stop over",
+      "expected": {
+        "bracket": "true",
+        "exposure_seconds": 0.008
+      },
+      "sha256": "21e67f2e4e71cbba59407adea56c99fc7a441bf83aae7b59fb3a2a45f1e989a4"
     }
   ],
   "pairtree": [

@@ -69,6 +69,40 @@ impl Luma {
         self.box_downscale(factor)
     }
 
+    /// Resize to an exact size by area averaging.
+    ///
+    /// Distinct from [`Self::box_downscale`], which only takes integer factors. A
+    /// perceptual hash needs an exact 9x8 grid, and an integer factor cannot produce one
+    /// from an arbitrary frame. Area averaging is the correct filter for downsampling:
+    /// it integrates every source pixel rather than sampling some and discarding others,
+    /// so a hash computed from it is stable against a one-pixel shift in framing.
+    pub fn resize_area(&self, w: usize, h: usize) -> Luma {
+        let w = w.max(1);
+        let h = h.max(1);
+        if self.w == w && self.h == h {
+            return self.clone();
+        }
+        let mut px = Vec::with_capacity(w * h);
+        for oy in 0..h {
+            let y0 = oy * self.h / h;
+            let y1 = (((oy + 1) * self.h) / h).max(y0 + 1).min(self.h);
+            for ox in 0..w {
+                let x0 = ox * self.w / w;
+                let x1 = (((ox + 1) * self.w) / w).max(x0 + 1).min(self.w);
+                let mut acc = 0.0f32;
+                let mut n = 0u32;
+                for sy in y0..y1 {
+                    for sx in x0..x1 {
+                        acc += self.at(sx, sy);
+                        n += 1;
+                    }
+                }
+                px.push(if n == 0 { 0.0 } else { acc / n as f32 });
+            }
+        }
+        Luma { w, h, px }
+    }
+
     /// Integer-factor box downscale by averaging `factor x factor` blocks.
     pub fn box_downscale(&self, factor: usize) -> Luma {
         let w = (self.w / factor).max(1);

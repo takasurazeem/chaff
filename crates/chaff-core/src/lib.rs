@@ -6,6 +6,7 @@
 //!
 //! See ADR-0001 for why the engine is a separate crate rather than a module of the app.
 
+pub mod burst;
 pub mod catalog;
 pub mod exif;
 pub mod ext;
