@@ -95,11 +95,13 @@ impl ExifData {
     /// model recorded falls back rather than being treated as unknown-and-therefore-
     /// different, which would split a real burst in two.
     pub fn camera_key(&self) -> Option<String> {
-        match (&self.make, &self.model) {
-            (_, Some(model)) => Some(model.trim().to_string()),
-            (Some(make), None) => Some(make.trim().to_string()),
-            (None, None) => None,
-        }
+        // Trim first, then reject empties. A camera that writes `Model=""` is common,
+        // and treating that as a key would put every such frame in a shoot named after
+        // the empty string — merging frames from different bodies into one sequence.
+        let clean = |v: &Option<String>| -> Option<String> {
+            v.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        };
+        clean(&self.model).or_else(|| clean(&self.make))
     }
 
     /// Heuristic exposure-bracket detection from the three exposure axes.
@@ -370,6 +372,23 @@ mod tests {
         other.make = Some("Canon".into());
         other.model = Some("Canon EOS R6".into());
         assert_ne!(d.camera_key(), other.camera_key());
+    }
+
+    #[test]
+    fn an_empty_model_falls_back_to_the_make_rather_than_becoming_a_key() {
+        let mut d = ExifData::default();
+        d.make = Some("Canon".into());
+        d.model = Some("   ".into());
+        assert_eq!(
+            d.camera_key().as_deref(),
+            Some("Canon"),
+            "a whitespace model must not become a shoot key of its own"
+        );
+
+        let mut empty = ExifData::default();
+        empty.make = Some("".into());
+        empty.model = Some("".into());
+        assert_eq!(empty.camera_key(), None, "nothing usable means no key, not an empty one");
     }
 
     #[test]

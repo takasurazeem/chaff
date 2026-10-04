@@ -89,13 +89,40 @@
       "sha256": "043f3e6cb7b3b355abfc146725fa763cdccb4959276015fe31a8884fa1a127d5"
     },
     {
+      "name": "exp_normal",
+      "file": "images/exp_normal.jpg",
+      "description": "broadband texture, correct exposure",
+      "expected": {
+        "exposure": "normal"
+      },
+      "sha256": "e7ee24c55f201ae6489d2e3665bca9de4b72bb221c783bc3b293cdb562095d83"
+    },
+    {
+      "name": "exp_over",
+      "file": "images/exp_over.jpg",
+      "description": "broadband texture, highlights clipped",
+      "expected": {
+        "exposure": "clipped_high"
+      },
+      "sha256": "c680c33f5538da72efcbdac45e1d5b7385fc2a987b205f4bc45a1be929772d48"
+    },
+    {
+      "name": "exp_under",
+      "file": "images/exp_under.jpg",
+      "description": "broadband texture, shadows crushed, little range used",
+      "expected": {
+        "exposure": "clipped_low"
+      },
+      "sha256": "c44439d5f4c884f536af61d30f319e8ebccfc8b8aa493fdf3e5e69eb771fb968"
+    },
+    {
       "name": "exposure_over",
       "file": "images/exposure_over.jpg",
       "description": "highlights clipped",
       "expected": {
         "exposure": "clipped_high"
       },
-      "sha256": "eec88dc150981bdc2df74bb96080d9f01a1cecdd990f03833badcfd9a2a01b32"
+      "sha256": "bb891cfd862f1a66c165f85ec2084edd6d87d4d828d4496d5279694afc4d27f5"
     },
     {
       "name": "exposure_under",
@@ -104,7 +131,7 @@
       "expected": {
         "exposure": "clipped_low"
       },
-      "sha256": "d308368f1490873ef7a1f7f677c648ce84fa4a7a853be513cdb90f173e18cf6b"
+      "sha256": "5435294f0fbc9ce7ccb0c63671984e04d2b7c810f9c1d264aa1eeb489a50e06d"
     },
     {
       "name": "noise_high_iso",
@@ -114,7 +141,7 @@
         "focus": "high",
         "noise": "high"
       },
-      "sha256": "c65ec59a5eb838a263a0a5298266e9f08fd422f8c6323a14c45bb8520bb904a7"
+      "sha256": "d8048dc2316eecd5b8e790f7921e02ffd712162728a8f2ad68cf0358c0059b01"
     },
     {
       "name": "flat_low_contrast",
@@ -124,7 +151,7 @@
         "focus": "low_absolute_high_relative",
         "contrast": "low"
       },
-      "sha256": "2f856a3d70e28a30ad94335cfb00273c2fea113c1b37560634e6a280209a71b1"
+      "sha256": "3bffb6e7794c0015e5359e0b7555765d9c333996381542f4378363d9f8ee6403"
     },
     {
       "name": "bokeh_portrait",
@@ -134,7 +161,7 @@
         "focus_subject": "high",
         "focus_whole_frame": "low"
       },
-      "sha256": "077e19f2222cf1fdc5227927ba7fcca33bd63a8e2fad8b39195b94261b1999c8"
+      "sha256": "b54cbd81adfb7b1e61a84dfdb621b194a00b84cc229752eeebf7960c532f45e3"
     },
     {
       "name": "burst_0_sharp",
@@ -144,7 +171,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "f267db78168335c486bcd243e9a4cf9c7c39148148e847d220a9df71994229a3"
+      "sha256": "0dc6dc4039386f8b32d673eeb98ded276791ec9338d015cb384d2fcdfb9963df"
     },
     {
       "name": "burst_1_sharp",
@@ -154,7 +181,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "8267dbf94ff9284d45af2fc4c33729605b4a87712e83789f26b4bd2c88c76fca"
+      "sha256": "87d34ac47ed9dfc6db836d72ef74d7fe8611d76bb106db9e1819f56203a8da5d"
     },
     {
       "name": "burst_2_sharp",
@@ -164,7 +191,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "17ff9126b18840da11a995475f16afbf2304abfadd572b982e39fcba8d8ba668"
+      "sha256": "a239da62eee8d64e2b0ee8f1ce1ecba41cbdb7722113a52ac43a820baa555a4d"
     },
     {
       "name": "burst_3_smeared",
@@ -174,7 +201,7 @@
         "burst": "true",
         "smeared": "true"
       },
-      "sha256": "2bf1b00e9cb294f8d335aabd845250a868cd8e60c72ab7206bdd6affcde0ef96"
+      "sha256": "fc53898efa73c784d398b887831b47be04d2c5607da959f408bbbdd491db5006"
     },
     {
       "name": "burst_4_sharp",
@@ -184,7 +211,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "87d34ac47ed9dfc6db836d72ef74d7fe8611d76bb106db9e1819f56203a8da5d"
+      "sha256": "2925dd22f299b09941eaf504e0b1d3c9e06dd75c92bac36efd5effcbd88f03d4"
     }
   ],
   "pairtree": [

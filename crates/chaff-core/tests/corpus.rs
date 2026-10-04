@@ -85,22 +85,45 @@ fn analyse_file(path: &Path) -> FocusMetrics {
     analyse(&load(path), None)
 }
 
-/// Memoised analysis.
+/// Every measurement taken from one decode of one file.
+#[derive(Clone, PartialEq)]
+struct Measurements {
+    focus: FocusMetrics,
+    exposure: chaff_core::scoring::exposure::ExposureMetrics,
+}
+
+/// Memoised analysis, shared by every test that walks the corpus.
 ///
-/// Decoding and measuring a 1600x1067 JPEG costs ~0.7s, and several tests here walk the
-/// whole corpus. Without a cache the suite re-does the same work once per test and takes
-/// over a minute. `analyse` is deterministic and pure, so caching the result is safe.
-fn metrics_for(path: &Path) -> FocusMetrics {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, FocusMetrics>>> = OnceLock::new();
+/// Decoding and measuring a 1600x1067 JPEG costs ~0.7s. Several tests here walk all 50
+/// of them, and without a shared cache the suite re-decodes the corpus once per test —
+/// which took it past 80 seconds. One cache holding *both* focus and exposure means a
+/// test that needs only one of them still pays for a single decode.
+///
+/// Safe because every measurement here is deterministic and pure.
+fn measurements_for(path: &Path) -> Measurements {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Measurements>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = cache.lock().expect("cache mutex");
 
     if let Some(hit) = guard.get(path) {
         return hit.clone();
     }
-    let computed = analyse_file(path);
+
+    let luma = load(path);
+    let computed = Measurements {
+        focus: analyse(&luma, None),
+        exposure: chaff_core::scoring::exposure::analyse(
+            &luma,
+            chaff_core::imaging::Region::full(luma.w, luma.h),
+            chaff_core::scoring::exposure::Levels::eight_bit(),
+        ),
+    };
     guard.insert(path.to_path_buf(), computed.clone());
     computed
+}
+
+fn metrics_for(path: &Path) -> FocusMetrics {
+    measurements_for(path).focus
 }
 
 // ---------------------------------------------------------------------------
@@ -635,4 +658,95 @@ fn re_indexing_the_real_corpus_changes_nothing() {
     assert_eq!(second.stats.removed_files, 0, "nothing on disk changed");
     assert_eq!(second.stats.removed_photos, 0);
     assert_eq!(before, after, "a re-index must not alter the catalog");
+}
+
+// ---------------------------------------------------------------------------
+// The full scoring pipeline over real photographs
+// ---------------------------------------------------------------------------
+#[test]
+fn the_full_scoring_pipeline_runs_over_real_photographs() {
+    if skip("full scoring pipeline") {
+        return;
+    }
+    use chaff_core::scoring::shoot::{self, ALL_METRICS, FrameMeasurement};
+
+    let files = jpegs();
+
+    // Build one measurement per real photograph, the way the indexer will: decode,
+    // measure focus and exposure, carry the EXIF identity, and hand the set to the
+    // shoot normaliser.
+    let measurements: Vec<FrameMeasurement> = files
+        .iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let meas = measurements_for(path);
+            let mut m = FrameMeasurement::from_focus(i as i64, "/corpus", &meas.focus);
+            m.from_exposure(&meas.exposure);
+            m.with_exif(chaff_core::exif::read(path).ok().and_then(|r| r.data().cloned()).as_ref())
+        })
+        .collect();
+
+    assert_eq!(measurements.len(), files.len());
+
+    let normalised = shoot::normalise(&measurements, shoot::DEFAULT_SHOOT_GAP_SECONDS);
+    assert_eq!(normalised.len(), measurements.len());
+
+    for n in &normalised {
+        for metric in ALL_METRICS {
+            let p = n.shoot_percentile(metric);
+            assert!(
+                p.is_finite() && (0.0..=100.0).contains(&p),
+                "percentile for {metric:?} was {p}"
+            );
+            let oriented = n.score_percentile(metric);
+            assert!(
+                oriented.is_finite() && (0.0..=100.0).contains(&oriented),
+                "oriented score for {metric:?} was {oriented}"
+            );
+        }
+    }
+
+    // Every raw measurement must be finite, or a percentile computed over it is
+    // meaningless in a way that is hard to see.
+    for m in &measurements {
+        for metric in ALL_METRICS {
+            let v = m.get(metric);
+            assert!(v.is_finite(), "{metric:?} was {v} for photo {}", m.photo_id);
+        }
+    }
+
+    // And the ranking must actually discriminate. A pipeline that returns the same
+    // percentile for everything ranks nothing, however correct each frame is alone.
+    let focuses: Vec<f64> = normalised.iter().map(|n| n.shoot_percentile(shoot::Metric::Focus)).collect();
+    let min = focuses.iter().cloned().fold(f64::MAX, f64::min);
+    let max = focuses.iter().cloned().fold(f64::MIN, f64::max);
+    assert!(
+        max - min > 50.0,
+        "real photographs produced a degenerate focus ranking: {min:.1}..{max:.1}"
+    );
+}
+
+#[test]
+fn shoot_normalisation_over_the_real_corpus_is_deterministic() {
+    if skip("shoot determinism on real files") {
+        return;
+    }
+    use chaff_core::scoring::shoot::{self, FrameMeasurement};
+
+    let build = || -> Vec<FrameMeasurement> {
+        jpegs()
+            .iter()
+            .enumerate()
+            .map(|(i, path)| {
+                let meas = measurements_for(path);
+                let mut m = FrameMeasurement::from_focus(i as i64, "/corpus", &meas.focus);
+                m.from_exposure(&meas.exposure);
+                m
+            })
+            .collect()
+    };
+
+    let a = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS);
+    let b = shoot::normalise(&build(), shoot::DEFAULT_SHOOT_GAP_SECONDS);
+    assert_eq!(a, b, "the same photographs must rank the same on every run");
 }

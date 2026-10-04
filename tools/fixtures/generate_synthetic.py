@@ -164,6 +164,19 @@ def broadband_motion_blurred(offset: int, length: int = 13, size=SIZE) -> Image.
     return Image.fromarray(np.clip(_box_blur_x(base, length), 0, 255).astype(np.uint8), mode="RGB")
 
 
+def broadband_exposed(offset: int, factor: float, size=SIZE) -> Image.Image:
+    """Broadband texture at a scaled exposure.
+
+    The grid pattern is a poor subject for measuring clipping: it contains hard 0 and 255
+    lines by construction, so a quarter of its pixels sit at the extremes whether or not
+    the exposure is wrong, and a clipping metric cannot distinguish pattern from
+    overexposure. Broadband texture spans a smooth range, so anything at an extreme got
+    there because of the exposure.
+    """
+    base = np.asarray(broadband_texture(offset, size), dtype=np.float64)
+    return Image.fromarray(np.clip(base * factor, 0, 255).astype(np.uint8), mode="RGB")
+
+
 def broadband_defocused(offset: int, radius: float = 3.0, size=SIZE) -> Image.Image:
     """Isotropic defocus of the same texture, as the control for the motion case."""
     return broadband_texture(offset, size).filter(ImageFilter.GaussianBlur(radius=radius))
@@ -351,6 +364,16 @@ FIXTURES = [
     ("blur_defocus_broadband", lambda: broadband_defocused(42, 3.0),
      "broadband texture, isotropically defocused",
      {"focus": "low", "blur_type": "defocus", "anisotropic": False}),
+    # Exposure ladder on smooth texture, so extremes mean overexposure rather than pattern.
+    ("exp_normal", lambda: broadband_exposed(50, 1.0),
+     "broadband texture, correct exposure",
+     {"exposure": "normal"}),
+    ("exp_over", lambda: broadband_exposed(51, 1.9),
+     "broadband texture, highlights clipped",
+     {"exposure": "clipped_high"}),
+    ("exp_under", lambda: broadband_exposed(52, 0.30),
+     "broadband texture, shadows crushed, little range used",
+     {"exposure": "clipped_low"}),
     ("exposure_over", lambda: exposure_shifted(6, 1.9), "highlights clipped",
      {"exposure": "clipped_high"}),
     ("exposure_under", lambda: exposure_shifted(7, 0.28), "shadows crushed",
