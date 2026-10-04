@@ -31,6 +31,7 @@ pub fn run() {
             commands::list_photos,
             commands::photo_thumbnail,
             commands::photo_explanation,
+            commands::capabilities,
             commands::set_decision,
             commands::decision_count,
             commands::trim_thumbnail_cache,

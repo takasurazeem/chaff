@@ -23,6 +23,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use chaff_core::catalog::{self, store, CatalogError};
+use chaff_core::hardware;
 use chaff_core::pipeline;
 use chaff_core::thumb::{self, ThumbSize, ThumbnailCache, DEFAULT_CAP_BYTES};
 use chaff_core::rusqlite::Connection;
@@ -278,6 +279,25 @@ pub async fn decision_count(state: State<'_, AppState>, library_id: i64) -> Resu
     tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
         let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
         store::decision_count(&conn, library_id).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The Capability Report for this machine, as plain text.
+///
+/// Returned rendered rather than structured: it is shown to a person and pasted into bug
+/// reports, and a structure the frontend has to lay out is a structure it can lay out
+/// wrongly. The probing is fast (one `nvidia-smi` or `system_profiler` call) but it does
+/// spawn a process, so it runs off the main thread like everything else here.
+#[tauri::command]
+pub async fn capabilities(endpoints: Vec<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let mut probe = hardware::probe();
+        for url in &endpoints {
+            probe.endpoints.push(hardware::probe_endpoint(url, 1500));
+        }
+        Ok(hardware::render(&probe))
     })
     .await
     .map_err(err)?

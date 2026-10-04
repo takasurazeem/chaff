@@ -56,6 +56,16 @@ export async function setDecision(
   return invoke<DecisionView>("set_decision", { photoId, rating, rejected });
 }
 
+/**
+ * The Capability Report for this machine.
+ *
+ * Plain text, because it is shown to a person and pasted into bug reports. Probing spawns
+ * a vendor tool (`nvidia-smi`, `system_profiler`), so it is not fetched on every render.
+ */
+export async function capabilities(endpoints: string[] = []): Promise<string> {
+  return invoke<string>("capabilities", { endpoints });
+}
+
 /** Force the thumbnail cache back inside its cap. */
 export async function trimThumbnailCache(): Promise<number> {
   return invoke<number>("trim_thumbnail_cache");

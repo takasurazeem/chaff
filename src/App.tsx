@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-import { listPhotos, openLibrary, setDecision } from "./api";
+import { capabilities, listPhotos, openLibrary, setDecision } from "./api";
 import type { LibraryView, PhotoView } from "./types";
 import { Grid } from "./components/Grid";
 import "./index.css";
@@ -47,6 +47,15 @@ export default function App() {
   );
   const [undoDepth, setUndoDepth] = useState(0);
   const UNDO_LIMIT = 500;
+
+  /**
+   * The Capability Report, fetched on demand.
+   *
+   * Deliberately not fetched at startup: it spawns a vendor tool, and a window that
+   * pauses to run `system_profiler` before showing anything is a window that feels slow
+   * for a report almost nobody reads twice.
+   */
+  const [capabilityReport, setCapabilityReport] = useState<string | null>(null);
 
   // Cursor for keyboard navigation: the photograph the arrow keys move from.
   const cursor = useRef<number>(0);
@@ -272,8 +281,25 @@ export default function App() {
           </div>
         )}
 
+        <button
+          type="button"
+          onClick={() => {
+            if (capabilityReport !== null) {
+              setCapabilityReport(null);
+              return;
+            }
+            void capabilities().then(setCapabilityReport).catch((e) => {
+              setCapabilityReport(`Could not probe this machine: ${String(e)}`);
+            });
+          }}
+          className="ml-auto rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700"
+          title="What this machine can do, and which model tier Chaff chose"
+        >
+          Capabilities
+        </button>
+
         {selected.size > 0 && (
-          <span className="ml-auto flex items-center gap-3 text-xs text-zinc-400">
+          <span className="flex items-center gap-3 text-xs text-zinc-400">
             <span>{selected.size} selected</span>
             {undoDepth > 0 && (
               <button
@@ -287,6 +313,17 @@ export default function App() {
           </span>
         )}
       </header>
+
+      {capabilityReport !== null && (
+        <section
+          className="shrink-0 border-b border-zinc-800 bg-zinc-900/60 px-4 py-3"
+          aria-label="Capability report"
+        >
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-zinc-400">
+            {capabilityReport}
+          </pre>
+        </section>
+      )}
 
       <main className="min-h-0 flex-1">
         {status.kind === "idle" && (

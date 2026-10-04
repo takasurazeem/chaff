@@ -16,6 +16,7 @@ pub mod catalog;
 pub mod exif;
 pub mod ext;
 pub mod indexer;
+pub mod hardware;
 pub mod imaging;
 pub mod pair;
 pub mod pipeline;
