@@ -52,7 +52,10 @@ pub enum CatalogError {
 /// Editing a released migration means two machines at the same version have different
 /// schemas, which is undetectable at runtime and produces data corruption that surfaces
 /// weeks later. If a migration was wrong, add another one.
-pub const MIGRATIONS: &[(u32, &str)] = &[(1, include_str!("../../migrations/001_init.sql"))];
+pub const MIGRATIONS: &[(u32, &str)] = &[
+    (1, include_str!("../../migrations/001_init.sql")),
+    (2, include_str!("../../migrations/002_exif.sql")),
+];
 
 /// Highest schema version this build understands.
 pub fn supported_version() -> u32 {

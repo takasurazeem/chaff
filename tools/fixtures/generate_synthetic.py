@@ -289,15 +289,38 @@ def burst_frames(size=SIZE):
 # EXIF
 # --------------------------------------------------------------------------
 def exif_for(capture_time: str, model: str = "Chaff Test Body") -> Image.Exif:
-    """Minimal but valid EXIF, enough to exercise capture-time and body grouping."""
+    """EXIF written the way a camera writes it.
+
+    The IFD split matters and is not cosmetic. IFD0 carries identity — make, model,
+    orientation, the modification timestamp. The **Exif sub-IFD** (0x8769) carries
+    capture settings: DateTimeOriginal, ISO, aperture, shutter, focal length.
+
+    An earlier version of this function wrote everything into IFD0. Pillow allows that,
+    no camera does it, and it made the fixture untestable for the fields that matter
+    most: a reader that correctly searches the sub-IFD found nothing, and the test
+    "failed" against a reader that was right. Fixtures have to look like the real thing
+    or they test the wrong behaviour with great confidence.
+    """
     exif = Image.Exif()
-    exif[0x010F] = "Chaff"            # Make
-    exif[0x0110] = model              # Model
-    exif[0x0132] = capture_time       # DateTime
-    exif[0x8827] = 400                # ISOSpeedRatings
-    exif[0x829D] = (28, 10)           # FNumber = f/2.8
-    exif[0x829A] = (1, 250)           # ExposureTime = 1/250
-    exif[0x920A] = (35, 1)            # FocalLength = 35mm
+
+    # --- IFD0: identity ---
+    exif[0x010F] = "Chaff"           # Make
+    exif[0x0110] = model             # Model
+    exif[0x0112] = 1                 # Orientation: normal
+    exif[0x0132] = capture_time      # DateTime (file modification time)
+    exif[0x011A] = (72, 1)           # XResolution
+    exif[0x011B] = (72, 1)           # YResolution
+    exif[0x0128] = 2                 # ResolutionUnit: inches
+
+    # --- Exif sub-IFD: capture settings ---
+    sub = exif.get_ifd(0x8769)
+    sub[0x9003] = capture_time       # DateTimeOriginal — what burst grouping uses
+    sub[0x9004] = capture_time       # DateTimeDigitized
+    sub[0x8827] = 400                # PhotographicSensitivity (ISO)
+    sub[0x829D] = (28, 10)           # FNumber = f/2.8
+    sub[0x829A] = (1, 250)           # ExposureTime = 1/250 s
+    sub[0x920A] = (35, 1)            # FocalLength = 35 mm
+    sub[0x9209] = 0                  # Flash: did not fire
     return exif
 
 

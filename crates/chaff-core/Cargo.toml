@@ -38,6 +38,10 @@ blake3 = "1"
 
 thiserror = "2"
 
+# EXIF parsing, pure Rust. Drives burst grouping (capture time, camera body) and
+# exposure-bracket detection, neither of which can be inferred from a filename.
+kamadak-exif = "0.6"
+
 [dev-dependencies]
 # Decoding is used only by tests today. When the real thumbnail pipeline lands this
 # moves to [dependencies] — until then, listing it as a runtime dependency would be a

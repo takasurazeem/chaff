@@ -13,7 +13,7 @@
         "focus": "high",
         "contrast": "normal"
       },
-      "sha256": "af21003d08302bd2b80762ef2b7e5f3e5e81be2ad01f12d687a9be0b1001b8be"
+      "sha256": "4cdcd96e2fa57ace268bd893dd880c8c3e62a0a4a0cca5022f76ece5be55fd99"
     },
     {
       "name": "sharp_b",
@@ -23,7 +23,7 @@
         "focus": "high",
         "contrast": "normal"
       },
-      "sha256": "a684d104e441c106d63ff35f191003abad36c1ee47c57eab3f76b4296a35538e"
+      "sha256": "23fa1b354e63c1cb2dec88333903f09f1bf4b749b2b4fe0499a2f29b6ea84da3"
     },
     {
       "name": "blur_defocus_mild",
@@ -33,7 +33,7 @@
         "focus": "low",
         "blur_type": "defocus"
       },
-      "sha256": "733311d83abb25a0bedcf436c631865d4f7a68e559bed187b5c4cae872a39dab"
+      "sha256": "4c4e003b4b9600361fb227ebf6c1b46529e4451a70638811bc5871734c77f534"
     },
     {
       "name": "blur_defocus_heavy",
@@ -43,7 +43,7 @@
         "focus": "very_low",
         "blur_type": "defocus"
       },
-      "sha256": "2f7806a183739920192249871ccb19f0965b0fe3b28d30855e141c7908f50da4"
+      "sha256": "de64daaf6e4eb77fe83c963076aaa89150822869698a0ce37be2961a44dd9aec"
     },
     {
       "name": "blur_motion",
@@ -54,7 +54,7 @@
         "blur_type": "motion",
         "anisotropic": true
       },
-      "sha256": "b2d52cbe1a0be9d0f05b11dc0b8be6a3f4f4d271a053927e1365ab19dca99110"
+      "sha256": "6c187677940b0837b01d585dd66c42e2eeeb35eae9acf87daa4c68f225b79fda"
     },
     {
       "name": "sharp_broadband",
@@ -64,7 +64,7 @@
         "focus": "high",
         "spectrum": "broadband"
       },
-      "sha256": "87f17f98a64f7ee43130b663410c0b031e025d8dd4d8b1372ab3790c336af40b"
+      "sha256": "9c664001b0d368d98087d74da857ea0d8a1d6a9b948f4682e1777ebd2c3a1da3"
     },
     {
       "name": "blur_motion_broadband",
@@ -75,7 +75,7 @@
         "blur_type": "motion",
         "anisotropic": true
       },
-      "sha256": "f44fd15aa6b210b50a97b95ab64d94190d8c1b535297a33ff920995841df566e"
+      "sha256": "59c3d14430b8f7f46a37957d1a5252d44e72d8df7444988c5b8cc9ea55b3adfe"
     },
     {
       "name": "blur_defocus_broadband",
@@ -86,7 +86,7 @@
         "blur_type": "defocus",
         "anisotropic": false
       },
-      "sha256": "0edb013b146d78f2d77cea3dccfe6d34d97484861ae873d078e93aa5624081e6"
+      "sha256": "043f3e6cb7b3b355abfc146725fa763cdccb4959276015fe31a8884fa1a127d5"
     },
     {
       "name": "exposure_over",
@@ -95,7 +95,7 @@
       "expected": {
         "exposure": "clipped_high"
       },
-      "sha256": "933aa98bcdf96690b54bc448f1e417111060374877430e48b25fcf63d86c46f3"
+      "sha256": "eec88dc150981bdc2df74bb96080d9f01a1cecdd990f03833badcfd9a2a01b32"
     },
     {
       "name": "exposure_under",
@@ -104,7 +104,7 @@
       "expected": {
         "exposure": "clipped_low"
       },
-      "sha256": "ea920f4d61d705fca46c00313039fd7b1f32a6209d9ad7b764c94d175e02354e"
+      "sha256": "d308368f1490873ef7a1f7f677c648ce84fa4a7a853be513cdb90f173e18cf6b"
     },
     {
       "name": "noise_high_iso",
@@ -114,7 +114,7 @@
         "focus": "high",
         "noise": "high"
       },
-      "sha256": "641735fe93a640cc1bd7dd5ef456ca8d1397f862ff2e3ea87dcac55e8feecea7"
+      "sha256": "c65ec59a5eb838a263a0a5298266e9f08fd422f8c6323a14c45bb8520bb904a7"
     },
     {
       "name": "flat_low_contrast",
@@ -124,7 +124,7 @@
         "focus": "low_absolute_high_relative",
         "contrast": "low"
       },
-      "sha256": "4bad068442a970984349a5057e033bd1b155366b51ef746dc9da6ab42bd8d0b3"
+      "sha256": "2f856a3d70e28a30ad94335cfb00273c2fea113c1b37560634e6a280209a71b1"
     },
     {
       "name": "bokeh_portrait",
@@ -134,7 +134,7 @@
         "focus_subject": "high",
         "focus_whole_frame": "low"
       },
-      "sha256": "e113f31f93130628e95a250485a49dd857ac7f71b037c114ce91a9009023b7b3"
+      "sha256": "077e19f2222cf1fdc5227927ba7fcca33bd63a8e2fad8b39195b94261b1999c8"
     },
     {
       "name": "burst_0_sharp",
@@ -144,7 +144,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "176b6bcefc85364199c6438b85f3e7c06d8b1410fce2b30321d97431c22d5afc"
+      "sha256": "f267db78168335c486bcd243e9a4cf9c7c39148148e847d220a9df71994229a3"
     },
     {
       "name": "burst_1_sharp",
@@ -154,7 +154,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "baa89212eb0a9bc67469f6c50e5f52cbc24aa0b4a92be74ffbc67f027a4cc3f4"
+      "sha256": "8267dbf94ff9284d45af2fc4c33729605b4a87712e83789f26b4bd2c88c76fca"
     },
     {
       "name": "burst_2_sharp",
@@ -164,7 +164,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "faf3b464989fb8557b6dc41f1fbe22ad87c1f9487dc131eb7c5470e0556fc13c"
+      "sha256": "17ff9126b18840da11a995475f16afbf2304abfadd572b982e39fcba8d8ba668"
     },
     {
       "name": "burst_3_smeared",
@@ -174,7 +174,7 @@
         "burst": "true",
         "smeared": "true"
       },
-      "sha256": "765cd3340813279f9d9a25582002455fa01f32ea700271091e8fceacc2344210"
+      "sha256": "2bf1b00e9cb294f8d335aabd845250a868cd8e60c72ab7206bdd6affcde0ef96"
     },
     {
       "name": "burst_4_sharp",
@@ -184,7 +184,7 @@
         "burst": "true",
         "smeared": "false"
       },
-      "sha256": "b93fc0deae27db146c8b7e05e7577cb9d04dc85d8735989b11c3d6db94f1a464"
+      "sha256": "87d34ac47ed9dfc6db836d72ef74d7fe8611d76bb106db9e1819f56203a8da5d"
     }
   ],
   "pairtree": [

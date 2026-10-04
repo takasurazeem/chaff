@@ -22,6 +22,7 @@ use thiserror::Error;
 use walkdir::WalkDir;
 
 use crate::catalog::{store, CatalogError};
+use crate::exif::{self, ExifRead};
 use crate::ext::{classify, FileKind};
 use crate::pair::resolve;
 
@@ -64,11 +65,23 @@ pub struct ScannedFile {
     pub meta: store::FileMeta,
 }
 
+/// What an EXIF pass did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExifStats {
+    /// Files actually opened and parsed this pass. Zero on a re-index of an unchanged
+    /// library, which is the point of the mtime guard.
+    pub examined: usize,
+    pub parsed: usize,
+    pub absent: usize,
+    pub unsupported: usize,
+}
+
 /// The result of an indexing pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexOutcome {
     pub library_id: i64,
     pub stats: store::IndexStats,
+    pub exif: ExifStats,
     pub scanned_files: usize,
     pub unreadable: Vec<(PathBuf, String)>,
 }
@@ -158,12 +171,63 @@ pub fn index(
     let library_id = store::upsert_library(conn, root, now)?;
     let stats = store::upsert_groups(conn, library_id, &groups, &meta, now)?;
 
+    let mut unreadable = report.unreadable;
+    let exif_stats = extract_exif(conn, library_id, now, &mut unreadable)?;
+
     Ok(IndexOutcome {
         library_id,
         stats,
+        exif: exif_stats,
         scanned_files: report.files.len(),
-        unreadable: report.unreadable,
+        unreadable,
     })
+}
+
+/// Read EXIF for files that have never been examined, or whose bytes have changed.
+///
+/// ## Why an I/O failure deliberately does not write a row
+///
+/// "No EXIF" and "could not be read" look the same from the outside and must be handled
+/// oppositely:
+///
+/// * A file that was read and holds no metadata gets a row. It will never be examined
+///   again, which matters because metadata-free files are common — stripped exports,
+///   screenshots, scans — and re-reading all of them on every index is pure waste.
+/// * A file that could not be *opened* gets no row, so the next pass retries it. Writing
+///   an empty row would record a transient failure as a permanent fact, and a file on a
+///   drive that was asleep would be metadata-less forever.
+pub fn extract_exif(
+    conn: &mut rusqlite::Connection,
+    library_id: i64,
+    now: i64,
+    unreadable: &mut Vec<(PathBuf, String)>,
+) -> Result<ExifStats, IndexError> {
+    let pending = store::files_needing_exif(conn, library_id)?;
+    let mut stats = ExifStats::default();
+
+    for (file_id, path, mtime_ns) in pending {
+        stats.examined += 1;
+        match exif::read(&path) {
+            Ok(ExifRead::Parsed(data)) => {
+                stats.parsed += 1;
+                store::upsert_exif(conn, file_id, mtime_ns, Some(&data), now)?;
+            }
+            Ok(ExifRead::Absent) => {
+                stats.absent += 1;
+                store::upsert_exif(conn, file_id, mtime_ns, None, now)?;
+            }
+            Ok(ExifRead::Unsupported) => {
+                stats.unsupported += 1;
+                store::upsert_exif(conn, file_id, mtime_ns, None, now)?;
+            }
+            Err(err) => {
+                // No row: retry next pass.
+                unreadable.push((path, err.to_string()));
+            }
+        }
+    }
+
+    Ok(stats)
 }
 
 #[cfg(test)]
@@ -421,6 +485,98 @@ mod tests {
             !report.unreadable.is_empty(),
             "a missing root must be reported, not silently treated as an empty folder"
         );
+    }
+
+    #[test]
+    fn exif_is_extracted_and_stored_for_generated_fixtures() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/images/sharp_a.jpg");
+        if !src.is_file() {
+            eprintln!("SKIP: run tools/fixtures/generate_synthetic.py first");
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::copy(&src, root.join("IMG_0001.JPG")).unwrap();
+
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let outcome = index(&mut conn, root, 100).unwrap();
+
+        assert_eq!(outcome.exif.examined, 1);
+        assert_eq!(outcome.exif.parsed, 1, "the fixture carries full EXIF");
+
+        let files = files_by_role(&conn, outcome.library_id, "raster").unwrap();
+        let data = store::exif_for_file(&conn, files[0].id).unwrap().expect("exif row");
+        assert_eq!(data.make.as_deref(), Some("Chaff"));
+        assert_eq!(data.iso, Some(400));
+        assert!(data.captured_at.is_some(), "burst grouping needs the capture time");
+        assert!(data.exposure_signature().is_some(), "bracket detection needs ISO+shutter");
+    }
+
+    #[test]
+    fn a_re_index_does_no_exif_io_at_all() {
+        // The mtime guard. Without it, every index re-parses metadata for the whole
+        // library, which on a 50k-photo library is minutes of pointless file I/O.
+        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/images/sharp_a.jpg");
+        if !src.is_file() {
+            return;
+        }
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::copy(&src, root.join("IMG_0001.JPG")).unwrap();
+
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let first = index(&mut conn, root, 100).unwrap();
+        assert_eq!(first.exif.examined, 1);
+
+        let second = index(&mut conn, root, 200).unwrap();
+        assert_eq!(second.exif.examined, 0, "nothing changed, so nothing should be re-read");
+    }
+
+    #[test]
+    fn a_modified_file_has_its_exif_re_read() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/images/sharp_a.jpg");
+        let other = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/synthetic/images/bokeh_portrait.jpg");
+        if !src.is_file() || !other.is_file() {
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let target = root.join("IMG_0001.JPG");
+        fs::copy(&src, &target).unwrap();
+
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        index(&mut conn, root, 100).unwrap();
+
+        // Replace the file's contents with a different photograph's bytes.
+        fs::copy(&other, &target).unwrap();
+        let second = index(&mut conn, root, 200).unwrap();
+        assert_eq!(
+            second.exif.examined, 1,
+            "a replaced file must have its metadata re-read, not inherited"
+        );
+    }
+
+    #[test]
+    fn a_file_with_no_exif_is_examined_once_and_then_left_alone() {
+        // "Read, nothing there" is recorded so metadata-free files are not re-read
+        // forever. Those files are common: stripped exports, screenshots, scans.
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("IMG_0001.JPG"), b"not really a jpeg").unwrap();
+
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let first = index(&mut conn, root, 100).unwrap();
+        assert_eq!(first.exif.examined, 1);
+        assert_eq!(first.exif.parsed, 0);
+
+        let second = index(&mut conn, root, 200).unwrap();
+        assert_eq!(second.exif.examined, 0, "an examined-and-empty file must not be retried");
     }
 
     #[test]

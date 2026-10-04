@@ -684,3 +684,126 @@ mod tests {
         assert_eq!(all[0].stem, all[0].stem.to_lowercase());
     }
 }
+
+// ---------------------------------------------------------------------------
+// EXIF
+// ---------------------------------------------------------------------------
+/// Files whose EXIF has never been read, or whose bytes have changed since it was.
+///
+/// This is what keeps a re-index cheap: everything already examined is skipped, so a
+/// second pass over an unchanged library does no EXIF I/O whatsoever.
+pub fn files_needing_exif(
+    conn: &Connection,
+    library_id: i64,
+) -> Result<Vec<(i64, PathBuf, i64)>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT f.id, f.path, f.mtime_ns
+           FROM file f
+           LEFT JOIN exif e ON e.file_id = f.id
+          WHERE f.library_id = ?1
+            AND f.role IN ('raw', 'raster')
+            AND (e.file_id IS NULL OR e.source_mtime_ns <> f.mtime_ns)
+          ORDER BY f.path",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((r.get::<_, i64>(0)?, PathBuf::from(r.get::<_, String>(1)?), r.get::<_, i64>(2)?))
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// Record what a file's EXIF read produced.
+///
+/// A row is written even when nothing was found. Storing "examined, empty" is what
+/// stops the reader being re-run against the same metadata-free file on every index —
+/// and metadata-free files are common (stripped exports, screenshots, scans).
+pub fn upsert_exif(
+    conn: &Connection,
+    file_id: i64,
+    source_mtime_ns: i64,
+    data: Option<&crate::exif::ExifData>,
+    now: i64,
+) -> Result<(), CatalogError> {
+    let d = data.cloned().unwrap_or_default();
+    conn.execute(
+        "INSERT INTO exif (file_id, source_mtime_ns, captured_at, make, model, lens,
+                           iso, f_number, exposure_time, focal_length, orientation, read_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         ON CONFLICT (file_id) DO UPDATE SET
+             source_mtime_ns = excluded.source_mtime_ns,
+             captured_at     = excluded.captured_at,
+             make            = excluded.make,
+             model           = excluded.model,
+             lens            = excluded.lens,
+             iso             = excluded.iso,
+             f_number        = excluded.f_number,
+             exposure_time   = excluded.exposure_time,
+             focal_length    = excluded.focal_length,
+             orientation     = excluded.orientation,
+             read_at         = excluded.read_at",
+        params![
+            file_id,
+            source_mtime_ns,
+            d.captured_at,
+            d.make,
+            d.model,
+            d.lens,
+            d.iso.map(|v| v as i64),
+            d.f_number,
+            d.exposure_time,
+            d.focal_length,
+            d.orientation.map(|v| v as i64),
+            now
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn exif_for_file(
+    conn: &Connection,
+    file_id: i64,
+) -> Result<Option<crate::exif::ExifData>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT captured_at, make, model, lens, iso, f_number, exposure_time,
+                focal_length, orientation
+           FROM exif WHERE file_id = ?1",
+    )?;
+    let mut rows = stmt.query(params![file_id])?;
+    match rows.next()? {
+        None => Ok(None),
+        Some(r) => Ok(Some(crate::exif::ExifData {
+            captured_at: r.get(0)?,
+            make: r.get(1)?,
+            model: r.get(2)?,
+            lens: r.get(3)?,
+            iso: r.get::<_, Option<i64>>(4)?.map(|v| v as u32),
+            f_number: r.get(5)?,
+            exposure_time: r.get(6)?,
+            focal_length: r.get(7)?,
+            orientation: r.get::<_, Option<i64>>(8)?.map(|v| v as u16),
+        })),
+    }
+}
+
+/// Every photograph in a library with its capture time, ordered by time.
+///
+/// This is the input to burst grouping: one camera body, frames seconds apart. Rows
+/// with no capture time are excluded rather than given a placeholder, because a
+/// fabricated timestamp would group unrelated photographs into a burst and the user
+/// would be shown a keeper selection for frames that were never a sequence.
+pub fn capture_times(
+    conn: &Connection,
+    library_id: i64,
+) -> Result<Vec<(i64, String, i64)>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT p.id, COALESCE(e.model, e.make, ''), e.captured_at
+           FROM photo p
+           JOIN file f ON f.photo_id = p.id AND f.role = 'raw'
+           JOIN exif e ON e.file_id = f.id
+          WHERE p.library_id = ?1 AND e.captured_at IS NOT NULL
+          ORDER BY e.captured_at",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
