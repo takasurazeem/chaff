@@ -2,11 +2,8 @@ name: CI
 
 # Wave 0 of the roadmap: make the loop verifiable before adding depth.
 #
-# Why three platforms and not just Linux: pair resolution is the one piece of logic
-# whose correctness depends on the *filesystem*. macOS stores filenames decomposed
-# (NFD) while Linux and Windows do not, and Windows/macOS are case-insensitive while
-# Linux is case-sensitive. A green run on one platform is not evidence about the other
-# two, and this project deploys to two of them.
+# Now that the engine lives in `chaff-core`, most of this workflow needs no GUI
+# dependencies at all — which is why the engine was split out. See Cargo.toml.
 
 on:
   push:
@@ -23,8 +20,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
-    name: Rust core (${{ matrix.os }})
+  # ---------------------------------------------------------------------------
+  # The engine: the tests that actually verify behaviour.
+  # ---------------------------------------------------------------------------
+  engine:
+    name: Engine tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -33,13 +33,70 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      # A green build that tests nothing is worse than a red one.
+      #
+      # This guard exists because it already happened: when the engine moved from
+      # `src-tauri/src/core` to the `chaff-core` crate, the previous workflow's
+      # `cargo test --lib` (run with `working-directory: src-tauri`) began compiling a
+      # crate that contains no tests. It reported `0 passed` and a green tick, on every
+      # platform, indefinitely. Asserting a minimum count is the cheapest way to make
+      # that class of mistake impossible to repeat.
+      - name: Engine unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p chaff-core 2>&1 | tee engine-tests.log
+          PASSED=$(grep -oE '[0-9]+ passed' engine-tests.log | awk '{s+=$1} END {print s+0}')
+          echo "engine tests passed: $PASSED"
+          if [ "$PASSED" -lt 50 ]; then
+            echo "::error::Expected at least 50 engine tests to pass, saw $PASSED. If tests were legitimately removed, lower this floor deliberately; do not delete the guard."
+            exit 1
+          fi
+
+      # The real-file corpus is ~47 MB and gitignored, so these tests skip by design on
+      # a fresh checkout. Run them anyway, without capture, so the skip is visible in the
+      # log rather than hiding behind a "11 passed" line that did nothing.
+      - name: Corpus integration tests (skip visibly when the corpus is absent)
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p chaff-core --test corpus -- --nocapture 2>&1 | tee corpus-tests.log
+          SKIPPED=$(grep -c '^SKIP' corpus-tests.log || true)
+          if [ "$SKIPPED" -gt 0 ]; then
+            echo "::notice::$SKIPPED corpus test(s) skipped — fixtures/corpus/ is absent. Run tools/fixtures/fetch_corpus.py to enable them."
+          fi
+
+      - name: Clippy
+        shell: bash
+        run: cargo clippy -p chaff-core --all-targets -- -D warnings
+        continue-on-error: true
+
+      - name: Formatting
+        shell: bash
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # The shell: proves the Tauri crate still compiles. This is the only job that needs
+  # a desktop stack, and it deliberately does not run tests — there are none there.
+  # ---------------------------------------------------------------------------
+  app-compiles:
+    name: Tauri shell compiles (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Install Tauri's Linux build dependencies
-        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
@@ -48,27 +105,30 @@ jobs:
             pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: ". -> target"
 
-      # `--lib` deliberately: it builds and tests the core without needing the frontend
-      # bundle to exist, which keeps this job fast and independent of the web job.
-      - name: cargo test
-        working-directory: src-tauri
-        run: cargo test --lib --all-features
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
-      - name: cargo clippy
-        working-directory: src-tauri
-        run: cargo clippy --lib -- -D warnings
-        continue-on-error: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
 
-      - name: cargo fmt check
-        working-directory: src-tauri
-        run: cargo fmt --all -- --check
-        continue-on-error: true
+      - run: pnpm install --frozen-lockfile
 
+      # `tauri::generate_context!` reads `frontendDist`, so it must exist before cargo
+      # can expand the macro.
+      - name: Build frontend
+        run: pnpm build
+
+      - name: cargo check
+        run: cargo check -p chaff
+
+  # ---------------------------------------------------------------------------
   web:
     name: Frontend (typecheck, build)
     runs-on: ubuntu-latest
