@@ -38,13 +38,15 @@ blake3 = "1"
 
 thiserror = "2"
 
+# Decoding and encoding for the thumbnail pipeline. Moved out of dev-dependencies when
+# `thumb.rs` landed: the engine now genuinely decodes, rather than only its tests.
+# Feature-limited to the formats a photo library actually contains, to keep the build
+# and the binary small.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff", "webp", "gif", "bmp"] }
+
 # EXIF parsing, pure Rust. Drives burst grouping (capture time, camera body) and
 # exposure-bracket detection, neither of which can be inferred from a filename.
 kamadak-exif = "0.6"
 
 [dev-dependencies]
-# Decoding is used only by tests today. When the real thumbnail pipeline lands this
-# moves to [dependencies] — until then, listing it as a runtime dependency would be a
-# claim the code does not support.
-image = "0.25"
 tempfile = "3"

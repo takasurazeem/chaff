@@ -15,3 +15,4 @@ pub mod imaging;
 pub mod pair;
 pub mod preview;
 pub mod scoring;
+pub mod thumb;
