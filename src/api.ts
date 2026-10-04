@@ -66,6 +66,101 @@ export async function capabilities(endpoints: string[] = []): Promise<string> {
   return invoke<string>("capabilities", { endpoints });
 }
 
+// ---------------------------------------------------------------------------
+// Deleting
+// ---------------------------------------------------------------------------
+export interface DeleteFileView {
+  name: string;
+  path: string;
+  bytes: number;
+}
+
+export interface DeleteCandidateView {
+  photoId: number;
+  stem: string;
+  files: DeleteFileView[];
+  bytes: number;
+  /** True when this photograph has only one of its two halves. */
+  incomplete: boolean;
+}
+
+export interface DeletePlanView {
+  candidates: DeleteCandidateView[];
+  photographs: number;
+  files: number;
+  bytes: number;
+  incomplete: number;
+  warnings: string[];
+  missing: number;
+  /** Non-empty means the operation is impossible; the UI must not offer to proceed. */
+  refusals: string[];
+}
+
+export interface DeleteReceiptView {
+  opId: string;
+  moved: number;
+  bytes: number;
+  warnings: string[];
+}
+
+export interface TrashOperationView {
+  opId: string;
+  at: number;
+  date: string;
+  reason: string;
+  files: number;
+  bytes: number;
+  purged: boolean;
+}
+
+export interface RestoreView {
+  opId: string;
+  restored: number;
+  alreadyPresent: number;
+  blocked: string[];
+}
+
+export interface PurgeView {
+  operations: number;
+  removed: number;
+  bytes: number;
+}
+
+/** What a delete would move. Changes nothing — this is what the user confirms. */
+export async function planDelete(
+  libraryRoot: string,
+  photoIds: number[],
+): Promise<DeletePlanView> {
+  return invoke<DeletePlanView>("plan_delete", { libraryRoot, photoIds });
+}
+
+/**
+ * Move the selection to the trash.
+ *
+ * Re-resolves from the photograph ids on the Rust side and re-hashes every file, so
+ * nothing the webview sends can name a file the engine did not choose itself.
+ */
+export async function commitDelete(
+  libraryRoot: string,
+  photoIds: number[],
+  reason: string,
+): Promise<DeleteReceiptView> {
+  return invoke<DeleteReceiptView>("commit_delete", { libraryRoot, photoIds, reason });
+}
+
+export async function listTrash(libraryRoot: string): Promise<TrashOperationView[]> {
+  return invoke<TrashOperationView[]>("list_trash", { libraryRoot });
+}
+
+export async function restoreTrash(libraryRoot: string, opId: string): Promise<RestoreView> {
+  return invoke<RestoreView>("restore_trash", { libraryRoot, opId });
+}
+
+/** Empty the trash. The only call in this application that unlinks a file. */
+export async function purgeTrash(libraryRoot: string, opIds: string[]): Promise<PurgeView> {
+  return invoke<PurgeView>("purge_trash", { libraryRoot, opIds });
+}
+
 /** Force the thumbnail cache back inside its cap. */
 export async function trimThumbnailCache(): Promise<number> {
   return invoke<number>("trim_thumbnail_cache");

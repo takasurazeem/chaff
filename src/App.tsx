@@ -6,7 +6,17 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-import { capabilities, listPhotos, openLibrary, setDecision } from "./api";
+import {
+  capabilities,
+  commitDelete,
+  listPhotos,
+  openLibrary,
+  planDelete,
+  setDecision,
+  type DeletePlanView,
+} from "./api";
+import { DeleteDialog } from "./components/DeleteDialog";
+import { TrashPanel } from "./components/TrashPanel";
 import type { LibraryView, PhotoView } from "./types";
 import { Grid } from "./components/Grid";
 import "./index.css";
@@ -56,6 +66,17 @@ export default function App() {
    * for a report almost nobody reads twice.
    */
   const [capabilityReport, setCapabilityReport] = useState<string | null>(null);
+
+  /**
+   * The delete flow, in two steps.
+   *
+   * `plan` is what the user is shown; `null` means no dialog. The commit does **not** send
+   * this plan back — it sends the photograph ids and the Rust side resolves and re-hashes
+   * from scratch, so nothing the webview holds can name a file the engine did not choose.
+   */
+  const [deletePlan, setDeletePlan] = useState<DeletePlanView | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   // Cursor for keyboard navigation: the photograph the arrow keys move from.
   const cursor = useRef<number>(0);
@@ -187,6 +208,47 @@ export default function App() {
     }
   }, []);
 
+  /** Reload the library from the catalog. Used after a restore changes what is on disk. */
+  const reload = useCallback(async (libraryId: number) => {
+    const list = await listPhotos(libraryId);
+    setPhotos(list);
+    setDecisions(new Map(list.map((p) => [p.id, { rating: p.rating, rejected: p.rejected }])));
+    setSelected(new Set());
+  }, []);
+
+  /** Ask what a delete would do, and show it. Moves nothing. */
+  const beginDelete = useCallback(async () => {
+    if (!library || selected.size === 0) return;
+    try {
+      setDeletePlan(await planDelete(library.root, [...selected]));
+    } catch (e) {
+      setStatus({ kind: "error", message: String(e) });
+    }
+  }, [library, selected]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!library || !deletePlan) return;
+    setDeleteBusy(true);
+    try {
+      const receipt = await commitDelete(
+        library.root,
+        deletePlan.candidates.map((c) => c.photoId),
+        "culled in Chaff",
+      );
+      setDeletePlan(null);
+      await reload(library.library_id);
+      setStatus({ kind: "ready" });
+      if (receipt.moved === 0) {
+        setStatus({ kind: "error", message: "Nothing was moved." });
+      }
+    } catch (e) {
+      setDeletePlan(null);
+      setStatus({ kind: "error", message: String(e) });
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [library, deletePlan, reload]);
+
   // Arrow-key navigation. Kept here rather than in the grid because it moves the
   // selection, and the selection is the app's.
   useEffect(() => {
@@ -194,6 +256,14 @@ export default function App() {
       if (photos.length === 0) return;
       const cols = Math.max(1, columns.current);
       let next = cursor.current;
+
+      // Delete opens the confirmation. It does **not** delete anything — nothing in
+      // Chaff removes a file without a second, explicit step.
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        void beginDelete();
+        return;
+      }
 
       // Culling keys come first, so a rating key never doubles as navigation.
       if (e.key >= "0" && e.key <= "5") {
@@ -241,7 +311,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [photos, applyDecision, undo]);
+  }, [photos, applyDecision, undo, beginDelete]);
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-200">
@@ -281,6 +351,17 @@ export default function App() {
           </div>
         )}
 
+        {library && (
+          <button
+            type="button"
+            onClick={() => setTrashOpen(true)}
+            className="rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700"
+            title="Files moved out of the library, and how to put them back"
+          >
+            Trash
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
@@ -301,6 +382,14 @@ export default function App() {
         {selected.size > 0 && (
           <span className="flex items-center gap-3 text-xs text-zinc-400">
             <span>{selected.size} selected</span>
+            <button
+              type="button"
+              onClick={() => void beginDelete()}
+              className="rounded bg-zinc-800 px-2 py-0.5 text-rose-400 hover:bg-zinc-700"
+              title="Move the selection to the trash (Delete)"
+            >
+              Move to trash
+            </button>
             {undoDepth > 0 && (
               <button
                 type="button"
@@ -325,6 +414,23 @@ export default function App() {
         </section>
       )}
 
+      {deletePlan && (
+        <DeleteDialog
+          plan={deletePlan}
+          busy={deleteBusy}
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setDeletePlan(null)}
+        />
+      )}
+
+      {trashOpen && library && (
+        <TrashPanel
+          libraryRoot={library.root}
+          onClose={() => setTrashOpen(false)}
+          onChanged={() => void reload(library.library_id)}
+        />
+      )}
+
       <main className="min-h-0 flex-1">
         {status.kind === "idle" && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
@@ -339,7 +445,8 @@ export default function App() {
               <kbd className="rounded bg-zinc-800 px-1">5</kbd> rate ·{" "}
               <kbd className="rounded bg-zinc-800 px-1">X</kbd> reject ·{" "}
               <kbd className="rounded bg-zinc-800 px-1">U</kbd> undo ·{" "}
-              <kbd className="rounded bg-zinc-800 px-1">↑↓←→</kbd> move
+              <kbd className="rounded bg-zinc-800 px-1">↑↓←→</kbd> move ·{" "}
+              <kbd className="rounded bg-zinc-800 px-1">Delete</kbd> move to trash
             </p>
           </div>
         )}

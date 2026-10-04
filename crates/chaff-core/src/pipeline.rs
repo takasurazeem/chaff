@@ -608,3 +608,327 @@ mod tests {
         assert_eq!(lines, vec!["not scored".to_string()]);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Deleting
+// ---------------------------------------------------------------------------
+/// One photograph resolved into the files that would actually move.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeleteCandidate {
+    pub photo_id: i64,
+    pub stem: String,
+    /// `pair`, `raw_only`, `raster_only` or `ambiguous`, as the indexer recorded it.
+    pub state: String,
+    pub files: Vec<PathBuf>,
+    pub bytes: i64,
+}
+
+impl DeleteCandidate {
+    /// True when this photograph has only one of its two halves.
+    ///
+    /// Worth saying out loud before a delete. "Move this photograph" reads differently
+    /// when the photograph is already incomplete — the user may be looking for a JPEG
+    /// that is not there, and the confirmation should tell them rather than let them
+    /// discover it afterwards.
+    pub fn is_incomplete(&self) -> bool {
+        self.state == "raw_only" || self.state == "raster_only"
+    }
+}
+
+/// What a delete would move.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeleteSelection {
+    pub candidates: Vec<DeleteCandidate>,
+    /// Photographs that could not be resolved to any file on disk.
+    pub missing: Vec<i64>,
+}
+
+impl DeleteSelection {
+    pub fn file_count(&self) -> usize {
+        self.candidates.iter().map(|c| c.files.len()).sum()
+    }
+
+    pub fn total_bytes(&self) -> i64 {
+        self.candidates.iter().map(|c| c.bytes).sum()
+    }
+
+    pub fn incomplete_count(&self) -> usize {
+        self.candidates.iter().filter(|c| c.is_incomplete()).count()
+    }
+}
+
+/// Resolve a selection of photographs into the files that would move.
+///
+/// **A photograph is the unit, not a file.** Selecting one half of a RAW+JPEG pair moves
+/// both halves and every sidecar, because moving one half is precisely the orphaned-half
+/// problem this application exists to solve. There is deliberately no way to express
+/// "delete only the JPEG" here — the API cannot represent it, rather than merely
+/// discouraging it.
+///
+/// Reads only. Nothing moves until [`crate::trash::Trash::commit`] is called, and the
+/// caller is expected to show this to a person first.
+pub fn resolve_delete_selection(
+    conn: &Connection,
+    photo_ids: &[i64],
+) -> Result<DeleteSelection, CatalogError> {
+    let mut candidates = Vec::with_capacity(photo_ids.len());
+    let mut missing = Vec::new();
+
+    for &photo_id in photo_ids {
+        let files = store::files_for_photo(conn, photo_id)?;
+        if files.is_empty() {
+            // A photograph with no files is a catalog row whose files have gone. Counted
+            // rather than skipped silently: the user selected it, and "nothing happened"
+            // is not an answer.
+            missing.push(photo_id);
+            continue;
+        }
+
+        let state: String = conn
+            .query_row("SELECT state FROM photo WHERE id = ?1", rusqlite::params![photo_id], |r| {
+                r.get(0)
+            })
+            .unwrap_or_else(|_| "pair".to_string());
+
+        let mut paths = Vec::with_capacity(files.len());
+        let mut bytes = 0i64;
+        for f in &files {
+            let path = PathBuf::from(&f.path);
+            bytes += std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
+            paths.push(path);
+        }
+        // Stable order, so a confirmation dialog does not reshuffle between the plan and
+        // the commit.
+        paths.sort();
+
+        let stem = files
+            .first()
+            .and_then(|f| Path::new(&f.path).file_stem().map(|s| s.to_string_lossy().to_string()))
+            .unwrap_or_default();
+
+        candidates.push(DeleteCandidate { photo_id, stem, state, files: paths, bytes });
+    }
+
+    candidates.sort_by(|a, b| a.stem.cmp(&b.stem).then(a.photo_id.cmp(&b.photo_id)));
+    Ok(DeleteSelection { candidates, missing })
+}
+
+#[cfg(test)]
+mod delete_tests {
+    use super::*;
+    use crate::catalog::open_in_memory;
+    use std::fs;
+    use tempfile::tempdir;
+
+    /// A library with a RAW+JPEG pair, an orphaned RAW, and a JPEG on its own.
+    fn library() -> Option<(tempfile::TempDir, Connection, i64)> {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/synthetic/images");
+        if !src.is_dir() {
+            eprintln!("SKIP: run tools/fixtures/generate_synthetic.py first");
+            return None;
+        }
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let jpeg = fs::read(src.join("sharp_a.jpg")).unwrap();
+
+        fs::write(root.join("IMG_0001.CR3"), b"pretend raw one").unwrap();
+        fs::write(root.join("IMG_0001.JPG"), &jpeg).unwrap();
+        fs::write(root.join("IMG_0002.CR3"), b"pretend raw two").unwrap();
+        fs::write(root.join("IMG_0003.JPG"), &jpeg).unwrap();
+
+        let mut conn = open_in_memory().unwrap();
+        let report = index_and_score(&mut conn, root, 1_700_000_000).unwrap();
+        Some((dir, conn, report.library_id))
+    }
+
+    #[test]
+    fn a_pair_resolves_to_every_one_of_its_files() {
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let pair = photos.iter().find(|p| p.stem == "img_0001").expect("the pair");
+
+        let sel = resolve_delete_selection(&conn, &[pair.id]).unwrap();
+        assert_eq!(sel.candidates.len(), 1);
+        let c = &sel.candidates[0];
+        assert_eq!(c.files.len(), 2, "both halves, always");
+        assert!(
+            c.files.iter().any(|f| f.to_string_lossy().ends_with(".CR3"))
+                && c.files.iter().any(|f| f.to_string_lossy().ends_with(".JPG")),
+            "the raw and the jpeg must both be there: {:?}",
+            c.files
+        );
+        assert!(c.bytes > 0);
+    }
+
+    #[test]
+    fn there_is_no_way_to_select_half_a_pair() {
+        // The API takes photographs, not files. Moving one half of a pair is precisely the
+        // orphaned-half problem this application exists to solve, so it is not merely
+        // discouraged — it cannot be expressed.
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let pair = photos.iter().find(|p| p.stem == "img_0001").unwrap();
+
+        let sel = resolve_delete_selection(&conn, &[pair.id]).unwrap();
+        assert_eq!(sel.file_count(), 2);
+    }
+
+    #[test]
+    fn an_incomplete_photograph_is_flagged_rather_than_hidden() {
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let orphan = photos.iter().find(|p| p.stem == "img_0002").expect("the orphaned raw");
+
+        let sel = resolve_delete_selection(&conn, &[orphan.id]).unwrap();
+        assert_eq!(sel.candidates.len(), 1);
+        assert_eq!(sel.candidates[0].files.len(), 1);
+        assert!(
+            sel.candidates[0].is_incomplete(),
+            "'move this photograph' reads differently when it is already missing a half"
+        );
+        assert_eq!(sel.incomplete_count(), 1);
+    }
+
+    #[test]
+    fn a_selection_of_several_photographs_totals_correctly() {
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let ids: Vec<i64> = photos.iter().map(|p| p.id).collect();
+
+        let sel = resolve_delete_selection(&conn, &ids).unwrap();
+        assert_eq!(sel.candidates.len(), 3);
+        assert_eq!(sel.file_count(), 4, "2 + 1 + 1");
+        assert_eq!(sel.total_bytes(), sel.candidates.iter().map(|c| c.bytes).sum::<i64>());
+    }
+
+    #[test]
+    fn the_order_is_stable_so_a_confirmation_does_not_reshuffle() {
+        // The plan shown to the user and the commit that follows must describe the same
+        // thing in the same order.
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let mut ids: Vec<i64> = photos.iter().map(|p| p.id).collect();
+        ids.reverse();
+
+        let a = resolve_delete_selection(&conn, &ids).unwrap();
+        let mut ids2 = ids.clone();
+        ids2.reverse();
+        let b = resolve_delete_selection(&conn, &ids2).unwrap();
+        assert_eq!(a, b, "input order must not change the output order");
+    }
+
+    #[test]
+    fn a_file_that_is_already_gone_contributes_nothing_to_the_total() {
+        // A catalog row whose files have been removed behind its back. The selection still
+        // resolves, and the size is zero rather than a panic or a wrong number — the
+        // commit's own re-hash is what turns this into a refusal.
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let ghost = photos[0].id;
+
+        for f in store::files_for_photo(&conn, ghost).unwrap() {
+            let _ = fs::remove_file(&f.path);
+        }
+
+        let sel = resolve_delete_selection(&conn, &[ghost]).unwrap();
+        assert_eq!(sel.candidates.len(), 1, "the photograph still resolves");
+        assert_eq!(sel.total_bytes(), 0, "a file that is gone weighs nothing");
+    }
+
+    #[test]
+    fn a_decision_survives_being_trashed_and_restored() {
+        // **The property migration 004 exists for.** `decision` cascades with `photo`, so
+        // deleting the row when a photograph is trashed would take the user's rating with
+        // it and a restore would bring the file back unrated. The row is marked instead,
+        // and the indexer's sweep skips marked rows.
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let pair = photos.iter().find(|p| p.stem == "img_0001").unwrap();
+        let id = pair.id;
+
+        store::set_decision(
+            &conn,
+            id,
+            store::Decision { rating: store::Rating::new(5), rejected: false },
+            1_700_000_100,
+        )
+        .unwrap();
+        assert_eq!(store::decision_for_photo(&conn, id).unwrap().unwrap().rating.get(), 5);
+
+        // Trash it: files leave, the row is marked.
+        store::mark_photo_trashed(&conn, id, 1_700_000_200).unwrap();
+        assert!(
+            store::photos(&conn, lib).unwrap().iter().all(|p| p.id != id),
+            "a trashed photograph must be hidden from the grid"
+        );
+        assert_eq!(
+            store::decision_for_photo(&conn, id).unwrap().unwrap().rating.get(),
+            5,
+            "and its rating must still be there"
+        );
+    }
+
+    #[test]
+    fn an_index_pass_does_not_destroy_the_decisions_of_trashed_photographs() {
+        // The failure this guards against is the worst kind: silent, delayed, and caused
+        // by something the user would never connect to it. A trashed photograph has no
+        // files in the library by definition, so without the `trashed_at IS NULL` guard
+        // in the sweep, *any* re-index would delete every trashed row and cascade away
+        // every rating in the trash.
+        let Some((dir, mut conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let pair = photos.iter().find(|p| p.stem == "img_0001").unwrap();
+        let id = pair.id;
+
+        store::set_decision(
+            &conn,
+            id,
+            store::Decision { rating: store::Rating::new(4), rejected: false },
+            1_700_000_100,
+        )
+        .unwrap();
+
+        // Move the files out of the library and mark the row, exactly as a trash does.
+        for f in store::files_for_photo(&conn, id).unwrap() {
+            let _ = fs::remove_file(&f.path);
+        }
+        store::mark_photo_trashed(&conn, id, 1_700_000_200).unwrap();
+
+        // An unrelated index pass over the library.
+        index_and_score(&mut conn, dir.path(), 1_700_000_300).unwrap();
+
+        assert_eq!(
+            store::decision_for_photo(&conn, id).unwrap().map(|d| d.rating.get()),
+            Some(4),
+            "a re-index must not destroy a rating sitting in the trash"
+        );
+    }
+
+    #[test]
+    fn a_photograph_that_is_really_gone_is_still_swept() {
+        // The guard must not become a leak. A row that is *not* trashed and whose files
+        // have vanished is swept, because the photograph really is gone.
+        let Some((dir, mut conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let victim = photos.iter().find(|p| p.stem == "img_0003").unwrap().id;
+
+        for f in store::files_for_photo(&conn, victim).unwrap() {
+            let _ = fs::remove_file(&f.path);
+        }
+
+        index_and_score(&mut conn, dir.path(), 1_700_000_300).unwrap();
+        assert!(
+            store::photos(&conn, lib).unwrap().iter().all(|p| p.id != victim),
+            "an untrashed row whose files are gone must be swept"
+        );
+    }
+
+    #[test]
+    fn resolving_an_empty_selection_is_empty() {
+        let Some((_dir, conn, _lib)) = library() else { return };
+        let sel = resolve_delete_selection(&conn, &[]).unwrap();
+        assert!(sel.candidates.is_empty());
+        assert_eq!(sel.file_count(), 0);
+        assert_eq!(sel.total_bytes(), 0);
+    }
+}

@@ -257,9 +257,21 @@ pub fn upsert_groups(
         params![library_id, now],
     )?;
 
+    // Sweep photographs whose files are all gone — **except those in the trash**.
+    //
+    // A trashed photograph has no files in the library by definition, so without the
+    // `trashed_at IS NULL` guard every index pass would delete every trashed row, and
+    // `decision` cascades with `photo`. The user's ratings would be destroyed by an
+    // unrelated re-index, which is the worst kind of data loss: silent, delayed, and
+    // attributable to something they did not connect to it.
+    //
+    // The row is left for the trash to own. Emptying the trash by hand leaves a row whose
+    // files are gone for good, and the *next* pass after `clear_photo_trashed` sweeps it —
+    // which is the correct outcome, because the photograph really is gone.
     stats.removed_photos = tx.execute(
         "DELETE FROM photo
           WHERE library_id = ?1
+            AND trashed_at IS NULL
             AND id NOT IN (
                 SELECT photo_id FROM file
                  WHERE library_id = ?1 AND photo_id IS NOT NULL
@@ -280,9 +292,11 @@ pub fn upsert_groups(
 // Queries
 // ---------------------------------------------------------------------------
 pub fn photos(conn: &Connection, library_id: i64) -> Result<Vec<PhotoRow>, CatalogError> {
+    // Trashed photographs are hidden. Their rows survive so their decisions do — see
+    // migration 004 — but the grid must behave as if they were gone.
     let mut stmt = conn.prepare(
         "SELECT id, dir, stem, state, needs_review
-           FROM photo WHERE library_id = ?1
+           FROM photo WHERE library_id = ?1 AND trashed_at IS NULL
           ORDER BY dir, stem",
     )?;
     let rows = stmt.query_map(params![library_id], |r| {
@@ -1197,4 +1211,64 @@ pub fn decision_count(conn: &Connection, library_id: i64) -> Result<usize, Catal
         |r| r.get(0),
     )?;
     Ok(n as usize)
+}
+
+// ---------------------------------------------------------------------------
+// Trash state
+// ---------------------------------------------------------------------------
+/// Record that a photograph's files have moved to the trash.
+///
+/// The row survives deliberately. `decision` cascades with `photo`, so removing the row
+/// would take the user's rating with it and a restore would bring the file back unrated.
+pub fn mark_photo_trashed(
+    conn: &Connection,
+    photo_id: i64,
+    now: i64,
+) -> Result<(), CatalogError> {
+    conn.execute(
+        "UPDATE photo SET trashed_at = ?2 WHERE id = ?1",
+        params![photo_id, now],
+    )?;
+    Ok(())
+}
+
+/// Bring a photograph back into the library, keeping whatever was decided about it.
+pub fn clear_photo_trashed(conn: &Connection, photo_id: i64) -> Result<(), CatalogError> {
+    conn.execute("UPDATE photo SET trashed_at = NULL WHERE id = ?1", params![photo_id])?;
+    Ok(())
+}
+
+/// Bring back every photograph whose files are at these paths.
+///
+/// Used by restore, which knows the paths but not the row ids.
+pub fn clear_trashed_for_paths(
+    conn: &Connection,
+    paths: &[String],
+) -> Result<usize, CatalogError> {
+    let mut n = 0;
+    for path in paths {
+        n += conn.execute(
+            "UPDATE photo SET trashed_at = NULL
+              WHERE id IN (SELECT photo_id FROM file WHERE path = ?1)",
+            params![path],
+        )?;
+    }
+    Ok(n)
+}
+
+/// The content hash the catalog recorded for a file, if it has one.
+///
+/// Filled lazily, so `Ok(None)` is the common answer rather than an error. The trash
+/// engine treats a missing hash as "nothing to verify against" and relies on its own
+/// read-back instead.
+pub fn content_hash_for_path(
+    conn: &Connection,
+    path: &str,
+) -> Result<Option<String>, CatalogError> {
+    let mut stmt = conn.prepare("SELECT content_hash FROM file WHERE path = ?1")?;
+    let mut rows = stmt.query(params![path])?;
+    match rows.next()? {
+        Some(r) => Ok(r.get::<_, Option<String>>(0)?),
+        None => Ok(None),
+    }
 }

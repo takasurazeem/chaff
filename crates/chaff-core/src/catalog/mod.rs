@@ -56,6 +56,7 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("../../migrations/001_init.sql")),
     (2, include_str!("../../migrations/002_exif.sql")),
     (3, include_str!("../../migrations/003_decision.sql")),
+    (4, include_str!("../../migrations/004_trashed.sql")),
 ];
 
 /// Highest schema version this build understands.
