@@ -38,6 +38,11 @@ blake3 = "1"
 
 thiserror = "2"
 
+# The trash manifest is JSONL. Hand-rolling JSON for paths means hand-rolling path
+# escaping, and a manifest that cannot be parsed is a file that cannot be restored.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 # Decoding and encoding for the thumbnail pipeline. Moved out of dev-dependencies when
 # `thumb.rs` landed: the engine now genuinely decodes, rather than only its tests.
 # Feature-limited to the formats a photo library actually contains, to keep the build

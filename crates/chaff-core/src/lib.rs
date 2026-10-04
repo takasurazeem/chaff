@@ -22,3 +22,4 @@ pub mod pipeline;
 pub mod preview;
 pub mod scoring;
 pub mod thumb;
+pub mod trash;
