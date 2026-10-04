@@ -546,3 +546,93 @@ fn real_files_yield_a_decodable_jpeg_but_raw_decoding_is_not_yet_implemented() {
     // correctly *identified*, not that it is decoded.
     let _ = prepare(&load(&jpg));
 }
+
+// ---------------------------------------------------------------------------
+// Indexing real files end to end
+// ---------------------------------------------------------------------------
+#[test]
+fn the_real_corpus_indexes_into_the_catalog() {
+    if skip("real-corpus indexing") {
+        return;
+    }
+    // The whole Wave 1 spine over real bytes: walk the tree, classify, resolve, store.
+    // RAW and JPEG live in separate directories here, so nothing should pair — which is
+    // itself the assertion that the resolver does not invent pairs across directories.
+    use chaff_core::catalog::{store, open_in_memory};
+    use chaff_core::indexer;
+
+    let root = corpus_root().expect("corpus present");
+    let mut conn = open_in_memory().expect("catalog");
+    let outcome = indexer::index(&mut conn, &root, 1_700_000_000).expect("index");
+
+    assert!(outcome.is_clean(), "unreadable entries: {:?}", outcome.unreadable);
+
+    let expected_raw = raws().len();
+    let expected_jpeg = jpegs().len();
+    assert_eq!(
+        outcome.scanned_files,
+        expected_raw + expected_jpeg,
+        "every real image should be scanned; MANIFEST.json must not be"
+    );
+
+    // The corpus contains one TIFF-wrapped raw (a Kodak DCS 3). It classifies as a
+    // rendered image on purpose — most TIFFs a photographer owns are scans and exports —
+    // so counts must split on the extension rather than on where the file came from.
+    let tiff_wrapped = raws()
+        .iter()
+        .filter(|p| {
+            let e = p.extension().unwrap().to_string_lossy().to_ascii_lowercase();
+            e == "tif" || e == "tiff"
+        })
+        .count();
+    let expected_raw_groups = expected_raw - tiff_wrapped;
+
+    let photos = store::photos(&conn, outcome.library_id).expect("photos");
+    assert_eq!(photos.len(), expected_raw + expected_jpeg);
+    assert_eq!(
+        photos.iter().filter(|p| p.state == "raw_only").count(),
+        expected_raw_groups,
+        "each real RAW is an orphan in this layout ({tiff_wrapped} TIFF-wrapped file(s) \
+         classified as rendered images by design)"
+    );
+    assert_eq!(
+        photos.iter().filter(|p| p.state == "raster_only").count(),
+        expected_jpeg + tiff_wrapped
+    );
+    assert_eq!(
+        photos.iter().filter(|p| p.state == "pair").count(),
+        0,
+        "no pair may be invented across unrelated directories"
+    );
+
+    // Every real RAW must be identified as raw, not merely present.
+    let raws_stored = store::files_by_role(&conn, outcome.library_id, "raw").expect("raw files");
+    assert_eq!(raws_stored.len(), expected_raw_groups);
+    assert!(
+        raws_stored.iter().all(|f| f.size_bytes > 0),
+        "real files must carry real sizes"
+    );
+}
+
+#[test]
+fn re_indexing_the_real_corpus_changes_nothing() {
+    if skip("real-corpus re-index") {
+        return;
+    }
+    use chaff_core::catalog::{open_in_memory, store};
+    use chaff_core::indexer;
+
+    let root = corpus_root().expect("corpus present");
+    let mut conn = open_in_memory().expect("catalog");
+
+    let first = indexer::index(&mut conn, &root, 1_700_000_000).expect("first index");
+    let before = store::photos(&conn, first.library_id).expect("photos");
+
+    let second = indexer::index(&mut conn, &root, 1_700_000_100).expect("second index");
+    let after = store::photos(&conn, second.library_id).expect("photos");
+
+    assert_eq!(second.library_id, first.library_id, "the same folder is the same library");
+    assert_eq!(second.stats.removed_files, 0, "nothing on disk changed");
+    assert_eq!(second.stats.removed_photos, 0);
+    assert_eq!(before, after, "a re-index must not alter the catalog");
+}

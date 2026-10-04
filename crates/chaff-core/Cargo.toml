@@ -24,6 +24,20 @@ license = "MIT"
 # after a copy. Correctness dependency, not a convenience.
 unicode-normalization = "0.1"
 
+# The catalog. `bundled` compiles SQLite from source, so there is no system libsqlite3
+# to install — which is what lets `cargo test -p chaff-core` run on a bare Linux box and
+# keeps Windows and macOS identical.
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# Directory traversal that reports errors instead of stopping at the first one.
+walkdir = "2"
+
+# Content hashing for the thumbnail cache key and for the pre-move verification that
+# ADR-0004 requires before any file is moved.
+blake3 = "1"
+
+thiserror = "2"
+
 [dev-dependencies]
 # Decoding is used only by tests today. When the real thumbnail pipeline lands this
 # moves to [dependencies] — until then, listing it as a runtime dependency would be a
