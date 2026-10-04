@@ -97,11 +97,21 @@ export function Grid({
     <div
       ref={scrollRef}
       className="h-full w-full overflow-y-auto overflow-x-hidden"
-      // The grid is a list of photographs; a screen reader should hear that, not a wall
-      // of buttons.
-      role="listbox"
+      // **A labelled group of toggle buttons, not a listbox.**
+      //
+      // This was `role="listbox"` with `aria-multiselectable`, which was wrong: the
+      // listbox pattern requires `role="option"` children carrying `aria-selected`, and
+      // these are `<button>`s carrying `aria-pressed`. Incorrect ARIA is worse than none —
+      // a screen reader announces a listbox and then finds no options in it.
+      //
+      // Each tile genuinely is a button (activating it selects), so the native semantics
+      // are already correct and the only thing missing was a name for the collection.
+      //
+      // Focusable so a keyboard user can reach the grid itself. Without a tabindex the
+      // whole grid is unreachable by Tab.
+      role="group"
       aria-label={`${photos.length} photographs`}
-      aria-multiselectable="true"
+      tabIndex={0}
     >
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {items.map(({ row, cells }) => (

@@ -322,7 +322,7 @@ export default function App() {
           type="button"
           onClick={chooseFolder}
           disabled={status.kind === "indexing"}
-          className="rounded bg-zinc-800 px-3 py-1 text-sm hover:bg-zinc-700 disabled:opacity-50"
+          className="min-h-6 rounded bg-zinc-800 px-3 py-1 text-sm hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 disabled:opacity-50"
         >
           Open folder
         </button>
@@ -355,7 +355,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setTrashOpen(true)}
-            className="rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700"
+            className="min-h-6 rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
             title="Files moved out of the library, and how to put them back"
           >
             Trash
@@ -373,19 +373,23 @@ export default function App() {
               setCapabilityReport(`Could not probe this machine: ${String(e)}`);
             });
           }}
-          className="ml-auto rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700"
+          className="ml-auto min-h-6 rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
           title="What this machine can do, and which model tier Chaff chose"
         >
           Capabilities
         </button>
 
         {selected.size > 0 && (
-          <span className="flex items-center gap-3 text-xs text-zinc-400">
+          <span
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-3 text-xs text-zinc-400"
+          >
             <span>{selected.size} selected</span>
             <button
               type="button"
               onClick={() => void beginDelete()}
-              className="rounded bg-zinc-800 px-2 py-0.5 text-rose-400 hover:bg-zinc-700"
+              className="min-h-6 rounded bg-zinc-800 px-2 py-0.5 text-rose-400 hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
               title="Move the selection to the trash (Delete)"
             >
               Move to trash
@@ -394,7 +398,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => void undo()}
-                className="rounded bg-zinc-800 px-2 py-0.5 hover:bg-zinc-700"
+                className="min-h-6 rounded bg-zinc-800 px-2 py-0.5 hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
               >
                 Undo ({undoDepth})
               </button>
@@ -435,12 +439,12 @@ export default function App() {
         {status.kind === "idle" && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <p className="text-lg">Open a folder of photographs to begin.</p>
-            <p className="max-w-prose text-sm text-zinc-500">
+            <p className="max-w-prose text-sm text-zinc-400">
               Chaff reads the folder and writes nothing into it. Its catalog and thumbnails
               live in the application data directory, and the originals are untouched until
               you explicitly remove something.
             </p>
-            <p className="mt-2 max-w-prose text-xs text-zinc-600">
+            <p className="mt-2 max-w-prose text-xs text-zinc-400">
               <kbd className="rounded bg-zinc-800 px-1">0</kbd>–
               <kbd className="rounded bg-zinc-800 px-1">5</kbd> rate ·{" "}
               <kbd className="rounded bg-zinc-800 px-1">X</kbd> reject ·{" "}
@@ -452,10 +456,14 @@ export default function App() {
         )}
 
         {status.kind === "indexing" && (
-          <div className="flex h-full flex-col items-center justify-center gap-2">
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex h-full flex-col items-center justify-center gap-2"
+          >
             <p className="text-sm">Indexing and scoring…</p>
-            <p className="max-w-prose truncate text-xs text-zinc-500">{status.root}</p>
-            <p className="text-xs text-zinc-600">
+            <p className="max-w-prose truncate text-xs text-zinc-400">{status.root}</p>
+            <p className="text-xs text-zinc-400">
               A first pass over a large library takes a few minutes. The window stays
               responsive.
             </p>
@@ -463,14 +471,14 @@ export default function App() {
         )}
 
         {status.kind === "error" && (
-          <div className="flex h-full items-center justify-center px-8">
+          <div role="alert" className="flex h-full items-center justify-center px-8">
             <p className="max-w-prose text-sm text-rose-400">{status.message}</p>
           </div>
         )}
 
         {status.kind === "ready" && photos.length === 0 && (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-zinc-500">No photographs found in that folder.</p>
+            <p className="text-sm text-zinc-400">No photographs found in that folder.</p>
           </div>
         )}
 

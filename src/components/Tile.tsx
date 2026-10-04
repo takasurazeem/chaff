@@ -88,7 +88,7 @@ function TileInner({
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-zinc-900 px-2">
-          <span className="line-clamp-3 text-center text-[10px] leading-tight text-zinc-600">
+          <span className="line-clamp-3 text-center text-[10px] leading-tight text-zinc-400">
             {thumb.status === "unavailable" ? photo.stem : ""}
           </span>
         </div>

@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { listTrash, purgeTrash, restoreTrash, type TrashOperationView } from "../api";
+import { Modal } from "./Modal";
 
 function bytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -82,31 +83,29 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
   const totalBytes = live.reduce((n, o) => n + o.bytes, 0);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="trash-title"
-    >
-      <div className="flex max-h-full w-full max-w-2xl flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
+    <Modal labelId="trash-title" onClose={onClose} panelClassName="max-w-2xl">
         <header className="flex items-baseline justify-between border-b border-zinc-800 px-4 py-3">
           <h2 id="trash-title" className="text-sm font-semibold">
             Trash
           </h2>
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-zinc-400">
             {live.length} operation{live.length === 1 ? "" : "s"} · {bytes(totalBytes)}
           </span>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {note && (
-            <p className="mb-3 rounded border border-zinc-700 bg-zinc-800/60 p-2 text-xs text-zinc-300">
+            <p
+              role="status"
+              aria-live="polite"
+              className="mb-3 rounded border border-zinc-700 bg-zinc-800/60 p-2 text-xs text-zinc-300"
+            >
               {note}
             </p>
           )}
 
           {ops.length === 0 && (
-            <p className="py-8 text-center text-sm text-zinc-500">
+            <p className="py-8 text-center text-sm text-zinc-400">
               Nothing has been moved to the trash.
             </p>
           )}
@@ -120,16 +119,16 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
                 <div className="min-w-0">
                   <div className="flex items-baseline gap-2">
                     <span className="font-mono text-xs text-zinc-300">{o.date}</span>
-                    <span className="text-[10px] text-zinc-500">
+                    <span className="text-[10px] text-zinc-400">
                       {o.files} file{o.files === 1 ? "" : "s"} · {bytes(o.bytes)}
                     </span>
                     {o.purged && (
-                      <span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-500">
+                      <span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">
                         emptied
                       </span>
                     )}
                   </div>
-                  <p className="truncate text-[10px] text-zinc-600" title={o.reason}>
+                  <p className="truncate text-[10px] text-zinc-400" title={o.reason}>
                     {o.reason}
                   </p>
                 </div>
@@ -140,7 +139,7 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
                       type="button"
                       onClick={() => void restore(o.opId)}
                       disabled={busy}
-                      className="rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700 disabled:opacity-50"
+                      className="min-h-6 rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700 disabled:opacity-50"
                     >
                       Put back
                     </button>
@@ -149,7 +148,7 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
                         type="button"
                         onClick={() => void purge(o.opId)}
                         disabled={busy}
-                        className="rounded bg-rose-700 px-2 py-1 text-xs hover:bg-rose-600 disabled:opacity-50"
+                        className="min-h-6 rounded bg-rose-700 px-2 py-1 text-xs hover:bg-rose-600 disabled:opacity-50"
                         title={`Permanently remove ${o.files} file(s), ${bytes(o.bytes)}`}
                       >
                         Delete forever ({bytes(o.bytes)})
@@ -159,7 +158,7 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
                         type="button"
                         onClick={() => setConfirmingPurge(o.opId)}
                         disabled={busy}
-                        className="rounded bg-zinc-800 px-2 py-1 text-xs text-rose-400 hover:bg-zinc-700 disabled:opacity-50"
+                        className="min-h-6 rounded bg-zinc-800 px-2 py-1 text-xs text-rose-400 hover:bg-zinc-700 disabled:opacity-50"
                       >
                         Empty
                       </button>
@@ -175,12 +174,11 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700"
+            className="min-h-6 rounded bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700"
           >
             Close
           </button>
         </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }

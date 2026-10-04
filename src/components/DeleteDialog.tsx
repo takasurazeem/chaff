@@ -16,6 +16,7 @@
  *    an enabled button and an error afterwards.
  */
 import type { DeletePlanView } from "../api";
+import { Modal } from "./Modal";
 
 function bytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -35,13 +36,7 @@ export function DeleteDialog({ plan, busy, onConfirm, onCancel }: Props) {
   const blocked = plan.refusals.length > 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-title"
-    >
-      <div className="flex max-h-full w-full max-w-2xl flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
+    <Modal labelId="delete-title" onClose={onCancel} panelClassName="max-w-2xl">
         <header className="border-b border-zinc-800 px-4 py-3">
           <h2 id="delete-title" className="text-sm font-semibold">
             {blocked ? "Cannot move these" : "Move to the trash?"}
@@ -82,7 +77,7 @@ export function DeleteDialog({ plan, busy, onConfirm, onCancel }: Props) {
               <li key={c.photoId} className="rounded border border-zinc-800 bg-zinc-950/50 p-2">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate font-mono text-xs text-zinc-300">{c.stem}</span>
-                  <span className="shrink-0 text-[10px] tabular-nums text-zinc-500">
+                  <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">
                     {bytes(c.bytes)}
                   </span>
                 </div>
@@ -90,7 +85,7 @@ export function DeleteDialog({ plan, busy, onConfirm, onCancel }: Props) {
                   {c.files.map((f) => (
                     <li
                       key={f.path}
-                      className="truncate pl-3 font-mono text-[10px] text-zinc-500"
+                      className="truncate pl-3 font-mono text-[10px] text-zinc-400"
                       title={f.path}
                     >
                       {f.name}
@@ -101,7 +96,7 @@ export function DeleteDialog({ plan, busy, onConfirm, onCancel }: Props) {
             ))}
           </ul>
 
-          <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
+          <p className="mt-4 text-[11px] leading-relaxed text-zinc-400">
             These files move to <code className="text-zinc-400">.cull-trash</code> inside the
             folder you opened. Nothing is deleted — you can put them back from the trash at
             any time, and emptying the trash is a separate, explicit action.
@@ -113,7 +108,7 @@ export function DeleteDialog({ plan, busy, onConfirm, onCancel }: Props) {
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700 disabled:opacity-50"
+            className="min-h-6 rounded bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -121,13 +116,12 @@ export function DeleteDialog({ plan, busy, onConfirm, onCancel }: Props) {
             type="button"
             onClick={onConfirm}
             disabled={busy || blocked || plan.files === 0}
-            className="rounded bg-rose-700 px-3 py-1.5 text-xs font-medium hover:bg-rose-600 disabled:opacity-40"
+            className="min-h-6 rounded bg-rose-700 px-3 py-1.5 text-xs font-medium hover:bg-rose-600 disabled:opacity-40"
             title={blocked ? "This selection cannot be moved" : undefined}
           >
             {busy ? "Moving…" : "Move to trash"}
           </button>
         </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
