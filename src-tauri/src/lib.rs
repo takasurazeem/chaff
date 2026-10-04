@@ -1,10 +1,13 @@
-//! Chaff — local-first, cross-platform photo culling workstation.
+//! Chaff — the Tauri shell.
 //!
-//! This crate is the Tauri shell plus the application core. The core lives in
-//! [`core`] and is deliberately Tauri-free so it can be unit-tested with a plain
-//! `cargo test`, with no display server and no webview.
+//! This crate is deliberately thin. All engine logic lives in [`chaff_core`], which has
+//! no Tauri dependency and therefore builds and tests on a machine with no webview and
+//! no GTK/WebKit development packages.
+//!
+//! Keep it that way: anything added here becomes unavailable to the fast test path.
 
-pub mod core;
+/// Re-exported so the app and its integration tests share one engine instance.
+pub use chaff_core;
 
 /// Placeholder command retained from the scaffold so the IPC surface is wired and
 /// testable end to end. Replaced by real commands as Phase 1 lands.

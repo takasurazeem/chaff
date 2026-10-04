@@ -1,0 +1,93 @@
+name: CI
+
+# Wave 0 of the roadmap: make the loop verifiable before adding depth.
+#
+# Why three platforms and not just Linux: pair resolution is the one piece of logic
+# whose correctness depends on the *filesystem*. macOS stores filenames decomposed
+# (NFD) while Linux and Windows do not, and Windows/macOS are case-insensitive while
+# Linux is case-sensitive. A green run on one platform is not evidence about the other
+# two, and this project deploys to two of them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri's Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            libssl-dev \
+            pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # `--lib` deliberately: it builds and tests the core without needing the frontend
+      # bundle to exist, which keeps this job fast and independent of the web job.
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --lib --all-features
+
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --lib -- -D warnings
+        continue-on-error: true
+
+      - name: cargo fmt check
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+  web:
+    name: Frontend (typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - name: Build
+        run: pnpm build

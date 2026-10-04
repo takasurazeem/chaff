@@ -1,0 +1,16 @@
+# Chaff workspace.
+#
+# Split so that the engine (`chaff-core`) builds and tests with no GUI dependency
+# whatsoever. `cargo test -p chaff-core` works on a bare headless Linux box; `cargo test`
+# over the whole workspace additionally needs the Tauri Linux stack
+# (webkit2gtk4.1-devel and friends) because `src-tauri` links the webview.
+#
+# That split is not tidiness — it is what makes the test suite runnable in CI and on the
+# Linux build host without installing a desktop stack first.
+[workspace]
+resolver = "2"
+members = ["crates/chaff-core", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"

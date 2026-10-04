@@ -13,7 +13,7 @@
         "focus": "high",
         "contrast": "normal"
       },
-      "sha256": "b1986a0bd13b6abb32028ea8fdde4e163ae7c3f722431db6f80859c0047dc95d"
+      "sha256": "af21003d08302bd2b80762ef2b7e5f3e5e81be2ad01f12d687a9be0b1001b8be"
     },
     {
       "name": "sharp_b",
@@ -23,7 +23,7 @@
         "focus": "high",
         "contrast": "normal"
       },
-      "sha256": "ef85c54e7442e2130b2629cf36fc0f6e442342e83d8e0dbebd5c934952bb0eb3"
+      "sha256": "a684d104e441c106d63ff35f191003abad36c1ee47c57eab3f76b4296a35538e"
     },
     {
       "name": "blur_defocus_mild",
@@ -33,7 +33,7 @@
         "focus": "low",
         "blur_type": "defocus"
       },
-      "sha256": "fbc3b4c0eb0632bb1c92e10ebaf73dca5d3352e19fec4cc3d014c07a767ad59d"
+      "sha256": "733311d83abb25a0bedcf436c631865d4f7a68e559bed187b5c4cae872a39dab"
     },
     {
       "name": "blur_defocus_heavy",
@@ -43,7 +43,7 @@
         "focus": "very_low",
         "blur_type": "defocus"
       },
-      "sha256": "e9f011ce9daaf1c2cc8b347c64c3f7bc79bb4095dbe189e6229e1f60570f68c5"
+      "sha256": "2f7806a183739920192249871ccb19f0965b0fe3b28d30855e141c7908f50da4"
     },
     {
       "name": "blur_motion",
@@ -54,7 +54,7 @@
         "blur_type": "motion",
         "anisotropic": true
       },
-      "sha256": "86abd9558b4f441f94da2422261c2fdf97d9dc53dc8cfe9da59caca26e8aa0a9"
+      "sha256": "b2d52cbe1a0be9d0f05b11dc0b8be6a3f4f4d271a053927e1365ab19dca99110"
     },
     {
       "name": "exposure_over",
@@ -63,7 +63,7 @@
       "expected": {
         "exposure": "clipped_high"
       },
-      "sha256": "ec7835106fd8aad4d299c7f0f5b7c34d50bcddea3f9d7cbf0816434a482bd581"
+      "sha256": "9f9fa14bb74e4b662463886b56efa4e1d30170e3739098c5e92d0439e3a92d0e"
     },
     {
       "name": "exposure_under",
@@ -72,7 +72,7 @@
       "expected": {
         "exposure": "clipped_low"
       },
-      "sha256": "9a8af0cd5973ba46a4b2216794702fa854d154ca12b0327f10329e2fbb59d191"
+      "sha256": "57187dedaca98e1e4ccbc1caa1c11fe84b918e30e7da94e24a58cb308613a577"
     },
     {
       "name": "noise_high_iso",
@@ -82,7 +82,7 @@
         "focus": "high",
         "noise": "high"
       },
-      "sha256": "7822f1bf17f65cdb2a8d1fad13e78d756fe30aba79f4c3d44eaf03483acc02ae"
+      "sha256": "bcbdaf422ecfaaebb3460d9b74421face5f087aa9fec127ef4ed206761715b6e"
     },
     {
       "name": "flat_low_contrast",
@@ -102,7 +102,7 @@
         "focus_subject": "high",
         "focus_whole_frame": "low"
       },
-      "sha256": "61ea0dbf2b4f6d5ac4d58eb0dc6e53635dd7ef4ab3c406481e7ffbaad64f6699"
+      "sha256": "0cc39ae4c4a539af2336217d13a97f8e3f795686a30fad10db08b103f9f1ab7f"
     }
   ],
   "pairtree": [

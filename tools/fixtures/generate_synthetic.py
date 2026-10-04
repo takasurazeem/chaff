@@ -68,39 +68,72 @@ def sharp_texture(offset: int, size=SIZE) -> Image.Image:
 
     # Fine detail: a grid of hairlines plus small high-contrast marks. This is the
     # energy the Laplacian responds to, and therefore what "sharp" actually means.
+    #
+    # Both grid directions are drawn in the same colour on purpose. An earlier version
+    # used white vertical lines and black horizontal lines, which gave the pattern
+    # unequal energy along x and y — so an *isotropic* sharp frame measured as strongly
+    # anisotropic, and the motion-blur heuristic fired on frames that were not blurred at
+    # all. A sharp fixture must be directionally neutral or it cannot calibrate a
+    # directional metric.
     for x in range(0, w, 8):
         draw.line([(x, 0), (x, h)], fill=(255, 255, 255), width=1)
     for y in range(0, h, 8):
-        draw.line([(0, y), (w, y)], fill=(0, 0, 0), width=1)
+        draw.line([(0, y), (w, y)], fill=(255, 255, 255), width=1)
     for _ in range(120):
         x = int(rng.integers(2, w - 8))
         y = int(rng.integers(2, h - 8))
         draw.rectangle([x, y, x + 4, y + 4], fill=(255, 255, 255))
 
+    # NOTE: no single-pixel speckle here, deliberately.
+    #
+    # An earlier version added 1px black/white speckle to break the 8px grid's
+    # periodicity. That was a mistake: a 1px impulse is *physically indistinguishable*
+    # from sensor noise by any local estimator, and the noise estimator correctly
+    # classified it as such — it reported sigma ~134 on a clean frame and the noise
+    # correction then zeroed out every sharp fixture.
+    #
+    # The aperiodicity needed to stop blur-displacement aliasing comes from the randomly
+    # placed 4x4 marks above, whose positions have no period. Any further detail at the
+    # 1px scale would be indistinguishable from noise, in the fixture and in a real
+    # photograph alike.
+
     return img
 
 
 def gaussian_blurred(offset: int, radius: float, size=SIZE) -> Image.Image:
-    """Defocus. Uniformly soft across the whole frame."""
+    """Defocus. Uniformly soft across the whole frame, and isotropic by construction —
+    which is exactly what separates it from motion blur in the metric."""
     return sharp_texture(offset, size).filter(ImageFilter.GaussianBlur(radius=radius))
 
 
-def motion_blurred(offset: int, size=SIZE) -> Image.Image:
+def _box_blur_x(arr: np.ndarray, length: int) -> np.ndarray:
+    """True uniform horizontal box blur via a running sum.
+
+    Exact, and free of the resampling artefacts that a shift-and-average loop
+    introduces: bilinear resampling is itself a low-pass filter, so a 9-tap shift loop
+    blurs the image twice over and by an amount that depends on how the shift lands on
+    the pixel grid.
+    """
+    h, w, c = arr.shape
+    pad = length // 2
+    padded = np.pad(arr, ((0, 0), (pad, pad), (0, 0)), mode="edge")
+    cumsum = np.cumsum(padded, axis=1)
+    cumsum = np.concatenate([np.zeros((h, 1, c)), cumsum], axis=1)
+    out = (cumsum[:, length:] - cumsum[:, :-length]) / float(length)
+    return out[:, :w, :]
+
+
+def motion_blurred(offset: int, length: int = 13, size=SIZE) -> Image.Image:
     """Directional motion blur.
 
-    Built by averaging horizontal shifts. This produces *anisotropic* edge energy,
-    which is what the scoring model distinguishes from defocus — the same total
-    softness but concentrated along one axis.
+    A horizontal smear of 13px on an 8px-period grid, plus aperiodic speckle. The
+    vertical edges are strongly attenuated while horizontal edges survive, which is what
+    makes the result *anisotropic* — the property that distinguishes motion from defocus.
+    Length 13 is deliberately not a multiple of the 8px grid period.
     """
-    base = sharp_texture(offset, size)
-    w, h = base.size
-    acc = np.zeros((h, w, 3), dtype=np.float64)
-    taps = 9
-    for i in range(taps):
-        acc += np.asarray(base.transform(
-            (w, h), Image.AFFINE, (1, 0, -i * 2, 0, 1, 0), resample=Image.BILINEAR
-        ), dtype=np.float64)
-    return Image.fromarray((acc / taps).astype(np.uint8), mode="RGB")
+    base = np.asarray(sharp_texture(offset, size), dtype=np.float64)
+    blurred = _box_blur_x(base, length)
+    return Image.fromarray(np.clip(blurred, 0, 255).astype(np.uint8), mode="RGB")
 
 
 def exposure_shifted(offset: int, factor: float, size=SIZE) -> Image.Image:
@@ -140,16 +173,22 @@ def bokeh_portrait(offset: int, size=SIZE) -> Image.Image:
 
     The other adversarial case: roughly two thirds of the frame has almost no
     high-frequency energy. Whole-frame scoring marks this blurry. Subject-region
-    scoring marks it sharp, which is correct — and this fixture is how we prove
-    the implementation does the latter.
+    scoring marks it sharp, which is correct — and this fixture is how we prove the
+    implementation does the latter.
+
+    The background is blurred hard (radius 15) on purpose. At radius 9 the blurred
+    texture retained enough energy that whole-frame and subject-ROI measurements were
+    only ~25% apart, which is too small a margin to distinguish "the ROI works" from
+    "the ROI happens to be in a slightly better place". A realistic shallow-DOF
+    background carries essentially no detail, so the fixture should not either.
     """
     w, h = size
-    background = gaussian_blurred(offset, radius=9.0, size=size)
+    background = gaussian_blurred(offset, radius=15.0, size=size)
 
     subject = sharp_texture(offset + 77, size=size)
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
-    cx, cy, r = int(w * 0.42), int(h * 0.46), int(min(w, h) * 0.24)
+    cx, cy, r = int(w * 0.42), int(h * 0.46), int(min(w, h) * 0.30)
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
     mask = mask.filter(ImageFilter.GaussianBlur(radius=2))
 

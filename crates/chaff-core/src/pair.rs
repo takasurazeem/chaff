@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use unicode_normalization::UnicodeNormalization;
 
-use crate::core::ext::{classify, FileKind};
+use crate::ext::{classify, FileKind};
 
 /// The identity of one photograph: a directory plus a normalised stem.
 ///

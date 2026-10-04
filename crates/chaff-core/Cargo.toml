@@ -1,0 +1,32 @@
+[package]
+name = "chaff-core"
+version = "0.1.0"
+edition = "2021"
+description = "Chaff's engine: file classification, pair resolution, imaging and scoring. No GUI, no Tauri, no webview."
+license = "MIT"
+
+# This crate deliberately has no Tauri dependency and no GUI dependency of any kind.
+#
+# Two reasons, and the second one is why it exists as a separate crate at all:
+#
+# 1. ADR-0001 requires the engine to be free of Tauri types, so the shell can be
+#    replaced without rewriting the engine.
+# 2. It makes the engine buildable and testable on a machine with no display server
+#    and no GTK/WebKit development packages — which is exactly what the Linux build
+#    host is. `cargo test -p chaff-core` needs nothing installed; `cargo test` on the
+#    app crate needs the full webkit2gtk4.1-devel stack.
+#
+# Keep it that way. A dependency added here becomes a dependency of every test run on
+# every platform.
+[dependencies]
+# NFC normalisation of filename stems. macOS stores decomposed (NFD), Linux and Windows
+# generally do not, so a RAW+JPEG pair matches on Linux and silently fails on a Mac
+# after a copy. Correctness dependency, not a convenience.
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+# Decoding is used only by tests today. When the real thumbnail pipeline lands this
+# moves to [dependencies] — until then, listing it as a runtime dependency would be a
+# claim the code does not support.
+image = "0.25"
+tempfile = "3"
