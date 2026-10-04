@@ -813,7 +813,7 @@ fn real_photographs_get_scores_bands_and_explanations() {
     if skip("real scoring") {
         return;
     }
-    use chaff_core::scoring::composite::{Band, BandThresholds};
+    use chaff_core::scoring::composite::BandThresholds;
 
     let scores = real_scores();
     assert_eq!(scores.len(), jpegs().len());
@@ -852,4 +852,232 @@ fn real_photograph_scoring_is_deterministic() {
         return;
     }
     assert_eq!(real_scores(), real_scores());
+}
+
+// ---------------------------------------------------------------------------
+// Embedded preview extraction over real raw files
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore]
+fn real_raw_preview_report() {
+    if skip("raw preview report") {
+        return;
+    }
+    use chaff_core::preview::{extract, PreviewSource, DEFAULT_MIN_LONG_EDGE};
+
+    println!("\n{:<58} {:>10} {:>14} {:>10}", "file", "verdict", "dimensions", "jpeg");
+    println!("{}", "-".repeat(96));
+    for path in raws() {
+        let name = path.file_name().unwrap().to_string_lossy();
+        let short: String = name.chars().take(56).collect();
+        match extract(&path, DEFAULT_MIN_LONG_EDGE) {
+            Ok(PreviewSource::Embedded(p)) => println!(
+                "{short:<58} {:>10} {:>14} {:>9} KB",
+                "embedded",
+                format!("{}x{}", p.width, p.height),
+                p.jpeg.len() / 1024
+            ),
+            Ok(PreviewSource::TooSmall { width, height }) => println!(
+                "{short:<58} {:>10} {:>14} {:>10}",
+                "too small",
+                format!("{width}x{height}"),
+                "-"
+            ),
+            Ok(PreviewSource::NeedsDecode) => {
+                println!("{short:<58} {:>10} {:>14} {:>10}", "needs decode", "-", "-")
+            }
+            Err(e) => println!("{short:<58} ERROR {e}"),
+        }
+    }
+    println!();
+}
+
+#[test]
+fn real_raw_files_yield_embedded_previews_that_actually_decode() {
+    if skip("raw preview extraction") {
+        return;
+    }
+    use chaff_core::preview::{extract, PreviewSource, DEFAULT_MIN_LONG_EDGE};
+
+    let files = raws();
+    let mut embedded = 0usize;
+    let mut decodable = 0usize;
+    let mut malformed: Vec<String> = Vec::new();
+    let mut too_small = 0usize;
+    let mut needs_decode = 0usize;
+
+    for path in &files {
+        match extract(path, DEFAULT_MIN_LONG_EDGE).expect("extraction must not error on a real raw") {
+            PreviewSource::Embedded(p) => {
+                embedded += 1;
+
+                assert!(
+                    p.long_edge() >= DEFAULT_MIN_LONG_EDGE,
+                    "{}: a preview below the threshold must not be returned as usable",
+                    path.display()
+                );
+                assert!(p.jpeg.starts_with(&[0xFF, 0xD8]));
+                assert!(p.jpeg.ends_with(&[0xFF, 0xD9]));
+
+                // Whether it decodes is a separate question from whether it was found,
+                // and the answer is not always yes. A structurally perfect header says
+                // nothing about the entropy data behind it.
+                match image::load_from_memory(&p.jpeg) {
+                    Ok(decoded) => {
+                        decodable += 1;
+                        // A header walk that agreed with itself but not with a real
+                        // decoder would pass every unit test and produce broken
+                        // thumbnails in the product.
+                        assert_eq!(
+                            (decoded.width(), decoded.height()),
+                            (p.width, p.height),
+                            "{}: header said {}x{} but the decoder said {}x{}",
+                            path.display(),
+                            p.width,
+                            p.height,
+                            decoded.width(),
+                            decoded.height()
+                        );
+                    }
+                    Err(e) => malformed.push(format!(
+                        "{} ({}x{}): {e}",
+                        path.file_name().unwrap().to_string_lossy(),
+                        p.width,
+                        p.height
+                    )),
+                }
+            }
+            PreviewSource::TooSmall { .. } => too_small += 1,
+            PreviewSource::NeedsDecode => needs_decode += 1,
+        }
+    }
+
+    eprintln!(
+        "raw previews: {embedded} embedded ({decodable} decodable, {} malformed), \
+         {too_small} too small, {needs_decode} need a decode (of {} files)",
+        malformed.len(),
+        files.len()
+    );
+    for m in &malformed {
+        eprintln!("   malformed preview: {m}");
+    }
+
+    // The fast path must actually carry weight, or every grid cell costs a full demosaic.
+    assert!(
+        embedded >= 5,
+        "only {embedded} of {} real raw files yielded a usable embedded preview",
+        files.len()
+    );
+    assert_eq!(
+        embedded + too_small + needs_decode,
+        files.len(),
+        "every file must be accounted for by exactly one verdict"
+    );
+
+    // Most previews must decode, or the extraction is not finding real streams.
+    assert!(
+        decodable * 2 > embedded,
+        "only {decodable} of {embedded} extracted previews decoded — the extraction is \
+         finding streams that are not really there"
+    );
+
+    // And at least one real file has a preview that does not decode. That is not a
+    // failure of this test: it is the reason `preview::extract` deliberately does not
+    // claim the bytes are usable, and the reason the thumbnail pipeline walks the
+    // candidate chain rather than trusting the largest stream.
+    assert!(
+        !malformed.is_empty(),
+        "no malformed preview found in the corpus. If that is genuinely true now, the \
+         'caller must validate' note in preview.rs is describing a hypothetical rather \
+         than a real file — check before removing it."
+    );
+}
+
+#[test]
+fn the_candidate_chain_recovers_files_whose_largest_preview_is_broken() {
+    if skip("preview fallback chain") {
+        return;
+    }
+    use chaff_core::preview::{candidates, DEFAULT_MIN_LONG_EDGE};
+
+    // The contract the thumbnail pipeline depends on: try each candidate in order and
+    // take the first that decodes. This is the whole reason `candidates` exists rather
+    // than only `extract`.
+    let files = raws();
+    let mut served_first_try = 0usize;
+    let mut served_after_fallback = 0usize;
+    let mut no_usable_preview = 0usize;
+
+    for path in &files {
+        let data = std::fs::read(path).expect("read raw");
+        let cands = candidates(&data, DEFAULT_MIN_LONG_EDGE);
+        if cands.is_empty() {
+            no_usable_preview += 1;
+            continue;
+        }
+
+        let mut served = false;
+        for (i, c) in cands.iter().enumerate() {
+            if let Ok(decoded) = image::load_from_memory(&c.jpeg) {
+                assert_eq!(
+                    (decoded.width(), decoded.height()),
+                    (c.width, c.height),
+                    "{}: candidate {i} header disagrees with the decoder",
+                    path.display()
+                );
+                if i == 0 {
+                    served_first_try += 1;
+                } else {
+                    served_after_fallback += 1;
+                    eprintln!(
+                        "   {}: largest candidate failed, fell back to candidate {i} \
+                         ({}x{}, {} KB)",
+                        path.file_name().unwrap().to_string_lossy(),
+                        c.width,
+                        c.height,
+                        c.jpeg.len() / 1024
+                    );
+                }
+                served = true;
+                break;
+            }
+        }
+        if !served {
+            no_usable_preview += 1;
+        }
+    }
+
+    eprintln!(
+        "fast path with fallback: {served_first_try} on the first candidate, \
+         {served_after_fallback} after falling back, {no_usable_preview} need a full decode \
+         (of {} files)",
+        files.len()
+    );
+
+    // The fallback must actually rescue at least one real file, or the chain is dead
+    // weight and `candidates` should be `extract`.
+    assert!(
+        served_after_fallback > 0,
+        "no corpus file needed the fallback chain. If that is genuinely true now, \
+         `candidates` is unjustified complexity — check before keeping it."
+    );
+    assert!(
+        served_first_try + served_after_fallback >= 6,
+        "the fast path served only {} of {} raw files",
+        served_first_try + served_after_fallback,
+        files.len()
+    );
+}
+
+#[test]
+fn raw_preview_extraction_is_deterministic() {
+    if skip("raw preview determinism") {
+        return;
+    }
+    use chaff_core::preview::{extract, DEFAULT_MIN_LONG_EDGE};
+    for path in raws().iter().take(4) {
+        let a = extract(path, DEFAULT_MIN_LONG_EDGE).expect("extract");
+        let b = extract(path, DEFAULT_MIN_LONG_EDGE).expect("extract");
+        assert_eq!(a, b, "{} extracted differently on two runs", path.display());
+    }
 }

@@ -13,4 +13,5 @@ pub mod ext;
 pub mod indexer;
 pub mod imaging;
 pub mod pair;
+pub mod preview;
 pub mod scoring;
