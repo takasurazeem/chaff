@@ -4,7 +4,7 @@
  * Owns the library, the photograph list and the selection. The grid owns layout and
  * virtualisation; the tiles own their own thumbnails.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import {
   capabilities,
@@ -20,6 +20,8 @@ import {
 import { DeleteDialog } from "./components/DeleteDialog";
 import { ProgressBar } from "./components/ProgressBar";
 import { Loupe } from "./components/Loupe";
+import { FilterBar } from "./components/FilterBar";
+import { apply as applyFilters, counts as computeCounts, NO_FILTERS, type Filters } from "./filters";
 import { TrashPanel } from "./components/TrashPanel";
 import type { LibraryView, PhotoView } from "./types";
 import { Grid } from "./components/Grid";
@@ -85,7 +87,18 @@ export default function App() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
 
-  /** Index into `photos` when the loupe is open, or null when it is closed. */
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+
+  /**
+   * The list the loupe is navigating, captured when it opened.
+   *
+   * **Snapshotted deliberately.** With an "unrated only" filter active, rating a
+   * photograph removes it from the filtered set — so a live list would make the next
+   * photograph slide into the current position the instant you press a key, and the one
+   * you were about to judge would vanish. Freezing the list on open means arrowing is
+   * predictable, and the filter is re-applied when you return to the grid.
+   */
+  const [loupeList, setLoupeList] = useState<PhotoView[] | null>(null);
   const [loupeAt, setLoupeAt] = useState<number | null>(null);
 
   // Cursor for keyboard navigation: the photograph the arrow keys move from.
@@ -274,6 +287,12 @@ export default function App() {
     }
   }, []);
 
+  const visible = useMemo(
+    () => applyFilters(photos, decisions, filters),
+    [photos, decisions, filters],
+  );
+  const filterCounts = useMemo(() => computeCounts(photos, decisions), [photos, decisions]);
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let cancelled = false;
@@ -333,14 +352,17 @@ export default function App() {
   // selection, and the selection is the app's.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (photos.length === 0) return;
+      if (visible.length === 0) return;
       const cols = Math.max(1, columns.current);
       let next = cursor.current;
 
       // Enter or Space opens the loupe on whatever the cursor is on.
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        setLoupeAt(cursor.current);
+        if (visible.length === 0) return;
+        const at = Math.min(cursor.current, visible.length - 1);
+        setLoupeList(visible);
+        setLoupeAt(at);
         return;
       }
 
@@ -378,14 +400,14 @@ export default function App() {
         case "ArrowDown": next += cols; break;
         case "ArrowUp": next -= cols; break;
         case "Home": next = 0; break;
-        case "End": next = photos.length - 1; break;
+        case "End": next = visible.length - 1; break;
         default: return;
       }
 
       e.preventDefault();
-      next = Math.max(0, Math.min(photos.length - 1, next));
+      next = Math.max(0, Math.min(visible.length - 1, next));
       cursor.current = next;
-      const photo = photos[next];
+      const photo = visible[next];
       setSelected(new Set([photo.id]));
 
       // Bring it into view. `scrollIntoView` on the tile would be simplest but the tile
@@ -398,7 +420,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [photos, applyDecision, undo, beginDelete]);
+  }, [visible, applyDecision, undo, beginDelete]);
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-200">
@@ -514,13 +536,16 @@ export default function App() {
         />
       )}
 
-      {loupeAt !== null && photos[loupeAt] && (
+      {loupeAt !== null && loupeList && loupeList[loupeAt] && (
         <Loupe
-          photos={photos}
+          photos={loupeList}
           index={loupeAt}
           decisions={decisions}
           onNavigate={setLoupeAt}
-          onClose={() => setLoupeAt(null)}
+          onClose={() => {
+            setLoupeAt(null);
+            setLoupeList(null);
+          }}
           onRate={rateOne}
           onReject={rejectOne}
         />
@@ -531,6 +556,16 @@ export default function App() {
           libraryRoot={library.root}
           onClose={() => setTrashOpen(false)}
           onChanged={() => void reload(library.library_id)}
+        />
+      )}
+
+      {status.kind === "ready" && photos.length > 0 && (
+        <FilterBar
+          filters={filters}
+          counts={filterCounts}
+          shown={visible.length}
+          total={photos.length}
+          onChange={setFilters}
         />
       )}
 
@@ -571,15 +606,31 @@ export default function App() {
           </div>
         )}
 
-        {status.kind === "ready" && photos.length > 0 && (
+        {status.kind === "ready" && photos.length > 0 && visible.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center gap-2">
+            <p className="text-sm text-zinc-300">No photographs match these filters.</p>
+            <button
+              type="button"
+              onClick={() => setFilters(NO_FILTERS)}
+              className="min-h-6 rounded bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
+
+        {status.kind === "ready" && visible.length > 0 && (
           <Grid
-            photos={photos}
+            photos={visible}
             selected={selected}
             decisions={decisions}
             onActivate={activate}
             onOpen={(photo) => {
-              const i = photos.findIndex((p) => p.id === photo.id);
-              if (i >= 0) setLoupeAt(i);
+              const i = visible.findIndex((p) => p.id === photo.id);
+              if (i >= 0) {
+                setLoupeList(visible);
+                setLoupeAt(i);
+              }
             }}
             onColumnsChange={(c) => {
               columns.current = c;
