@@ -55,11 +55,18 @@ export function Loupe({
   useThumbnail(photos[index + 1]?.id ?? -1, "loupe", true);
   useThumbnail(photos[index - 1]?.id ?? -1, "loupe", true);
 
+  // Depend on the **id**, not the photograph.
+  //
+  // The effect fetches by id, so re-running when the object identity changes but the id does
+  // not would be wasted work — and `[photo]` is what the lint rule asks for. Naming the id
+  // separately satisfies both: the dependency is exactly what the effect uses, and the rule
+  // can see that.
+  const photoId = photo?.id ?? null;
   useEffect(() => {
-    if (!photo) return;
+    if (photoId === null) return;
     let cancelled = false;
     setExplanation(null);
-    void photoExplanation(photo.id)
+    void photoExplanation(photoId)
       .then((lines) => {
         if (!cancelled) setExplanation(lines);
       })
@@ -69,7 +76,7 @@ export function Loupe({
     return () => {
       cancelled = true;
     };
-  }, [photo?.id]);
+  }, [photoId]);
 
   // Capture phase, so the grid's window handler never sees these. Without it, pressing
   // `3` here would rate the photograph *and* the one behind it.

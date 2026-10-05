@@ -371,12 +371,12 @@ export function PeoplePanel({ libraryId, onChanged, onSelectPerson, selectedPers
           </h4>
           <ul className="space-y-0.5">
             {queue.slice(0, 8).map((f) => (
-              <li key={f.faceId} className="flex items-center gap-2 px-1.5 text-[10px] text-zinc-400">
+              <li key={f.face_id} className="flex items-center gap-2 px-1.5 text-[10px] text-zinc-400">
                 <span className="tabular-nums">
                   {f.own.toFixed(2)} vs {f.other.toFixed(2)}
                 </span>
                 <span className="truncate text-zinc-500">
-                  {f.personId === null ? "ungrouped" : `group ${f.personId}`}
+                  {f.person_id === null ? "ungrouped" : `group ${f.person_id}`}
                 </span>
               </li>
             ))}

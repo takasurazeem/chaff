@@ -146,8 +146,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: View types match their Rust structs
+        # Tauri serialises return values exactly as the Rust struct is written, so a
+        # TypeScript interface declaring `opId` against a Rust `op_id` compiles cleanly and
+        # is `undefined` at runtime. The whole trash panel had this; restore and purge were
+        # broken and nothing said so.
+        run: python3 tools/check_view_fields.py
+
       - name: Typecheck
         run: pnpm exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm lint
 
       - name: Test
         run: pnpm test

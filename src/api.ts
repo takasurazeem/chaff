@@ -107,9 +107,13 @@ export async function deletePerson(personId: number): Promise<void> {
 
 /** A face the clustering could not place confidently. */
 export interface AmbiguousFaceView {
-  faceId: number;
-  photoId: number;
-  personId: number | null;
+  // **snake_case, because that is what Rust emits.** Tauri v2 converts command
+  // *arguments* to snake_case for Rust, but return values are serialised as the struct is
+  // written — and there is no `rename_all`. Declaring these camelCase made them
+  // `undefined` at runtime, and `tsc` cannot see it because it only checks its own side.
+  face_id: number;
+  photo_id: number;
+  person_id: number | null;
   /** Similarity to the group it is in, and to the nearest group it is not in. */
   own: number;
   other: number;
@@ -266,7 +270,8 @@ export interface DeleteFileView {
 }
 
 export interface DeleteCandidateView {
-  photoId: number;
+  // **snake_case, because that is what Rust sends.** See `tools/check_view_fields.py`.
+  photo_id: number;
   stem: string;
   files: DeleteFileView[];
   bytes: number;
@@ -287,14 +292,14 @@ export interface DeletePlanView {
 }
 
 export interface DeleteReceiptView {
-  opId: string;
+  op_id: string;
   moved: number;
   bytes: number;
   warnings: string[];
 }
 
 export interface TrashOperationView {
-  opId: string;
+  op_id: string;
   at: number;
   date: string;
   reason: string;
@@ -304,9 +309,9 @@ export interface TrashOperationView {
 }
 
 export interface RestoreView {
-  opId: string;
+  op_id: string;
   restored: number;
-  alreadyPresent: number;
+  already_present: number;
   blocked: string[];
 }
 

@@ -50,7 +50,7 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
     try {
       const r = await restoreTrash(libraryRoot, opId);
       const parts = [`${r.restored} file${r.restored === 1 ? "" : "s"} restored`];
-      if (r.alreadyPresent > 0) parts.push(`${r.alreadyPresent} were already back`);
+      if (r.already_present > 0) parts.push(`${r.already_present} were already back`);
       if (r.blocked.length > 0) {
         parts.push(`${r.blocked.length} could not be restored because something is there now`);
       }
@@ -113,7 +113,7 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
           <ul className="space-y-2">
             {ops.map((o) => (
               <li
-                key={o.opId}
+                key={o.op_id}
                 className="flex items-center justify-between gap-3 rounded border border-zinc-800 bg-zinc-950/50 p-2"
               >
                 <div className="min-w-0">
@@ -137,16 +137,16 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
                   <div className="flex shrink-0 gap-2">
                     <button
                       type="button"
-                      onClick={() => void restore(o.opId)}
+                      onClick={() => void restore(o.op_id)}
                       disabled={busy}
                       className="min-h-6 rounded bg-zinc-800 px-2 py-1 text-xs hover:bg-zinc-700 disabled:opacity-50"
                     >
                       Put back
                     </button>
-                    {confirmingPurge === o.opId ? (
+                    {confirmingPurge === o.op_id ? (
                       <button
                         type="button"
-                        onClick={() => void purge(o.opId)}
+                        onClick={() => void purge(o.op_id)}
                         disabled={busy}
                         className="min-h-6 rounded bg-rose-700 px-2 py-1 text-xs hover:bg-rose-600 disabled:opacity-50"
                         title={`Permanently remove ${o.files} file(s), ${bytes(o.bytes)}`}
@@ -156,7 +156,7 @@ export function TrashPanel({ libraryRoot, onClose, onChanged }: Props) {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setConfirmingPurge(o.opId)}
+                        onClick={() => setConfirmingPurge(o.op_id)}
                         disabled={busy}
                         className="min-h-6 rounded bg-zinc-800 px-2 py-1 text-xs text-rose-400 hover:bg-zinc-700 disabled:opacity-50"
                       >

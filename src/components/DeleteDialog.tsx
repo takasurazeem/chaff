@@ -74,7 +74,7 @@ export function DeleteDialog({ plan, busy, onConfirm, onCancel }: Props) {
 
           <ul className="space-y-2">
             {plan.candidates.map((c) => (
-              <li key={c.photoId} className="rounded border border-zinc-800 bg-zinc-950/50 p-2">
+              <li key={c.photo_id} className="rounded border border-zinc-800 bg-zinc-950/50 p-2">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate font-mono text-xs text-zinc-300">{c.stem}</span>
                   <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">

@@ -15,6 +15,7 @@ import {
   getSettings,
   listDirectories,
   personPhotos,
+  restoreTrash,
   setSetting,
   planDelete,
   type DirectoryView,
@@ -72,9 +73,19 @@ export default function App() {
    * culling session is a slow memory leak — and the last few hundred actions are the ones
    * anyone ever reaches for.
    */
-  const undoStack = useRef<Array<{ photoId: number; previous: { rating: number; rejected: boolean } }>>(
-    [],
-  );
+  /**
+   * Session undo, covering both kinds of action.
+   *
+   * A rating is reversed by writing the previous value back. A move is not: the files are
+   * in the trash and undoing it means restoring the operation, which is a different command
+   * entirely. Modelling them as one shape would mean one of the two being a lie.
+   */
+  const undoStack = useRef<
+    Array<
+      | { kind: "decision"; photoId: number; previous: { rating: number; rejected: boolean } }
+      | { kind: "trash"; opId: string; label: string }
+    >
+  >([]);
   const [undoDepth, setUndoDepth] = useState(0);
   const UNDO_LIMIT = 500;
 
@@ -242,7 +253,9 @@ export default function App() {
         return next;
       });
 
-      undoStack.current.push(...before);
+      undoStack.current.push(
+        ...before.map((b) => ({ kind: "decision" as const, photoId: b.photoId, previous: b.previous })),
+      );
       if (undoStack.current.length > UNDO_LIMIT) {
         undoStack.current.splice(0, undoStack.current.length - UNDO_LIMIT);
       }
@@ -276,7 +289,7 @@ export default function App() {
       setDecisions((prev) => {
         const next = new Map(prev);
         const current = next.get(photo.id) ?? { rating: photo.rating, rejected: photo.rejected };
-        undoStack.current.push({ photoId: photo.id, previous: current });
+        undoStack.current.push({ kind: "decision", photoId: photo.id, previous: current });
         if (undoStack.current.length > UNDO_LIMIT) {
           undoStack.current.splice(0, undoStack.current.length - UNDO_LIMIT);
         }
@@ -297,7 +310,7 @@ export default function App() {
       const next = { ...current, rejected: !current.rejected };
       setDecisions((prev) => {
         const m = new Map(prev);
-        undoStack.current.push({ photoId: photo.id, previous: current });
+        undoStack.current.push({ kind: "decision", photoId: photo.id, previous: current });
         if (undoStack.current.length > UNDO_LIMIT) {
           undoStack.current.splice(0, undoStack.current.length - UNDO_LIMIT);
         }
@@ -311,24 +324,6 @@ export default function App() {
     },
     [decisions],
   );
-
-  const undo = useCallback(async () => {
-    const entry = undoStack.current.pop();
-    if (!entry) return;
-    setUndoDepth(undoStack.current.length);
-
-    setDecisions((prev) => {
-      const next = new Map(prev);
-      next.set(entry.photoId, entry.previous);
-      return next;
-    });
-
-    try {
-      await setDecision(entry.photoId, entry.previous.rating, entry.previous.rejected);
-    } catch (e) {
-      setStatus({ kind: "error", message: String(e) });
-    }
-  }, []);
 
   const visible = useMemo(() => {
     // The person filter first: it is the narrowest, and running it first means the count
@@ -403,6 +398,38 @@ export default function App() {
     setSelected(new Set());
   }, []);
 
+
+  const undo = useCallback(async () => {
+    const entry = undoStack.current.pop();
+    if (!entry) return;
+    setUndoDepth(undoStack.current.length);
+
+    try {
+      if (entry.kind === "decision") {
+        setDecisions((prev) => {
+          const next = new Map(prev);
+          next.set(entry.photoId, entry.previous);
+          return next;
+        });
+        await setDecision(entry.photoId, entry.previous.rating, entry.previous.rejected);
+      } else if (library) {
+        // A move is undone by restoring the operation. The files come back and the
+        // photographs reappear, which is a different thing from writing a value back.
+        const report = await restoreTrash(library.root, entry.opId);
+        await reload(library.library_id);
+        setStatus({ kind: "ready" });
+        if (report.blocked.length > 0) {
+          setStatus({
+            kind: "error",
+            message: `${report.blocked.length} file(s) could not be put back — something is at that path now.`,
+          });
+        }
+      }
+    } catch (e) {
+      setStatus({ kind: "error", message: String(e) });
+    }
+  }, [library, reload]);
+
   /** Ask what a delete would do, and show it. Moves nothing. */
   const beginDelete = useCallback(async () => {
     if (!library || selected.size === 0) return;
@@ -419,10 +446,21 @@ export default function App() {
     try {
       const receipt = await commitDelete(
         library.root,
-        deletePlan.candidates.map((c) => c.photoId),
+        deletePlan.candidates.map((c) => c.photo_id),
         "culled in Chaff",
       );
       setDeletePlan(null);
+      // The move is undoable for as long as the session lasts. The files are in the trash
+      // and the operation is recorded, so restoring it puts everything back — which is
+      // what "undo" has to mean for a destructive action.
+      if (receipt.moved > 0) {
+        undoStack.current.push({
+          kind: "trash",
+          opId: receipt.op_id,
+          label: `move ${receipt.moved} file${receipt.moved === 1 ? "" : "s"} to trash`,
+        });
+        setUndoDepth(undoStack.current.length);
+      }
       await reload(library.library_id);
       setStatus({ kind: "ready" });
       if (receipt.moved === 0) {
