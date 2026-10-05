@@ -71,8 +71,21 @@ kamadak-exif = "0.6"
 # The VLM client. One HTTP client for two request shapes, rather than a dependency
 # per feature — and `chaff-faces` already uses it for verified model downloads.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
-libraw_rs_vendor = "1.0.0"
+
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 tempfile = "3"
+
+# LibRaw, for the full-decode fallback (#8).
+#
+# **Not on Windows.** The vendored crate's build script passes GCC-style flags
+# (`-Wno-deprecated-declarations`) to MSVC's `cl.exe`, which rejects them with
+# `D8021 : invalid numeric argument` — so the crate does not compile there at all.
+#
+# That is an upstream bug and not one this project can fix. Gating the dependency means
+# Windows builds, and the fallback is a `#[cfg]`-ed no-op that reports the same "no source"
+# error it did before. A Windows user loses the fallback for raws with no embedded preview,
+# which is a real loss and a smaller one than not shipping.
+[target.'cfg(not(windows))'.dependencies]
+libraw_rs_vendor = "1.0.0"

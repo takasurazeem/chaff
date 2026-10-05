@@ -510,6 +510,9 @@ pub fn decode_source_bytes(
 /// paths first and calls this only when they fail. Folding it in would make every thumbnail
 /// pay for a capability almost no photograph needs.
 pub fn decode_raw_fallback(path: &Path) -> Result<image::DynamicImage, ThumbError> {
+    // On Windows this is a stub that returns `Unsupported`, which becomes the same
+    // `NoSource` the caller got before the fallback existed — so the behaviour there is
+    // unchanged rather than newly broken.
     crate::raw::decode(path).map_err(|_| ThumbError::NoSource { path: path.to_path_buf() })
 }
 
