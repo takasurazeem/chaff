@@ -23,6 +23,7 @@ pub mod cluster;
 pub mod detect;
 pub mod embed;
 pub mod engine;
+pub mod eval;
 pub mod models;
 
 pub use align::{similarity_transform, warp, Affine, ALIGNED};
@@ -30,4 +31,5 @@ pub use cluster::{cluster, Cluster, ClusteringConfig};
 pub use detect::{Detection, Detector};
 pub use embed::{cosine, EmbedError, Recogniser, DIMENSIONS};
 pub use engine::{FaceEngine, YuNet};
+pub use eval::{score, sweep, Corpus, Score, Source};
 pub use models::{ModelError, ModelSpec, ModelStore, SFACE};
