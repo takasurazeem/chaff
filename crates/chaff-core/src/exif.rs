@@ -132,29 +132,76 @@ pub fn read(path: &Path) -> Result<ExifRead, ExifError> {
     let exif = match exif::Reader::new().read_from_container(&mut reader) {
         Ok(e) => e,
         Err(exif::Error::NotSupported(_)) => return Ok(ExifRead::Unsupported),
-        // A malformed EXIF block is treated as absent rather than fatal. A camera that
-        // writes a slightly broken tag must not make its photograph unindexable.
-        Err(_) => return Ok(ExifRead::Absent),
+        Err(other) => {
+            // **A CR3 before giving up.**
+            //
+            // A Canon CR3 is an ISO base media file, and `kamadak-exif` accepts exactly two
+            // brands — `mif1` and `msf1`. A CR3's is `crx `, so the reader rejects the file and
+            // this arm used to return `Absent`: "this photograph has no EXIF".
+            //
+            // A Canon EOS RP user saw *"No camera information — this file carries no EXIF, or
+            // it was stripped"* for **every** photograph. The metadata was there the whole
+            // time; the container was not one the reader knew, and the two cases were
+            // indistinguishable from the outside.
+            match crate::cr3::read_exif(path) {
+                Ok(Some(data)) => {
+                    return Ok(ExifRead::Parsed(Box::new(data)));
+                }
+                // A CR3 with no metadata box really is absent.
+                Ok(None) => return Ok(ExifRead::Absent),
+                // Not a CR3, or one this cannot read. Now it is genuinely unsupported, and
+                // saying so is what makes the next container of this kind findable.
+                Err(_) => {
+                    log::debug!(
+                        "{}: {} — no EXIF reader for this container",
+                        path.display(),
+                        other
+                    );
+                    return Ok(ExifRead::Unsupported);
+                }
+            }
+        }
     };
 
+    Ok(map(&exif))
+}
+
+/// Map a parsed TIFF EXIF block into the engine's own type.
+///
+/// Extracted so a **CR3** goes through exactly the same tag mapping as a JPEG or a TIFF. The
+/// container differs; the tags do not, and a second mapping is how two paths start disagreeing
+/// about what `LensModel` means.
+pub fn map(exif: &exif::Exif) -> ExifRead {
     let data = ExifData {
-        captured_at: field_string(&exif, exif::Tag::DateTimeOriginal)
-            .or_else(|| field_string(&exif, exif::Tag::DateTime))
+        captured_at: field_string(exif, exif::Tag::DateTimeOriginal)
+            .or_else(|| field_string(exif, exif::Tag::DateTime))
             .and_then(|s| parse_exif_datetime(&s)),
-        make: field_string(&exif, exif::Tag::Make).map(clean_string),
-        model: field_string(&exif, exif::Tag::Model).map(clean_string),
-        lens: field_string(&exif, exif::Tag::LensModel)
-            .or_else(|| field_string(&exif, exif::Tag::LensMake))
+        make: field_string(exif, exif::Tag::Make).map(clean_string),
+        model: field_string(exif, exif::Tag::Model).map(clean_string),
+        lens: field_string(exif, exif::Tag::LensModel)
+            .or_else(|| field_string(exif, exif::Tag::LensMake))
             .map(clean_string),
-        iso: field_u32(&exif, exif::Tag::PhotographicSensitivity)
-            .or_else(|| field_u32(&exif, exif::Tag::ISOSpeed)),
-        f_number: field_rational(&exif, exif::Tag::FNumber),
-        exposure_time: field_rational(&exif, exif::Tag::ExposureTime),
-        focal_length: field_rational(&exif, exif::Tag::FocalLength),
-        orientation: field_u32(&exif, exif::Tag::Orientation).map(|v| v as u16),
+        iso: field_u32(exif, exif::Tag::PhotographicSensitivity)
+            .or_else(|| field_u32(exif, exif::Tag::ISOSpeed)),
+        f_number: field_rational(exif, exif::Tag::FNumber),
+        exposure_time: field_rational(exif, exif::Tag::ExposureTime),
+        focal_length: field_rational(exif, exif::Tag::FocalLength),
+        orientation: field_u32(exif, exif::Tag::Orientation).map(|v| v as u16),
     };
 
-    Ok(if data.is_empty() { ExifRead::Absent } else { ExifRead::Parsed(Box::new(data)) })
+    if data.is_empty() { ExifRead::Absent } else { ExifRead::Parsed(Box::new(data)) }
+}
+
+/// Parse a raw TIFF EXIF block, as extracted from a CR3.
+///
+/// Returns `None` when the block is not readable or carries nothing — the caller treats that
+/// as an absent-metadata CR3, which is a normal file.
+pub fn parse_tiff_block(block: &[u8]) -> Option<ExifData> {
+    let exif = exif::Reader::new().read_raw(block.to_vec()).ok()?;
+    match map(&exif) {
+        ExifRead::Parsed(d) => Some(*d),
+        _ => None,
+    }
 }
 
 /// Find a tag, preferring IFD0 but falling back to any IFD that carries it.
@@ -310,6 +357,103 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_unreadable_container_is_unsupported_not_absent() {
+        // **The distinction that hid a real bug.**
+        //
+        // A Canon CR3 was rejected by the reader, and the rejection was mapped to `Absent` —
+        // "this photograph has no EXIF". A user with an EOS RP saw *"No camera information"*
+        // for every photograph while the metadata sat in the file.
+        //
+        // "This file has no metadata" and "I cannot read this file" are different answers. The
+        // first is normal and the second is a bug to report, and conflating them makes the
+        // second invisible.
+        let dir = tempfile::tempdir().unwrap();
+
+        // A file whose container nothing here understands.
+        let odd = dir.path().join("mystery.xyz");
+        std::fs::write(&odd, b"NOTACONTAINERATALL").unwrap();
+        assert!(
+            matches!(read(&odd), Ok(ExifRead::Unsupported)),
+            "an unknown container must say so, not claim there is no metadata"
+        );
+
+        // **And not `Absent`.** That is the assertion that matters: `Absent` means "this
+        // photograph has no metadata", which is a claim about the *file*. `Unsupported` means
+        // "this program cannot read it", which is a claim about *us* — and only the second is
+        // actionable. Mapping the first onto the second is what made every Canon CR3 in a
+        // library look like a stripped JPEG.
+        assert!(
+            !matches!(read(&odd), Ok(ExifRead::Absent)),
+            "an unreadable container must never be reported as a file with no metadata"
+        );
+
+        // A file that genuinely has no EXIF block at all — a plain TIFF with an empty IFD —
+        // is `Absent`, and that is a normal photograph rather than a bug.
+        let empty_tiff = dir.path().join("empty.tif");
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        tiff.extend_from_slice(&0u16.to_le_bytes()); // no entries
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        std::fs::write(&empty_tiff, &tiff).unwrap();
+        assert!(
+            matches!(read(&empty_tiff), Ok(ExifRead::Absent)),
+            "a readable container with no tags is absent, not unsupported"
+        );
+    }
+
+    #[test]
+    fn a_cr3_is_read_rather_than_rejected() {
+        // The whole point. A CR3 is an ISO base media file whose `ftyp` brand is `crx `, and
+        // the `exif` crate accepts exactly `mif1` and `msf1` — so it rejects every CR3 ever
+        // written, and the rejection looked like absent metadata.
+        use std::io::Write;
+
+        fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+            let mut out = Vec::new();
+            out.extend_from_slice(&((body.len() + 8) as u32).to_be_bytes());
+            out.extend_from_slice(kind);
+            out.extend_from_slice(body);
+            out
+        }
+
+        // A minimal but real TIFF EXIF block: header, one IFD, one entry — Make = "Canon".
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes()); // IFD at offset 8
+        tiff.extend_from_slice(&1u16.to_le_bytes()); // one entry
+        tiff.extend_from_slice(&0x010Fu16.to_le_bytes()); // Tag::Make
+        tiff.extend_from_slice(&2u16.to_le_bytes()); // ASCII
+        tiff.extend_from_slice(&6u32.to_le_bytes()); // count
+        tiff.extend_from_slice(&26u32.to_le_bytes()); // value offset
+        tiff.extend_from_slice(&0u32.to_le_bytes()); // next IFD
+        tiff.extend_from_slice(b"Canon\0");
+
+        let mut ftyp = Vec::new();
+        ftyp.extend_from_slice(b"crx ");
+        ftyp.extend_from_slice(&[0, 0, 0, 1]);
+        ftyp.extend_from_slice(b"crx isom");
+
+        let mut uuid_body = crate::cr3::CANON_UUID.to_vec();
+        uuid_body.extend_from_slice(&boxed(b"CMT1", &tiff));
+
+        let mut cr3 = boxed(b"ftyp", &ftyp);
+        cr3.extend_from_slice(&boxed(b"uuid", &uuid_body));
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("IMG_3161.CR3");
+        std::fs::File::create(&path).unwrap().write_all(&cr3).unwrap();
+
+        match read(&path) {
+            Ok(ExifRead::Parsed(d)) => {
+                assert_eq!(d.make.as_deref(), Some("Canon"), "the make must come through");
+            }
+            other => panic!("a CR3 must be read, got {other:?}"),
+        }
+    }
+
     use super::*;
 
     #[test]

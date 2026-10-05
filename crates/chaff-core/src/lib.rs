@@ -13,6 +13,7 @@ pub mod burst;
 pub use rusqlite;
 
 pub mod catalog;
+pub mod cr3;
 pub mod delete_session;
 pub mod egress;
 pub mod exif;
