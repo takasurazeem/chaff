@@ -143,6 +143,21 @@ jobs:
         run: cargo check -p chaff
 
   # ---------------------------------------------------------------------------
+  # The native shell, on macOS only — it is a macOS app, and the runner is the only place a
+  # Swift toolchain and the macOS SDK both exist.
+  #
+  # **It was in no job at all**, which is the same gap `chaff-ffi` had: a crate that does not
+  # build in CI is one that stops building without anyone noticing.
+  native-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the FFI library and generate the bindings
+        run: cd macos && make bindings
+      - name: Native tests
+        run: cd macos && swift test
+
   web:
     name: Frontend (typecheck, build)
     runs-on: ubuntu-latest
