@@ -53,6 +53,11 @@ pub enum TrashError {
          abandoned before moving anything. Expected {expected}, found {found}."
     )]
     Changed { path: PathBuf, expected: String, found: String },
+    #[error(
+        "{path} has no recorded hash, so it cannot be verified. It was not part of the plan \
+         you were shown — something added it between the confirmation and the move."
+    )]
+    Unverified { path: PathBuf },
     #[error("no trashed operation with id {0}")]
     UnknownOperation(String),
     #[error("the manifest at {path} could not be parsed at line {line}: {source}")]
@@ -383,7 +388,20 @@ impl Trash {
         // 1. Verify everything before moving anything. A mismatch aborts the whole
         //    operation, because proceeding would move a file the user was not shown.
         for m in &plan.moves {
-            let Some(expected) = &m.expected_hash else { continue };
+            // **A file the map does not cover is refused, not skipped.**
+            //
+            // This was `else { continue }`, and it was the primitive that made every caller's
+            // omission silent. `DeleteSession::commit` re-resolves its selection from the
+            // catalog, so a file that *appeared* between the plan and the confirmation got no
+            // hash — and was then moved **unverified**, with the module documenting a
+            // guarantee that did not cover it.
+            //
+            // A caller that hands `plan` a hash map is stating which files it has verified.
+            // Moving one outside that set is the exact thing this loop exists to prevent, so
+            // the absence of a hash is a refusal like any other.
+            let Some(expected) = &m.expected_hash else {
+                return Err(TrashError::Unverified { path: m.source.clone() });
+            };
             let actual = hash_file(&m.source)?;
             if &actual != expected {
                 return Err(TrashError::Changed {

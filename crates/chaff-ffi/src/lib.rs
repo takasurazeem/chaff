@@ -4,8 +4,17 @@
 //!
 //! A boundary and nothing else. Every function here calls the same `chaff-core` function the
 //! Tauri command calls — **not a reimplementation** — so a bug fixed in
-//! `resolve_delete_selection` is fixed for both UIs at once, and a safety guarantee has one
-//! implementation rather than two that drift.
+//! `resolve_delete_selection` is fixed for both UIs at once.
+//!
+//! # Not finished: the delete path is not exposed
+//!
+//! `chaff_core::delete_session` exists and is tested, and **nothing here calls it yet**. This
+//! crate exports seven methods; the Tauri shell has thirty-eight commands. A review caught the
+//! gap by grepping for `delete` and finding only a doc comment claiming the opposite.
+//!
+//! So issue #66 — culling from the native shell — is blocked on the wrappers below, and the
+//! claim "a safety guarantee has one implementation rather than two" is true of the *engine*
+//! and not yet true of the *boundary*. Written down rather than left as an implication.
 //!
 //! # Why the engine is not annotated directly
 //!
@@ -25,22 +34,60 @@ use chaff_core::pipeline;
 
 uniffi::setup_scaffolding!();
 
-/// An error crossing the boundary.
+/// What kind of failure it was.
 ///
-/// A flat struct rather than an enum with associated data: UniFFI maps this to a Swift
-/// `throws` with a readable message, and a caller that needs to branch can match on `kind`.
-/// The alternative — one error type per engine error — would be forty types for a shell that
-/// shows a message and moves on.
+/// **A real enum, not a string.** The first version was `#[uniffi(flat_error)]` with a `String`
+/// kind and a comment saying "a caller that needs to branch can match on `kind`" — and
+/// `flat_error` lowers *only* `to_string()`, so the generated Swift was
+/// `case Engine(message: String)` with no `kind` at all. The false comment shipped verbatim
+/// into the Swift documentation for a field that did not exist.
+///
+/// A Swift caller needs to distinguish "retry, the catalog is busy" from "the library does not
+/// exist" from "restart the app, the lock is poisoned" — the last of which existed only to be
+/// unreachable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FailureKind {
+    /// The catalog is busy or the operation could not start. Retrying may work.
+    Busy,
+    /// The library or photograph asked for does not exist.
+    NotFound,
+    /// Another operation failed while holding the catalog. **Restart the app.**
+    Poisoned,
+    /// The operation was refused, and the message says why. Retrying will not help.
+    Refused,
+    /// Something else went wrong. The message is all there is.
+    Other,
+}
+
+/// An error crossing the boundary.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
-#[uniffi(flat_error)]
 pub enum ChaffError {
     #[error("{message}")]
-    Engine { kind: String, message: String },
+    Engine { kind: FailureKind, message: String },
 }
 
 impl ChaffError {
     fn engine(kind: &str, e: impl std::fmt::Display) -> Self {
-        Self::Engine { kind: kind.to_string(), message: e.to_string() }
+        Self::Engine { kind: classify(kind), message: e.to_string() }
+    }
+
+    fn with(kind: FailureKind, message: impl Into<String>) -> Self {
+        Self::Engine { kind, message: message.into() }
+    }
+}
+
+/// Map an engine error to something a caller can branch on.
+///
+/// String matching, which is a smell — and the honest alternative is for the engine to return
+/// a typed error, which is a larger change than this boundary should make. Recorded rather than
+/// hidden: the strings come from `CatalogError` and are stable.
+fn classify(kind: &str) -> FailureKind {
+    match kind {
+        "poisoned" => FailureKind::Poisoned,
+        "catalog" | "index" => FailureKind::Busy,
+        "library" | "photos" | "decisions" | "metadata" | "files" => FailureKind::NotFound,
+        "delete" | "rescore" => FailureKind::Refused,
+        _ => FailureKind::Other,
     }
 }
 
@@ -110,17 +157,46 @@ pub struct Folder {
 /// "are we there yet" has nothing to show for the first fifty-nine minutes.
 #[uniffi::export(callback_interface)]
 pub trait Progress: Send + Sync {
-    fn on_progress(&self, done: u32, total: u32, stage: String);
+    /// Called on the thread running the pass.
+    ///
+    /// **Do not call back into the `Engine` from here.** Hop to the actor that owns your state
+    /// and return; the pass is holding a connection and a callback that waits on it will wait
+    /// forever.
+    ///
+    /// `total` is `0` while scanning — the size of a tree is not known until the walk
+    /// finishes, and a determinate bar over an unknown total is a bar that lies.
+    ///
+    /// `current` is the file being worked on, or empty for stages that have no single file.
+    fn on_progress(&self, done: u32, total: u32, stage: String, current: String);
 }
 
 /// The catalog, open for a shell to use.
 ///
-/// Holds the connection behind a `Mutex` because SQLite is not safe to use from two threads
-/// on one connection, and a SwiftUI app will call from at least two — the main actor for
-/// reads and a background task for a pass. The lock is the engine's, not this crate's.
+/// # The lock, and the two threads it has to survive
+///
+/// A SwiftUI app calls from at least two: the main actor for reads, and a background task for
+/// a pass that runs for an hour. SQLite is not safe to use from two threads on one connection,
+/// so reads go through a `Mutex`.
+///
+/// **The lock is this crate's, not the engine's** — `chaff-core` has no locks at all. That
+/// distinction matters, and the first version of this comment got it backwards while
+/// advertising the exact two-thread usage that deadlocked: a pass held the lock for its whole
+/// duration, so every read blocked behind it, and a progress callback that called back into
+/// the engine deadlocked outright.
+///
+/// The fix is that a pass **does not take this lock**. It opens its own connection to the same
+/// file — WAL is on, so a reader is not blocked by a writer — and reads stay responsive while
+/// it runs.
 #[derive(uniffi::Object)]
 pub struct Engine {
     conn: Mutex<chaff_core::rusqlite::Connection>,
+    /// Where the catalog file is, so a pass can open its own connection to it.
+    path: std::path::PathBuf,
+    /// The thumbnail cache, kept rather than reopened per tile.
+    ///
+    /// `ThumbnailCache::open` creates three directories and reads the cap; doing that once per
+    /// tile is work with no purpose. Behind its own lock so a thumbnail never waits on a read.
+    thumbs: Mutex<Option<std::sync::Arc<chaff_core::thumb::ThumbnailCache>>>,
 }
 
 #[uniffi::export]
@@ -128,26 +204,55 @@ impl Engine {
     /// Open or create a catalog.
     #[uniffi::constructor]
     pub fn new(database_path: String) -> Result<Arc<Self>> {
-        let conn = catalog::open(std::path::Path::new(&database_path))
-            .map_err(|e| ChaffError::engine("catalog", e))?;
-        Ok(Arc::new(Self { conn: Mutex::new(conn) }))
+        let path = std::path::PathBuf::from(&database_path);
+        let conn = catalog::open(&path).map_err(|e| ChaffError::engine("catalog", e))?;
+        Ok(Arc::new(Self { conn: Mutex::new(conn), path, thumbs: Mutex::new(None) }))
     }
 
     /// Index a library and score it.
     ///
-    /// Long-running: minutes for a large library. `progress` is called as it goes.
+    /// Long-running: minutes for a large library.
+    ///
+    /// # What `progress` may do
+    ///
+    /// It is called **on the thread running the pass**, and it must not call back into this
+    /// `Engine`. A callback that reads `photos()` would block on the very connection the pass
+    /// is using, and a callback that started another pass would deadlock outright. Hop to
+    /// whatever actor owns your state and return; do not do work in the callback.
+    ///
+    /// `total` is `0` while scanning, because the size of a tree is not known until the walk
+    /// finishes. A determinate bar over an unknown total is a bar that lies, so the scan phase
+    /// is indeterminate by design — check for `total == 0` rather than dividing by it.
+    ///
+    /// # Cancellation
+    ///
+    /// **There is none yet.** A pass runs to completion or fails. That is a real gap for a run
+    /// that takes an hour, and it is issue #67.
     pub fn open_library(&self, root: String, progress: Box<dyn Progress>) -> Result<OpenReport> {
-        let mut conn = self.lock()?;
+        // **A connection of its own, not the read connection.**
+        //
+        // This took `self.lock()` and held it for the whole pass. A read then blocked for the
+        // entire duration — twenty minutes on a large library — and a progress callback that
+        // touched the engine deadlocked. WAL is on, so a separate connection reads and writes
+        // alongside the shell's without either blocking the other.
+        let mut conn = catalog::open(&self.path).map_err(|e| ChaffError::engine("catalog", e))?;
         let path = std::path::Path::new(&root);
         let now = now_seconds();
 
         let report = pipeline::index_and_score_with_progress(&mut conn, path, now, &mut |p| {
-            let (done, total, stage) = match p {
-                pipeline::Progress::Scanning { files } => (files as u32, 0, "scanning"),
-                pipeline::Progress::Scoring { done, total, .. } => (done as u32, total as u32, "scoring"),
-                pipeline::Progress::Ranking { .. } => (1, 1, "ranking"),
+            let (done, total, stage, current) = match p {
+                pipeline::Progress::Scanning { files } => (files as u32, 0, "scanning", String::new()),
+                // `current` was discarded by the first version with `..`. For a pass that runs
+                // for an hour it is the single most useful field, and the engine already
+                // computes it.
+                pipeline::Progress::Scoring { done, total, current } => {
+                    (done as u32, total as u32, "scoring", current)
+                }
+                pipeline::Progress::Ranking { photographs } => {
+                    (photographs as u32, photographs as u32, "ranking", String::new())
+                }
             };
-            progress.on_progress(done, total, stage.to_string());
+            progress.on_progress(done, total, stage.to_string(), current);
         })
         .map_err(|e| ChaffError::engine("index", e))?;
 
@@ -239,8 +344,7 @@ impl Engine {
             "loupe" => chaff_core::thumb::ThumbSize::Loupe,
             _ => chaff_core::thumb::ThumbSize::Grid,
         };
-        let cache = chaff_core::thumb::ThumbnailCache::open(thumbnail_root(), THUMBNAIL_CAP_BYTES)
-            .map_err(|e| ChaffError::engine("thumbnail", e))?;
+        let cache = self.cache()?;
 
         match chaff_core::thumb::generate_and_store(&cache, std::path::Path::new(&primary.path), kind)
         {
@@ -275,9 +379,8 @@ impl Engine {
             .map_err(|e| ChaffError::engine("rescore", e))?;
         let root = store::library_root(&conn, library_id)
             .map_err(|e| ChaffError::engine("library", e))?
-            .ok_or_else(|| ChaffError::Engine {
-                kind: "library".into(),
-                message: format!("no library with id {library_id}"),
+            .ok_or_else(|| {
+                ChaffError::with(FailureKind::NotFound, format!("no library with id {library_id}"))
             })?;
         drop(conn);
 
@@ -286,14 +389,40 @@ impl Engine {
 }
 
 impl Engine {
+    /// The thumbnail cache, opened once.
+    ///
+    /// Opened lazily rather than in `new`, because a shell that never shows a thumbnail should
+    /// not create three directories — and cached rather than reopened, because
+    /// `ThumbnailCache::open` reads the cap and creates directories, which is work with no
+    /// purpose on every tile.
+    fn cache(&self) -> Result<std::sync::Arc<chaff_core::thumb::ThumbnailCache>> {
+        let mut slot = self.thumbs.lock().map_err(|_| {
+            ChaffError::with(
+                FailureKind::Poisoned,
+                "the thumbnail cache is unusable; restart Chaff",
+            )
+        })?;
+        if let Some(c) = slot.as_ref() {
+            return Ok(std::sync::Arc::clone(c));
+        }
+        let c = std::sync::Arc::new(
+            chaff_core::thumb::ThumbnailCache::open(thumbnail_root(), THUMBNAIL_CAP_BYTES)
+                .map_err(|e| ChaffError::engine("thumbnail", e))?,
+        );
+        *slot = Some(std::sync::Arc::clone(&c));
+        Ok(c)
+    }
+
     /// The connection, or an error naming the real problem.
     ///
     /// A poisoned lock means another thread panicked while holding it. Saying so is more
     /// useful than a generic failure, and it is what the user will be asked about.
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, chaff_core::rusqlite::Connection>> {
-        self.conn.lock().map_err(|_| ChaffError::Engine {
-            kind: "poisoned".into(),
-            message: "another operation failed while using the catalog; restart Chaff".into(),
+        self.conn.lock().map_err(|_| {
+            ChaffError::with(
+                FailureKind::Poisoned,
+                "another operation failed while using the catalog; restart Chaff",
+            )
         })
     }
 }
@@ -358,18 +487,22 @@ mod tests {
     /// A progress sink that does nothing, for tests that are not about progress.
     struct Silent;
     impl Progress for Silent {
-        fn on_progress(&self, _done: u32, _total: u32, _stage: String) {}
+        fn on_progress(&self, _done: u32, _total: u32, _stage: String, _current: String) {}
     }
 
     /// A progress sink that records, for the tests that are.
     #[derive(Default)]
     struct Recording {
         seen: Mutex<Vec<(u32, u32, String)>>,
+        currents: Mutex<Vec<String>>,
     }
     impl Progress for Recording {
-        fn on_progress(&self, done: u32, total: u32, stage: String) {
+        fn on_progress(&self, done: u32, total: u32, stage: String, current: String) {
             if let Ok(mut v) = self.seen.lock() {
                 v.push((done, total, stage));
+            }
+            if let Ok(mut v) = self.currents.lock() {
+                v.push(current);
             }
         }
     }
@@ -404,8 +537,8 @@ mod tests {
         // A sink that forwards to the recording one, because the trait object is moved.
         struct Forward(Arc<Recording>);
         impl Progress for Forward {
-            fn on_progress(&self, done: u32, total: u32, stage: String) {
-                self.0.on_progress(done, total, stage);
+            fn on_progress(&self, done: u32, total: u32, stage: String, current: String) {
+                self.0.on_progress(done, total, stage, current);
             }
         }
 

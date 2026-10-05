@@ -43,25 +43,16 @@ use tauri::{Manager, State};
 /// nothing ever wrote, so the verification loop skipped every file and the guarantee did
 /// not exist. The review agent proved it by changing a file's bytes between plan and commit
 /// and watching it move anyway.
-struct PendingDelete {
-    photo_ids: Vec<i64>,
-    /// Path to content hash, taken when the user was shown the plan.
-    hashes: std::collections::HashMap<PathBuf, String>,
-    created: i64,
-}
-
-/// How long a shown plan stays valid.
-///
-/// A plan is a promise about a moment. An hour later the library may have changed in ways
-/// the user has forgotten about, and re-confirming from memory is not confirmation.
-const PENDING_DELETE_TTL_SECONDS: i64 = 3600;
-
 /// Shared application state.
 pub struct AppState {
     db: Arc<Mutex<Connection>>,
     thumbs: ThumbnailCache,
     /// The plan most recently shown, if it has not been confirmed, cancelled or expired.
-    pending_delete: Arc<Mutex<Option<PendingDelete>>>,
+    ///
+    /// **The engine's type, not the shell's.** It lived here until a second shell was
+    /// planned, at which point two copies of a safety guarantee became the obvious outcome.
+    /// See `chaff_core::delete_session`.
+    pending_delete: Arc<Mutex<chaff_core::delete_session::DeleteSession>>,
     /// The library watcher, when one is running.
     watch: Arc<Mutex<Option<crate::watcher::Watch>>>,
 }
@@ -71,12 +62,14 @@ impl AppState {
         Self {
             db: Arc::new(Mutex::new(db)),
             thumbs,
-            pending_delete: Arc::new(Mutex::new(None)),
+            pending_delete: Arc::new(Mutex::new(
+                chaff_core::delete_session::DeleteSession::new(),
+            )),
             watch: Arc::new(Mutex::new(None)),
         }
     }
 
-    fn pending(&self) -> Arc<Mutex<Option<PendingDelete>>> {
+    fn pending(&self) -> Arc<Mutex<chaff_core::delete_session::DeleteSession>> {
         Arc::clone(&self.pending_delete)
     }
 
@@ -1108,26 +1101,6 @@ pub async fn plan_delete(
         let files: Vec<std::path::PathBuf> =
             selection.candidates.iter().flat_map(|c| c.files.clone()).collect();
 
-        // **Hash now, verify later.** This is the moment the user is shown what will move,
-        // so this is the moment to record what "what will move" means. Hashing at commit
-        // instead would compare a file against itself and prove nothing.
-        //
-        // Costs a full read per file, which is why it happens on a delete and not on an
-        // index: a delete is a handful of photographs, and the guarantee is the entire
-        // reason the confirmation dialog exists.
-        let mut hashes = std::collections::HashMap::new();
-        for f in &files {
-            match chaff_core::trash::hash_file(f) {
-                Ok(h) => {
-                    hashes.insert(f.clone(), h);
-                }
-                // A file that cannot be read cannot be verified, so it cannot be moved.
-                // The plan's refusal path handles it rather than the hash being silently
-                // absent — which is exactly the bug this replaces.
-                Err(e) => return Err(format!("could not read {} to verify it: {e}", f.display())),
-            }
-        }
-
         // Refusals are collected rather than short-circuited, so the user sees every
         // reason at once instead of fixing one and meeting the next.
         let mut refusals = Vec::new();
@@ -1138,23 +1111,22 @@ pub async fn plan_delete(
             }
         }
 
-        // The engine's own plan, for cross-volume warnings and collision suffixes.
+        // **The engine plans it, hashes it and holds it.**
+        //
+        // This shell used to do all three. Moving it down means the native macOS shell gets
+        // the same guarantee rather than a second implementation of it — which is the whole
+        // reason `delete_session` exists.
+        //
+        // The hashing happens *here*, while the user is looking at what will move, because
+        // that is what the commit verifies against. Hashing at commit time would compare a
+        // file with itself and prove nothing — which is what the first implementation did, by
+        // accident, with an always-empty map.
         if refusals.is_empty() {
-            match trash.plan(&files, &hashes, now) {
-                Ok(plan) => {
-                    warnings.extend(plan.warnings.iter().map(describe_warning));
-                    // Kept for the commit. Replacing any previous plan is deliberate: a
-                    // user who plans a second delete has moved on from the first, and
-                    // holding both invites committing a selection they have forgotten.
-                    if let Ok(mut slot) = pending.lock() {
-                        *slot = Some(PendingDelete {
-                            photo_ids: photo_ids.clone(),
-                            hashes,
-                            created: now,
-                        });
-                    }
+            if let Ok(mut session) = pending.lock() {
+                match session.plan(&conn, std::path::Path::new(&library_root), &photo_ids, now) {
+                    Ok(planned) => warnings.extend(planned.warnings),
+                    Err(e) => refusals.push(e.to_string()),
                 }
-                Err(e) => refusals.push(e.to_string()),
             }
         }
 
@@ -1213,54 +1185,24 @@ pub async fn commit_delete(
     let pending = state.pending();
     let now = now_seconds();
     tauri::async_runtime::spawn_blocking(move || -> Result<DeleteReceiptView, String> {
-        let plan_shown = pending
-            .lock()
-            .map_err(|_| "pending lock poisoned".to_string())?
-            .take()
-            .ok_or_else(|| {
-                "There is no delete waiting to be confirmed. The plan may have expired — \
-                 select the photographs again."
-                    .to_string()
-            })?;
-
-        if now - plan_shown.created > PENDING_DELETE_TTL_SECONDS {
-            return Err(
-                "That confirmation is more than an hour old, so the library may have \
-                 changed since you saw it. Select the photographs again."
-                    .to_string(),
-            );
-        }
-
-        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
-        let selection = pipeline::resolve_delete_selection(&conn, &plan_shown.photo_ids).map_err(err)?;
-
-        let trash = Trash::open(std::path::Path::new(&library_root)).map_err(err)?;
-        let files: Vec<std::path::PathBuf> =
-            selection.candidates.iter().flat_map(|c| c.files.clone()).collect();
-
-        // Re-planned with the hashes from when the user was shown the plan. `Trash::commit`
-        // re-hashes each file and compares — the check that did not exist before, because
-        // the map it was given was always empty.
-        let plan = trash.plan(&files, &plan_shown.hashes, now).map_err(err)?;
-        let receipt = trash.commit(&plan, "culled in Chaff", now).map_err(err)?;
-
-        // The catalog is updated only after the files have moved. A crash in between leaves
-        // files in the trash that the catalog still lists, which the next index pass
-        // corrects — the reverse order would leave the catalog claiming a file is gone
-        // while it is still on disk.
+        // **The engine commits it.** This shell used to hold the plan, re-resolve the
+        // selection, re-plan with the recorded hashes and mark the rows — all of which is now
+        // `DeleteSession::commit`, so the native shell gets the same guarantee rather than a
+        // second implementation of it.
         //
-        // The row is marked, not deleted: `decision` cascades with `photo`, so removing it
-        // would take the user's rating with it and a restore would bring the file back
-        // unrated.
-        for c in &selection.candidates {
-            store::mark_photo_trashed(&conn, c.photo_id, now).map_err(err)?;
-        }
+        // The invariant that matters is in the engine: `commit` takes no file list. Nothing
+        // this command passes can name a file, supply a hash, or widen the operation.
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let mut session = pending.lock().map_err(|_| "pending lock poisoned".to_string())?;
+        let receipt = session
+            .commit(&conn, std::path::Path::new(&library_root), now)
+            .map_err(|e| e.to_string())?;
 
         Ok(DeleteReceiptView {
             op_id: receipt.op_id,
             moved: receipt.moved,
-            bytes: receipt.bytes,
-            warnings: receipt.warnings.iter().map(describe_warning).collect(),
+            bytes: receipt.bytes.min(i64::MAX as u64) as i64,
+            warnings: receipt.warnings,
         })
     })
     .await
@@ -1275,8 +1217,8 @@ pub async fn commit_delete(
 pub async fn cancel_delete(state: State<'_, AppState>) -> Result<(), String> {
     let pending = state.pending();
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        if let Ok(mut slot) = pending.lock() {
-            *slot = None;
+        if let Ok(mut session) = pending.lock() {
+            session.cancel();
         }
         Ok(())
     })
@@ -1437,18 +1379,6 @@ fn format_epoch(seconds: &str) -> String {
     )
 }
 
-fn describe_warning(w: &chaff_core::trash::Warning) -> String {
-    use chaff_core::trash::Warning;
-    match w {
-        Warning::CrossVolume { source, .. } => format!(
-            "{} is on a different volume from the trash folder. Moving it is a copy              followed by a delete, not an atomic rename.",
-            source.display()
-        ),
-        Warning::Missing { path } => {
-            format!("{} is no longer on disk and will not be moved.", path.display())
-        }
-    }
-}
 
 /// The Capability Report for this machine, as plain text.
 ///

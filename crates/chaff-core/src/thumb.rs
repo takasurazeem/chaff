@@ -170,6 +170,14 @@ pub const DEFAULT_CAP_BYTES: u64 = 512 * 1024 * 1024;
 /// cache stays small. These are previews, not deliverables — the original is always there.
 pub const THUMB_QUALITY: u8 = 82;
 
+/// How many writes between cache sweeps.
+///
+/// See `generate_and_store` for why this is not 1.
+const EVICT_EVERY: u64 = 64;
+
+/// Counts writes, so the sweep is periodic rather than per-write.
+static EVICT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Distinguishes temp files written by concurrent threads in one process.
 static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -566,15 +574,24 @@ pub fn generate_and_store(
     // enforced: `evict_to_cap` was called from tests and from a command no component ever
     // invoked. The module did the thing its own documentation called unacceptable.
     //
-    // Cheap when under the cap: one directory walk that finds nothing to remove. At 3,000
-    // photographs and three sizes that is a few thousand `stat` calls spread across the
-    // thumbnails actually rendered, not per request.
+    // **Not on every write.** "Cheap when under the cap" was wrong, and measurably so: the
+    // check walks all three size directories with a `stat` per entry, which at the module's
+    // own documented size (512 MB of ~25 KB thumbnails) is ~20,000 entries and **114 ms** —
+    // seven frames of a 60 fps budget, spent before the decode even starts. Issue #64's gate
+    // is "scroll a 50k library and report the frame rate", and this alone would fail it.
     //
-    // A failure to evict is not a failure to store. The thumbnail is written and usable;
-    // the cache being temporarily over its cap is a smaller problem than a tile that does
-    // not appear.
-    if let Err(e) = cache.evict_to_cap() {
-        log::warn!("could not trim the thumbnail cache: {e}");
+    // Every 64th write instead. The cap is a soft bound, not an accounting rule: being up to
+    // 64 thumbnails over it between sweeps is a few megabytes, and the alternative is a
+    // visible hitch on every cache miss.
+    //
+    // A failure to evict is not a failure to store. The thumbnail is written and usable; the
+    // cache being temporarily over its cap is a smaller problem than a tile that does not
+    // appear.
+    let n = EVICT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if n.is_multiple_of(EVICT_EVERY) {
+        if let Err(e) = cache.evict_to_cap() {
+            log::warn!("could not trim the thumbnail cache: {e}");
+        }
     }
 
     Ok(path)

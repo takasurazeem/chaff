@@ -17,9 +17,19 @@
 //!
 //! # What it does not do
 //!
-//! It does not act while the user is mid-cull. A batch that settles during a delete dialog
-//! would change the grid under a decision the user is about to confirm, so the re-index waits
-//! for the dialog to close.
+//! **It does not defer while a delete dialog is open — and an earlier version of this comment
+//! claimed it did.** A review grepped for the deferral and found only the comment:
+//! `on_settled` fires unconditionally and nothing consults the pending plan.
+//!
+//! That mattered more than a stale comment usually does. `DeleteSession::commit` refuses any
+//! file that was not in the plan the user was shown, so a background re-index during the dialog
+//! adds a file row and turns Confirm into a hard failure — the user is told to select the
+//! photographs again, with no way to know a watcher caused it.
+//!
+//! **The refusal is correct and the experience is not.** A silent data-loss bug became a
+//! routine failure, which is the right direction and not the finished state. The fix is for
+//! `on_settled` to skip a batch while a plan is pending — the shell knows, the watcher does not
+//! — and it is tracked as issue #70 rather than described here as though it were done.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};

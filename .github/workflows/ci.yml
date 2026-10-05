@@ -46,6 +46,13 @@ jobs:
       # crate that contains no tests. It reported `0 passed` and a green tick, on every
       # platform, indefinitely. Asserting a minimum count is the cheapest way to make
       # that class of mistake impossible to repeat.
+      - name: FFI crate tests
+        # **In the engine matrix, because it needs no GUI stack** — and because it was in no
+        # job at all, which is how it came to be committed while failing to compile. Issue #69
+        # is about the Tauri shell rotting once attention moves to the native app; the same
+        # reasoning applies here, only faster.
+        run: cargo test -p chaff-ffi
+
       - name: Engine unit tests
         shell: bash
         run: |

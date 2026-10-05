@@ -15,13 +15,9 @@ publish = false
 # engine, where both shells get it and where it can be tested without Swift.
 [dependencies]
 chaff-core = { path = "../chaff-core" }
-chaff-faces = { path = "../chaff-faces" }
 uniffi = { version = "0.32", features = ["cli"] }
 thiserror = "2"
 log = "0.4"
-
-[build-dependencies]
-uniffi = { version = "0.32", features = ["build"] }
 
 [lib]
 # `cdylib` for a dynamic library Swift links against; `staticlib` so a release build can
