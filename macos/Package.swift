@@ -24,9 +24,19 @@ let package = Package(
     // The cost is real and worth stating: this no longer runs on macOS 14 or 15. Given the
     // machine it is built for is on 27, that is a trade worth making — and the Tauri build
     // remains for anything older.
-    // `.v26` is not in this SwiftPM's `PackageDescription` — it predates macOS 26 — so the
-    // version is given as a string. The effect is identical.
-    platforms: [.macOS("26.0")],
+    // **macOS 14, with the newer APIs availability-gated.**
+    //
+    // This was briefly `.macOS("26.0")` — a hard floor — because that is what makes the system
+    // hand the chrome Liquid Glass. It works and it drops every user on 14 or 15 to get a
+    // material on a toolbar.
+    //
+    // The deployment target says what you *require*; availability says what you *prefer*.
+    // Conflating them charges the cost to people who did nothing but not upgrade.
+    //
+    // Everything newer lives behind `#available` in `Compatibility.swift`, so the checks are in
+    // one file rather than scattered through layout code where a missed one is a crash on an
+    // older machine instead of a compile error.
+    platforms: [.macOS(.v14)],
     products: [
         .executable(name: "Chaff", targets: ["Chaff"])
     ],

@@ -65,6 +65,26 @@ memory:  94 MB
 WebKit:  none — otool shows no webview library
 ```
 
+## Deployment target, and what degrades
+
+**macOS 14**, with everything newer behind `#available` in `Compatibility.swift`.
+
+The target was briefly `26.0` — a hard floor — because that is what makes the system hand the
+chrome Liquid Glass. It works, and it drops every user on 14 or 15 to get a material on a
+toolbar.
+
+**The deployment target says what you require; availability says what you prefer.** Conflating
+them charges the cost to people who did nothing but not upgrade.
+
+| | macOS 26+ | macOS 14–15 |
+|---|---|---|
+| Floating surfaces | Liquid Glass | `.regularMaterial` |
+| Button chrome | `.glass` | `.bordered` |
+| Toolbar, sidebar, inspector | Liquid Glass | the system's own |
+
+Nothing here changes behaviour, and the checks live in one file rather than scattered through
+layout code — where a missed one is a crash on an older machine instead of a compile error.
+
 ## The layout, inspired by Xcode
 
 | Xcode | Chaff |

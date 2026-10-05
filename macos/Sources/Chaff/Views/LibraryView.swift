@@ -168,16 +168,18 @@ private struct IndexingOverlay: View {
                     Text(eta).font(.caption).foregroundStyle(.tertiary)
                 }
                 Button("Cancel") { onCancel() }
-                    .buttonStyle(.glass)
+                    .chaffFloatingButton()
             }
         }
         .padding(20)
-        // **Glass, because this genuinely floats.**
+        // **A floating surface, because this genuinely floats.**
         //
         // It is a card over the grid, not part of the layout — which is the test for whether
         // glass is right. The rule kept throughout: glass on the chrome, never on the content.
         // A photograph behind glass is a colour cast on the photograph, and this tool's job is
         // to show the frame accurately.
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        //
+        // Glass on macOS 26, a material before it — see `Compatibility.swift`.
+        .chaffFloatingSurface()
     }
 }

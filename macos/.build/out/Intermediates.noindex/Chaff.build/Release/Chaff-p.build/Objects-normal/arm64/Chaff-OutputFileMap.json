@@ -13,6 +13,11 @@
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/ChaffApp.bc",
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/ChaffApp.o"
   },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Compatibility.swift" : {
+    "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Compatibility.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Compatibility.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Compatibility.o"
+  },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Culling.swift" : {
     "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Culling.o",
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Culling.bc",

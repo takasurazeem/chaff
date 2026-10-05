@@ -5,11 +5,11 @@
       "name" : "Chaff",
       "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos",
       "projects" : [
-        "635f40392a87390936891bcd81f91324df0643a6822bfb599c32baff3509a152",
+        "c221b2537cf4194f36266fe1f359610f32fa7c0011db4cdaef6dc29aacfd57b1",
         "4045d8b2aa98d8ba76f93dc167a1adfa551d94e8456825047d185b545e02f126"
       ]
     },
-    "signature" : "fe3890fdd23ba614c1f3383f94ee2ff30d8e4fcd478b56d80c3fe3d627430192",
+    "signature" : "08355b214385d65c84048e45d7368cf5ad2bd6378a3ee00354e06630ea9082f9",
     "type" : "workspace"
   },
   {
@@ -53,7 +53,7 @@
             "KEEP_PRIVATE_EXTERNS" : "NO",
             "LIBTOOL_NO_WARNING_FOR_NO_SYMBOLS" : "YES",
             "LINKER_DRIVER" : "auto",
-            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
             "ONLY_ACTIVE_ARCH" : "YES",
             "OTHER_CFLAGS" : [
               "$(inherited)",
@@ -131,7 +131,7 @@
             "KEEP_PRIVATE_EXTERNS" : "NO",
             "LIBTOOL_NO_WARNING_FOR_NO_SYMBOLS" : "YES",
             "LINKER_DRIVER" : "auto",
-            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
             "OTHER_CFLAGS" : [
               "$(inherited)",
               "-DXcode"
@@ -209,6 +209,14 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_1",
+                "name" : "Compatibility.swift",
+                "path" : "Compatibility.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_2",
                 "name" : "Culling.swift",
                 "path" : "Culling.swift",
                 "sourceTree" : "<group>",
@@ -216,7 +224,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_2",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_3",
                 "name" : "EngineModel.swift",
                 "path" : "EngineModel.swift",
                 "sourceTree" : "<group>",
@@ -224,7 +232,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_3",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_4",
                 "name" : "ThumbnailLoader.swift",
                 "path" : "ThumbnailLoader.swift",
                 "sourceTree" : "<group>",
@@ -232,7 +240,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_4",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_5",
                 "name" : "Views/DeleteConfirmation.swift",
                 "path" : "Views/DeleteConfirmation.swift",
                 "sourceTree" : "<group>",
@@ -240,7 +248,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_5",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_6",
                 "name" : "Views/Inspector.swift",
                 "path" : "Views/Inspector.swift",
                 "sourceTree" : "<group>",
@@ -248,7 +256,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_6",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_7",
                 "name" : "Views/LibraryView.swift",
                 "path" : "Views/LibraryView.swift",
                 "sourceTree" : "<group>",
@@ -256,7 +264,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_7",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_8",
                 "name" : "Views/Navigator.swift",
                 "path" : "Views/Navigator.swift",
                 "sourceTree" : "<group>",
@@ -264,7 +272,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_8",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_9",
                 "name" : "Views/PhotoGrid.swift",
                 "path" : "Views/PhotoGrid.swift",
                 "sourceTree" : "<group>",
@@ -272,7 +280,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_9",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_10",
                 "name" : "chaff_ffi.swift",
                 "path" : "chaff_ffi.swift",
                 "sourceTree" : "<group>",
@@ -298,6 +306,14 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_1",
+                "name" : "Compatibility.swift",
+                "path" : "Compatibility.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_2",
                 "name" : "Culling.swift",
                 "path" : "Culling.swift",
                 "sourceTree" : "<group>",
@@ -305,7 +321,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_2",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_3",
                 "name" : "EngineModel.swift",
                 "path" : "EngineModel.swift",
                 "sourceTree" : "<group>",
@@ -313,7 +329,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_3",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_4",
                 "name" : "ThumbnailLoader.swift",
                 "path" : "ThumbnailLoader.swift",
                 "sourceTree" : "<group>",
@@ -321,7 +337,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_4",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_5",
                 "name" : "Views/DeleteConfirmation.swift",
                 "path" : "Views/DeleteConfirmation.swift",
                 "sourceTree" : "<group>",
@@ -329,7 +345,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_5",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_6",
                 "name" : "Views/Inspector.swift",
                 "path" : "Views/Inspector.swift",
                 "sourceTree" : "<group>",
@@ -337,7 +353,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_6",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_7",
                 "name" : "Views/LibraryView.swift",
                 "path" : "Views/LibraryView.swift",
                 "sourceTree" : "<group>",
@@ -345,7 +361,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_7",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_8",
                 "name" : "Views/Navigator.swift",
                 "path" : "Views/Navigator.swift",
                 "sourceTree" : "<group>",
@@ -353,7 +369,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_8",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_9",
                 "name" : "Views/PhotoGrid.swift",
                 "path" : "Views/PhotoGrid.swift",
                 "sourceTree" : "<group>",
@@ -361,7 +377,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_9",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_3::REF_10",
                 "name" : "chaff_ffi.swift",
                 "path" : "chaff_ffi.swift",
                 "sourceTree" : "<group>",
@@ -453,14 +469,14 @@
       "projectIsPackage" : "true",
       "projectName" : "Chaff",
       "targets" : [
-        "2f3d623d1d502ed71f1713e57f9699b5963bac66090e6b634c1b50decb7655fc",
-        "45886455de37663c5782d4c56dc8551eff0813376b2dc465cefd860f74a5f522",
+        "b52733578a8f6be6662f9924b1553f4076aa923274151f8279df5ae3bab1bc5c",
+        "191cb4569d870f01405608c1b317056936b8fe1e3f8c99a1950aa863d0a4dc59",
         "22b53f876b14e3e26ae733b498c2e2bb678a48bd71d55b4523f7b3cada849afe",
         "b1fd9d4465d978e33ff1bcb9c4027d8c95718bbdd35ab0ff723c51480506ac80",
         "c7eb4550484eeac0528e1466ef5d51607293eea5ba185cfb0734d040eb3ac51e"
       ]
     },
-    "signature" : "635f40392a87390936891bcd81f91324df0643a6822bfb599c32baff3509a152",
+    "signature" : "c221b2537cf4194f36266fe1f359610f32fa7c0011db4cdaef6dc29aacfd57b1",
     "type" : "project"
   },
   {
@@ -475,7 +491,7 @@
             "GENERATE_RESOURCE_ACCESSORS" : "YES",
             "IPHONEOS_DEPLOYMENT_TARGET" : "15.0",
             "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "15.0",
-            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
             "OTHER_SWIFT_FLAGS" : [
               "$(inherited)",
               "$(OTHER_SWIFT_FLAGS_ENABLE_LIBFUZZER_$(ENABLE_LIBFUZZER))"
@@ -522,7 +538,7 @@
             "GENERATE_RESOURCE_ACCESSORS" : "YES",
             "IPHONEOS_DEPLOYMENT_TARGET" : "15.0",
             "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "15.0",
-            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
             "OTHER_SWIFT_FLAGS" : [
               "$(inherited)",
               "$(OTHER_SWIFT_FLAGS_ENABLE_LIBFUZZER_$(ENABLE_LIBFUZZER))"
@@ -654,6 +670,15 @@
 
               ],
               "removeHeadersOnCopy" : "false"
+            },
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_10",
+              "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::10",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
             }
           ],
           "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0",
@@ -697,7 +722,7 @@
       "productTypeIdentifier" : "com.apple.product-type.tool",
       "type" : "standard"
     },
-    "signature" : "2f3d623d1d502ed71f1713e57f9699b5963bac66090e6b634c1b50decb7655fc",
+    "signature" : "b52733578a8f6be6662f9924b1553f4076aa923274151f8279df5ae3bab1bc5c",
     "type" : "target"
   },
   {
@@ -922,6 +947,15 @@
 
               ],
               "removeHeadersOnCopy" : "false"
+            },
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_10",
+              "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::10",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
             }
           ],
           "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0",
@@ -952,7 +986,7 @@
       "productTypeIdentifier" : "org.swift.product-type.common.object",
       "type" : "standard"
     },
-    "signature" : "45886455de37663c5782d4c56dc8551eff0813376b2dc465cefd860f74a5f522",
+    "signature" : "191cb4569d870f01405608c1b317056936b8fe1e3f8c99a1950aa863d0a4dc59",
     "type" : "target"
   },
   {
