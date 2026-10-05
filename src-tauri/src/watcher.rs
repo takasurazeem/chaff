@@ -55,8 +55,25 @@ impl Watch {
     ///
     /// The callback runs on the watcher's thread, so it should hand off rather than block:
     /// a re-index takes seconds and the OS event queue is finite.
+    /// Start watching, deferring while `should_defer` says to.
+    ///
+    /// # Why a predicate and not a flag
+    ///
+    /// **The deferral this describes did not exist.** The module doc claimed a re-index *"waits
+    /// for the dialog to close"* and a review found only the comment: `on_settled` fired
+    /// unconditionally. That mattered once `DeleteSession::commit` began refusing files that
+    /// appeared after the plan — a background re-index during the dialog added a file row and
+    /// turned Confirm into a hard failure with no recovery path, and no way for the user to know
+    /// a watcher caused it.
+    ///
+    /// The shell knows whether a plan is pending; the watcher does not and should not. So it
+    /// asks, once per batch, and defers when told to.
+    ///
+    /// **Deferring is not dropping.** The batch is left in the accumulator, so it settles again
+    /// and fires once the dialog closes — a re-index that was skipped rather than lost.
     pub fn start(
         root: PathBuf,
+        should_defer: impl Fn() -> bool + Send + Sync + 'static,
         mut on_settled: impl FnMut(Vec<PathBuf>) + Send + 'static,
     ) -> notify::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
@@ -73,6 +90,7 @@ impl Watch {
             })?;
         watcher.watch(&root, RecursiveMode::Recursive)?;
 
+        let thread_defer = std::sync::Arc::new(should_defer);
         let thread_stop = Arc::clone(&stop);
         let thread_busy = Arc::clone(&busy);
         let thread_seen = Arc::clone(&seen);
@@ -85,6 +103,7 @@ impl Watch {
                 // The watcher must outlive the loop; dropping it stops the events.
                 let _watcher = watcher;
 
+                let should_defer = Arc::clone(&thread_defer);
                 while !thread_stop.load(Ordering::Relaxed) {
                     // Drain whatever has arrived since the last tick.
                     // The timeout is the tick: the accumulator is asked whether anything has
@@ -99,6 +118,13 @@ impl Watch {
                                 }
                             }
                         }
+                    }
+
+                    // **Deferred, not dropped.** If the shell is mid-confirmation, the events
+                    // stay in the accumulator and settle again; taking them here and discarding
+                    // them would lose a re-index that the user never asked to skip.
+                    if should_defer() {
+                        continue;
                     }
 
                     let batch = accumulator.take_settled(Instant::now());

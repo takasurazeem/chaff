@@ -370,7 +370,23 @@ pub async fn start_watching(
             .ok_or_else(|| format!("{library_root} is not an open library"))?
     };
 
-    let watch = crate::watcher::Watch::start(root, move |_changed| {
+    // **The deferral the watcher's doc used to claim without implementing.**
+    //
+    // While a delete plan is pending, a re-index adds file rows — and `DeleteSession::commit`
+    // refuses any file that was not in the plan the user was shown. So a background re-index
+    // during the confirmation turned Confirm into a hard failure with no recovery path, and the
+    // user had no way to know a watcher caused it.
+    //
+    // The shell knows; the watcher asks.
+    let defer_state = Arc::clone(&state.pending_delete);
+    let should_defer = move || {
+        defer_state
+            .lock()
+            .map(|session| session.has_pending())
+            .unwrap_or(false)
+    };
+
+    let watch = crate::watcher::Watch::start(root, should_defer, move |_changed| {
         // The re-index runs on a blocking thread rather than in the watcher's callback: it
         // takes seconds, and the OS event queue is finite.
         let db = Arc::clone(&db);
