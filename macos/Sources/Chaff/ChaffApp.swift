@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct ChaffApp: App {
     @State private var model = EngineModel()
+    @State private var culling = Culling()
 
     var body: some Scene {
         WindowGroup {
             LibraryView()
                 .environment(model)
+                .environment(culling)
                 // A photo tool wants the room. The default window is sized for a form.
                 .frame(minWidth: 900, minHeight: 600)
         }
@@ -21,6 +23,26 @@ struct ChaffApp: App {
             CommandGroup(after: .newItem) {
                 Button("Open Library…") { openLibrary() }
                     .keyboardShortcut("o")
+            }
+
+            // **The culling keys, in the menu bar.**
+            //
+            // This is what a native shell buys that a webview cannot: shortcuts a user can
+            // *find*. Culling is a keyboard activity — a rating on every frame — and a shortcut
+            // nobody can discover is one nobody uses.
+            CommandMenu("Cull") {
+                ForEach(1...5, id: \.self) { stars in
+                    Button("\(stars) Star\(stars == 1 ? "" : "s")") {
+                        Task { await culling.rate(UInt8(stars), in: model) }
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(stars)")), modifiers: [])
+                }
+                Divider()
+                Button("Reject") { Task { await culling.toggleReject(in: model) } }
+                    .keyboardShortcut("x", modifiers: [])
+                Divider()
+                Button("Undo") { Task { await culling.undo(in: model) } }
+                    .keyboardShortcut("z", modifiers: .command)
             }
         }
     }

@@ -438,7 +438,66 @@ impl Engine {
     }
 }
 
+/// One file belonging to a photograph.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FileInfo {
+    pub name: String,
+    pub path: String,
+    /// `raw`, `raster`, `sidecar` or `video`.
+    pub role: String,
+    pub size_bytes: i64,
+}
+
+/// One term in the score, with the percentile it landed at.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ScoreTerm {
+    pub label: String,
+    pub percentile: f64,
+}
+
+/// Everything known about one photograph, for an inspector.
+///
+/// # One call, not four
+///
+/// A panel that fetches EXIF, then files, then scores arrives in three visible stages and the
+/// middle ones look like bugs. The engine assembles it in one query.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PhotoDetail {
+    pub id: i64,
+    pub stem: String,
+    pub dir: String,
+    pub state: String,
+    pub needs_review: bool,
+    pub files: Vec<FileInfo>,
+
+    pub camera: Option<String>,
+    pub lens: Option<String>,
+    pub iso: Option<u32>,
+    pub f_number: Option<f64>,
+    pub exposure_time: Option<f64>,
+    pub focal_length: Option<f64>,
+    /// **The camera's own clock, not an instant.**
+    ///
+    /// `parse_exif_datetime` treats the camera's local wall-clock as if it were UTC, so
+    /// differences between photographs are correct and the absolute moment is not. The UI
+    /// labels it "camera clock" for that reason — a panel printing a bare time claims a
+    /// precision the data does not have.
+    pub captured_at: Option<i64>,
+
+    pub composite: Option<f64>,
+    pub band: Option<String>,
+    /// Per-term percentiles. **The answer to "why 62?"** — a composite alone is a number
+    /// nobody can act on, and without these the only recourse is to trust it or ignore it.
+    pub terms: Vec<ScoreTerm>,
+
+    pub rating: u8,
+    pub rejected: bool,
+}
+
 /// What a delete will move, before it moves it.
+///
+/// `op_id` is the identity SwiftUI's `.sheet(item:)` needs — and it is the right one, because
+/// it names the operation rather than the view.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct DeletePlan {
     /// Names the operation, so the dialog can say what it is about to do.
@@ -572,6 +631,77 @@ impl Engine {
         })?;
         session.cancel();
         Ok(())
+    }
+
+    /// Everything known about one photograph.
+    pub fn photo_detail(&self, photo_id: i64) -> Result<PhotoDetail> {
+        let conn = self.lock()?;
+        let d = pipeline::photo_detail(&conn, photo_id)
+            .map_err(|e| ChaffError::engine("photos", e))?;
+
+        Ok(PhotoDetail {
+            id: d.photo_id,
+            stem: d.stem,
+            dir: d.dir,
+            state: d.state,
+            needs_review: d.needs_review,
+            files: d
+                .files
+                .into_iter()
+                .map(|f| FileInfo { name: f.name, path: f.path, role: f.role, size_bytes: f.size_bytes })
+                .collect(),
+            camera: d.camera,
+            lens: d.lens,
+            iso: d.iso,
+            f_number: d.f_number,
+            exposure_time: d.exposure_time,
+            focal_length: d.focal_length,
+            captured_at: d.captured_at,
+            composite: d.composite,
+            band: d.band,
+            terms: d
+                .terms
+                .into_iter()
+                .map(|(label, percentile)| ScoreTerm { label, percentile })
+                .collect(),
+            rating: d.rating,
+            rejected: d.rejected,
+        })
+    }
+
+    /// Put a trashed operation back.
+    ///
+    /// The counterpart of a move, and **a different operation from writing a value back** —
+    /// which is why the undo stack has to know which kind of action it is reversing.
+    ///
+    /// The manifest is plaintext inside the library and writable by anything, so `Trash::restore`
+    /// re-checks every path against the library root before moving anything. A hand-edited
+    /// manifest cannot send a file outside it.
+    pub fn restore_trash(&self, root: String, op_id: String) -> Result<u32> {
+        let conn = self.lock()?;
+        let trash = chaff_core::trash::Trash::open(std::path::Path::new(&root))
+            .map_err(|e| ChaffError::engine("delete", e))?;
+        let report = trash.restore(&op_id).map_err(|e| ChaffError::engine("delete", e))?;
+
+        // The catalog is told only after the files are back. A crash in between leaves files on
+        // disk that the catalog still calls trashed, which the next index pass corrects — the
+        // reverse order would claim a photograph is visible while it is not.
+        //
+        // **The paths come from the manifest**, not from the caller: `RestoreReport` carries
+        // counts, and the operation's own record of what it moved is the authoritative list of
+        // what came back. Asking the caller would let a UI name paths it never showed anyone.
+        let paths: Vec<String> = trash
+            .manifest()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|e| e.op_id == op_id)
+            .map(|e| e.files.iter().map(|f| f.source.to_string_lossy().to_string()).collect())
+            .unwrap_or_default();
+
+        store::clear_trashed_for_paths(&conn, &paths)
+            .map_err(|e| ChaffError::engine("delete", e))?;
+
+        Ok(report.restored as u32)
     }
 
     /// Is a delete waiting to be confirmed?

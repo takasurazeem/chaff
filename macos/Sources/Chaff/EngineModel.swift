@@ -116,6 +116,81 @@ final class EngineModel {
         }
     }
 
+    /// Everything known about one photograph.
+    ///
+    /// Off the main actor for the same reason as the list: a query is 21 ms on a large library
+    /// and that is more than a frame. The panel is one call, not four — a panel that fetched
+    /// EXIF, then files, then scores would arrive in three visible stages and the middle ones
+    /// would look like bugs.
+    func detail(for photoId: Int64) async throws -> PhotoDetail {
+        let engine = self.engine
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.photoDetail(photoId: photoId)
+        }.value
+    }
+
+    /// Write a decision.
+    func setDecision(photoId: Int64, rating: UInt8, rejected: Bool) async throws {
+        let engine = self.engine
+        try await Task.detached(priority: .userInitiated) {
+            try engine.setDecision(photoId: photoId, rating: rating, rejected: rejected)
+        }.value
+    }
+
+    /// Reflect a decision in the loaded list, without a round trip.
+    ///
+    /// The write has already succeeded, so re-reading 50,000 records to learn what we just told
+    /// the engine would be a second of work for a fact already in hand.
+    func applyLocally(photoId: Int64, rating: UInt8, rejected: Bool) {
+        guard let i = photos.firstIndex(where: { $0.id == photoId }) else { return }
+        var p = photos[i]
+        p.rating = rating
+        p.rejected = rejected
+        photos[i] = p
+    }
+
+    /// Restore a trashed operation.
+    func restoreTrash(opId: String) async throws {
+        guard let root = library?.root else {
+            throw ChaffError.Engine(
+                kind: .notFound,
+                message: "no library is open, so there is nothing to restore into"
+            )
+        }
+        let engine = self.engine
+        _ = try await Task.detached(priority: .userInitiated) {
+            try engine.restoreTrash(root: root, opId: opId)
+        }.value
+        // A restore changes what is on disk, so the list has to be re-read rather than patched.
+        if let library {
+            photos = try engine.photos(libraryId: library.id)
+        }
+    }
+
+    /// Work out what a delete would move.
+    func planDelete(photoIds: [Int64], root: String) async throws -> DeletePlan {
+        let engine = self.engine
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.planDelete(root: root, photoIds: photoIds)
+        }.value
+    }
+
+    /// Move what was shown.
+    func commitDelete(root: String) async throws -> DeleteReceipt {
+        let engine = self.engine
+        let receipt = try await Task.detached(priority: .userInitiated) {
+            try engine.commitDelete(root: root)
+        }.value
+        if let library {
+            photos = try engine.photos(libraryId: library.id)
+        }
+        return receipt
+    }
+
+    func cancelDelete() {
+        try? engine.cancelDelete()
+    }
+
     /// A message a person can act on.
     ///
     /// The engine's `FailureKind` crosses the boundary as a Swift enum so this can branch —

@@ -595,8 +595,8 @@
     "moduleName" : "_SwiftConcurrencyShims"
   },
   {
-    "clangModuleMapPath" : "\/Users\/takasurazeem\/Developer\/indie\/photo_culling\/macos\/.build\/out\/Intermediates.noindex\/GeneratedModuleMaps\/chaff_ffiFFI.modulemap",
-    "clangModulePath" : "\/Users\/takasurazeem\/Developer\/indie\/photo_culling\/macos\/.build\/out\/Intermediates.noindex\/SwiftExplicitPrecompiledModules\/chaff_ffiFFI-1K1DAGTX65L5001VPJ2V4LR3J.pcm",
+    "clangModuleMapPath" : "\/Users\/takasurazeem\/Developer\/indie\/photo_culling\/macos\/Sources\/ChaffFFI\/module.modulemap",
+    "clangModulePath" : "\/Users\/takasurazeem\/Developer\/indie\/photo_culling\/macos\/.build\/out\/Intermediates.noindex\/SwiftExplicitPrecompiledModules\/chaff_ffiFFI-3J2LBVQPZ4GAARFBZNWAJRKD2.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "chaff_ffiFFI"

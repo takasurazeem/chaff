@@ -57,3 +57,32 @@ binary:  5 MB     (the Tauri build is 33 MB)
 memory:  94 MB
 WebKit:  none — otool shows no webview library
 ```
+
+## What exists now
+
+| | |
+|---|---|
+| **#64** library, grid, thumbnails | done, unverified |
+| **#65** folders and the inspector | done, unverified |
+| **#66** culling: rating, reject, delete, undo | done, unverified |
+| **#67** faces and tags | not started |
+
+`⌘O` opens a library. `1`–`5` rate, `X` rejects, `⌫` opens the delete confirmation, `⌘Z` undoes.
+All of them are in the **Cull menu**, which is what a native shell buys that a webview cannot:
+shortcuts a user can find.
+
+## The delete flow, and why the sheet is the guarantee
+
+`⌫` asks the engine what the selection would move. The engine **hashes every file at that
+moment**, while the sheet is on screen, and verifies those hashes when the user confirms. A file
+whose contents changed in between aborts the whole operation rather than being moved unexamined.
+
+`commitDelete(root:)` takes **no file list**. The sheet cannot name a file, cannot supply a hash,
+and cannot widen the operation — the invariant lives in the engine's `DeleteSession`, shared by
+both shells, and it is a type-level test there so relaxing it stops compiling.
+
+## Undo covers two kinds of action
+
+A rating is reversed by **writing the previous value back**. A move is not: the files are in the
+trash and undoing it means **restoring the operation**. `Culling`'s stack holds a tagged union
+for that reason — one shape would mean one of the two being a lie.

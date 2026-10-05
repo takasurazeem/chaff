@@ -709,6 +709,11 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func openLibrary(root: String, progress: Progress) throws  -> OpenReport
     
     /**
+     * Everything known about one photograph.
+     */
+    func photoDetail(photoId: Int64) throws  -> PhotoDetail
+    
+    /**
      * Every photograph in a library.
      *
      * One call returning everything, which is what the web shell does too. At 50,000
@@ -738,6 +743,18 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * automatic: re-decoding a library is minutes and should be asked for.
      */
     func rescore(libraryId: Int64, progress: Progress) throws  -> OpenReport
+    
+    /**
+     * Put a trashed operation back.
+     *
+     * The counterpart of a move, and **a different operation from writing a value back** —
+     * which is why the undo stack has to know which kind of action it is reversing.
+     *
+     * The manifest is plaintext inside the library and writable by anything, so `Trash::restore`
+     * re-checks every path against the library root before moving anything. A hand-edited
+     * manifest cannot send a file outside it.
+     */
+    func restoreTrash(root: String, opId: String) throws  -> UInt32
     
     /**
      * Set a photograph's rating and reject flag.
@@ -927,6 +944,19 @@ open func openLibrary(root: String, progress: Progress)throws  -> OpenReport  {
 }
     
     /**
+     * Everything known about one photograph.
+     */
+open func photoDetail(photoId: Int64)throws  -> PhotoDetail  {
+    return try  FfiConverterTypePhotoDetail_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_photo_detail(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(photoId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Every photograph in a library.
      *
      * One call returning everything, which is what the web shell does too. At 50,000
@@ -979,6 +1009,27 @@ open func rescore(libraryId: Int64, progress: Progress)throws  -> OpenReport  {
             self.uniffiCloneHandle(),
         FfiConverterInt64.lower(libraryId),
         FfiConverterCallbackInterfaceProgress_lower(progress),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Put a trashed operation back.
+     *
+     * The counterpart of a move, and **a different operation from writing a value back** —
+     * which is why the undo stack has to know which kind of action it is reversing.
+     *
+     * The manifest is plaintext inside the library and writable by anything, so `Trash::restore`
+     * re-checks every path against the library root before moving anything. A hand-edited
+     * manifest cannot send a file outside it.
+     */
+open func restoreTrash(root: String, opId: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_restore_trash(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(opId),uniffiCallStatus
     )
 })
 }
@@ -1065,6 +1116,9 @@ public func FfiConverterTypeEngine_lower(_ value: Engine) -> UInt64 {
 
 /**
  * What a delete will move, before it moves it.
+ *
+ * `op_id` is the identity SwiftUI's `.sheet(item:)` needs — and it is the right one, because
+ * it names the operation rather than the view.
  */
 public struct DeletePlan: Equatable, Hashable {
     /**
@@ -1216,6 +1270,77 @@ public func FfiConverterTypeDeleteReceipt_lift(_ buf: RustBuffer) throws -> Dele
 #endif
 public func FfiConverterTypeDeleteReceipt_lower(_ value: DeleteReceipt) -> RustBuffer {
     return FfiConverterTypeDeleteReceipt.lower(value)
+}
+
+
+/**
+ * One file belonging to a photograph.
+ */
+public struct FileInfo: Equatable, Hashable {
+    public var name: String
+    public var path: String
+    /**
+     * `raw`, `raster`, `sidecar` or `video`.
+     */
+    public var role: String
+    public var sizeBytes: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, path: String, 
+        /**
+         * `raw`, `raster`, `sidecar` or `video`.
+         */role: String, sizeBytes: Int64) {
+        self.name = name
+        self.path = path
+        self.role = role
+        self.sizeBytes = sizeBytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FileInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFileInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FileInfo {
+        return
+            try FileInfo(
+                name: FfiConverterString.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                role: FfiConverterString.read(from: &buf), 
+                sizeBytes: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FileInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.role, into: &buf)
+        FfiConverterInt64.write(value.sizeBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFileInfo_lift(_ buf: RustBuffer) throws -> FileInfo {
+    return try FfiConverterTypeFileInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFileInfo_lower(_ value: FileInfo) -> RustBuffer {
+    return FfiConverterTypeFileInfo.lower(value)
 }
 
 
@@ -1568,6 +1693,213 @@ public func FfiConverterTypePhoto_lift(_ buf: RustBuffer) throws -> Photo {
 #endif
 public func FfiConverterTypePhoto_lower(_ value: Photo) -> RustBuffer {
     return FfiConverterTypePhoto.lower(value)
+}
+
+
+/**
+ * Everything known about one photograph, for an inspector.
+ *
+ * # One call, not four
+ *
+ * A panel that fetches EXIF, then files, then scores arrives in three visible stages and the
+ * middle ones look like bugs. The engine assembles it in one query.
+ */
+public struct PhotoDetail: Equatable, Hashable {
+    public var id: Int64
+    public var stem: String
+    public var dir: String
+    public var state: String
+    public var needsReview: Bool
+    public var files: [FileInfo]
+    public var camera: String?
+    public var lens: String?
+    public var iso: UInt32?
+    public var fNumber: Double?
+    public var exposureTime: Double?
+    public var focalLength: Double?
+    /**
+     * **The camera's own clock, not an instant.**
+     *
+     * `parse_exif_datetime` treats the camera's local wall-clock as if it were UTC, so
+     * differences between photographs are correct and the absolute moment is not. The UI
+     * labels it "camera clock" for that reason — a panel printing a bare time claims a
+     * precision the data does not have.
+     */
+    public var capturedAt: Int64?
+    public var composite: Double?
+    public var band: String?
+    /**
+     * Per-term percentiles. **The answer to "why 62?"** — a composite alone is a number
+     * nobody can act on, and without these the only recourse is to trust it or ignore it.
+     */
+    public var terms: [ScoreTerm]
+    public var rating: UInt8
+    public var rejected: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, stem: String, dir: String, state: String, needsReview: Bool, files: [FileInfo], camera: String?, lens: String?, iso: UInt32?, fNumber: Double?, exposureTime: Double?, focalLength: Double?, 
+        /**
+         * **The camera's own clock, not an instant.**
+         *
+         * `parse_exif_datetime` treats the camera's local wall-clock as if it were UTC, so
+         * differences between photographs are correct and the absolute moment is not. The UI
+         * labels it "camera clock" for that reason — a panel printing a bare time claims a
+         * precision the data does not have.
+         */capturedAt: Int64?, composite: Double?, band: String?, 
+        /**
+         * Per-term percentiles. **The answer to "why 62?"** — a composite alone is a number
+         * nobody can act on, and without these the only recourse is to trust it or ignore it.
+         */terms: [ScoreTerm], rating: UInt8, rejected: Bool) {
+        self.id = id
+        self.stem = stem
+        self.dir = dir
+        self.state = state
+        self.needsReview = needsReview
+        self.files = files
+        self.camera = camera
+        self.lens = lens
+        self.iso = iso
+        self.fNumber = fNumber
+        self.exposureTime = exposureTime
+        self.focalLength = focalLength
+        self.capturedAt = capturedAt
+        self.composite = composite
+        self.band = band
+        self.terms = terms
+        self.rating = rating
+        self.rejected = rejected
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PhotoDetail: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePhotoDetail: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PhotoDetail {
+        return
+            try PhotoDetail(
+                id: FfiConverterInt64.read(from: &buf), 
+                stem: FfiConverterString.read(from: &buf), 
+                dir: FfiConverterString.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf), 
+                needsReview: FfiConverterBool.read(from: &buf), 
+                files: FfiConverterSequenceTypeFileInfo.read(from: &buf), 
+                camera: FfiConverterOptionString.read(from: &buf), 
+                lens: FfiConverterOptionString.read(from: &buf), 
+                iso: FfiConverterOptionUInt32.read(from: &buf), 
+                fNumber: FfiConverterOptionDouble.read(from: &buf), 
+                exposureTime: FfiConverterOptionDouble.read(from: &buf), 
+                focalLength: FfiConverterOptionDouble.read(from: &buf), 
+                capturedAt: FfiConverterOptionInt64.read(from: &buf), 
+                composite: FfiConverterOptionDouble.read(from: &buf), 
+                band: FfiConverterOptionString.read(from: &buf), 
+                terms: FfiConverterSequenceTypeScoreTerm.read(from: &buf), 
+                rating: FfiConverterUInt8.read(from: &buf), 
+                rejected: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PhotoDetail, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.stem, into: &buf)
+        FfiConverterString.write(value.dir, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterBool.write(value.needsReview, into: &buf)
+        FfiConverterSequenceTypeFileInfo.write(value.files, into: &buf)
+        FfiConverterOptionString.write(value.camera, into: &buf)
+        FfiConverterOptionString.write(value.lens, into: &buf)
+        FfiConverterOptionUInt32.write(value.iso, into: &buf)
+        FfiConverterOptionDouble.write(value.fNumber, into: &buf)
+        FfiConverterOptionDouble.write(value.exposureTime, into: &buf)
+        FfiConverterOptionDouble.write(value.focalLength, into: &buf)
+        FfiConverterOptionInt64.write(value.capturedAt, into: &buf)
+        FfiConverterOptionDouble.write(value.composite, into: &buf)
+        FfiConverterOptionString.write(value.band, into: &buf)
+        FfiConverterSequenceTypeScoreTerm.write(value.terms, into: &buf)
+        FfiConverterUInt8.write(value.rating, into: &buf)
+        FfiConverterBool.write(value.rejected, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhotoDetail_lift(_ buf: RustBuffer) throws -> PhotoDetail {
+    return try FfiConverterTypePhotoDetail.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhotoDetail_lower(_ value: PhotoDetail) -> RustBuffer {
+    return FfiConverterTypePhotoDetail.lower(value)
+}
+
+
+/**
+ * One term in the score, with the percentile it landed at.
+ */
+public struct ScoreTerm: Equatable, Hashable {
+    public var label: String
+    public var percentile: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(label: String, percentile: Double) {
+        self.label = label
+        self.percentile = percentile
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ScoreTerm: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeScoreTerm: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScoreTerm {
+        return
+            try ScoreTerm(
+                label: FfiConverterString.read(from: &buf), 
+                percentile: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ScoreTerm, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterDouble.write(value.percentile, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScoreTerm_lift(_ buf: RustBuffer) throws -> ScoreTerm {
+    return try FfiConverterTypeScoreTerm.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScoreTerm_lower(_ value: ScoreTerm) -> RustBuffer {
+    return FfiConverterTypeScoreTerm.lower(value)
 }
 
 
@@ -1927,6 +2259,30 @@ public func FfiConverterCallbackInterfaceProgress_lower(_ v: Progress) -> UInt64
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = UInt32?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
     typealias SwiftType = Int32?
 
@@ -1943,6 +2299,30 @@ fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+    typealias SwiftType = Int64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt64.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -2049,6 +2429,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeFileInfo: FfiConverterRustBuffer {
+    typealias SwiftType = [FileInfo]
+
+    public static func write(_ value: [FileInfo], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFileInfo.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FileInfo] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FileInfo]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFileInfo.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeFolder: FfiConverterRustBuffer {
     typealias SwiftType = [Folder]
 
@@ -2091,6 +2496,31 @@ fileprivate struct FfiConverterSequenceTypePhoto: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypePhoto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeScoreTerm: FfiConverterRustBuffer {
+    typealias SwiftType = [ScoreTerm]
+
+    public static func write(_ value: [ScoreTerm], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeScoreTerm.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScoreTerm] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ScoreTerm]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeScoreTerm.read(from: &buf))
         }
         return seq
     }
@@ -2142,6 +2572,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_open_library() != 2463) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_photo_detail() != 54102) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_photos() != 25175) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2149,6 +2582,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_rescore() != 40822) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_restore_trash() != 23357) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_set_decision() != 38375) {

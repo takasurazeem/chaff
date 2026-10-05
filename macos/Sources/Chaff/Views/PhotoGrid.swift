@@ -22,6 +22,10 @@ import chaff_ffiFFI
 struct PhotoGrid: View {
     let photos: [Photo]
     @Binding var selection: Set<Int64>
+    /// What the keyboard acts on. **Separate from the selection**: the selection is what a
+    /// delete would move, the cursor is what `3` rates. Collapsing them means rating four
+    /// photographs at once, which is never what pressing `3` means.
+    @Binding var cursor: Int64?
 
     /// Wide enough that a tile is legible, narrow enough that a row holds several.
     private let tileWidth = Tile.width
@@ -35,9 +39,8 @@ struct PhotoGrid: View {
                 ForEach(photos, id: \.id) { photo in
                     Tile(photo: photo, isSelected: selection.contains(photo.id))
                         .onTapGesture {
-                            // ⌘ and ⇧ are read from the event modifiers, which `onTapGesture`
-                            // does not give — see the note on selection below.
                             selection = [photo.id]
+                            cursor = photo.id
                         }
                 }
             }

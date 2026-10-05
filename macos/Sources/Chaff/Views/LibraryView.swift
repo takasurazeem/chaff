@@ -10,11 +10,18 @@ import chaff_ffiFFI
 /// content — and a native app that reproduces a web layout has given up the reason to be native.
 struct LibraryView: View {
     @Environment(EngineModel.self) private var model
+    @Environment(Culling.self) private var culling
     @State private var selection: Set<Int64> = []
     @State private var chosenFolder: String?
+    /// The plan the user is being asked to confirm, if any.
+    @State private var pendingPlan: DeletePlan?
 
     var body: some View {
-        NavigationSplitView {
+        // `@Bindable` for the binding to the cursor: `@Environment` hands back the object, and a
+        // `Binding` needs the wrapper.
+        @Bindable var culling = culling
+
+        return NavigationSplitView {
             FolderSidebar(chosen: $chosenFolder, folders: model.folders)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
         } detail: {
@@ -26,7 +33,7 @@ struct LibraryView: View {
                         description: Text("Choose a folder of photographs with ⌘O.")
                     )
                 } else {
-                    PhotoGrid(photos: visible, selection: $selection)
+                    PhotoGrid(photos: visible, selection: $selection, cursor: $culling.cursor)
                 }
 
                 if model.isIndexing {
@@ -36,6 +43,42 @@ struct LibraryView: View {
             .navigationTitle(
                 model.library.map { URL(fileURLWithPath: $0.root).lastPathComponent } ?? "Chaff"
             )
+        }
+        // Delete opens **the confirmation**, and nothing else. There is no path in this
+        // application that removes a file from a keystroke.
+        .onDeleteCommand { beginDelete() }
+        .sheet(item: $pendingPlan) { plan in
+            DeleteConfirmation(
+                plan: plan,
+                root: model.library?.root ?? "",
+                onFinished: { pendingPlan = nil }
+            )
+        }
+        .inspector(isPresented: .constant(true)) {
+            // The engine takes one photograph's detail in one call. The panel follows the
+            // **selection**, falling back to nothing rather than to the cursor: an inspector
+            // describing a photograph the user has not chosen is one they cannot trust.
+            Inspector(photoId: selection.count == 1 ? selection.first : nil)
+                .inspectorColumnWidth(min: 240, ideal: 300, max: 420)
+        }
+    }
+
+    /// Ask the engine what the selection would move, and show it.
+    ///
+    /// The engine **hashes every file here**, while the user is looking at the list, because
+    /// that is what the confirmation verifies against. It is also where the refusals come
+    /// from — a selection that cannot be moved is refused before the sheet offers a button.
+    private func beginDelete() {
+        guard let root = model.library?.root else { return }
+        let ids = Array(selection)
+        guard !ids.isEmpty else { return }
+
+        Task {
+            do {
+                pendingPlan = try await model.planDelete(photoIds: ids, root: root)
+            } catch {
+                model.errorMessage = model.describe(error)
+            }
         }
     }
 
