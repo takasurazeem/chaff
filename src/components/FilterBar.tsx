@@ -105,7 +105,7 @@ export function FilterBar({ filters, counts, shown, total, onChange }: Props) {
             </span>
             <button
               type="button"
-              onClick={() => onChange({ band: "all", decision: "all", text: "" })}
+              onClick={() => onChange({ ...filters, band: "all", decision: "all", text: "" })}
               className="min-h-6 rounded bg-zinc-800 px-2 py-0.5 hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
             >
               Clear

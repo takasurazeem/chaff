@@ -42,6 +42,35 @@ export async function openLibrary(path: string): Promise<LibraryView> {
   return invoke<LibraryView>("open_library", { path });
 }
 
+/** Every remembered value. */
+export async function getSettings(): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("get_settings");
+}
+
+/** Remember a value. */
+export async function setSetting(key: string, value: string): Promise<void> {
+  return invoke<void>("set_setting", { key, value });
+}
+
+/** One folder in a library, with how many photographs it holds. */
+export interface DirectoryView {
+  path: string;
+  /** Photographs whose files sit directly in this folder. */
+  direct: number;
+  /** Photographs in this folder or any folder beneath it. */
+  recursive: number;
+}
+
+/**
+ * Every folder holding photographs, with counts.
+ *
+ * Flat, and turned into a tree here — the engine has no opinion about how a hierarchy is
+ * displayed.
+ */
+export async function listDirectories(libraryId: number): Promise<DirectoryView[]> {
+  return invoke<DirectoryView[]>("list_directories", { libraryId });
+}
+
 /** Every photograph in a library, with its score. Thumbnails are not included. */
 export async function listPhotos(libraryId: number): Promise<PhotoView[]> {
   return invoke<PhotoView[]>("list_photos", { libraryId });

@@ -17,9 +17,17 @@ export interface Filters {
   decision: DecisionFilter;
   /** Substring of the filename, case-insensitive. */
   text: string;
+  /**
+   * A folder path, or null for the whole library.
+   *
+   * Recursive: selecting `2024/` includes `2024/Iceland/`, because that is what a folder
+   * means to someone navigating a library. The sidebar shows both counts for exactly this
+   * reason.
+   */
+  folder: string | null;
 }
 
-export const NO_FILTERS: Filters = { band: "all", decision: "all", text: "" };
+export const NO_FILTERS: Filters = { band: "all", decision: "all", text: "", folder: null };
 
 export interface Decision {
   rating: number;
@@ -27,7 +35,9 @@ export interface Decision {
 }
 
 export function isFiltering(f: Filters): boolean {
-  return f.band !== "all" || f.decision !== "all" || f.text.trim() !== "";
+  return (
+    f.band !== "all" || f.decision !== "all" || f.text.trim() !== "" || f.folder !== null
+  );
 }
 
 /** The user's decision, falling back to what the catalog reported. */
@@ -47,6 +57,18 @@ export function decisionOf(
  * two into one control would make that case impossible to ask for.
  */
 export function matches(photo: PhotoView, decision: Decision, f: Filters): boolean {
+  // Truthy, not `!== null`. A `Filters` value built as an object literal without this
+  // field has `undefined` here, and `undefined !== null` is **true** — so the check would
+  // enter the branch and match nothing, silently emptying the grid. The test that caught
+  // this was "combines filters as AND", which is about something else entirely.
+  if (f.folder) {
+    // Prefix with a separator, so `2024-01` is not counted under `2024`. A bare string
+    // prefix would do exactly that, and the mistake is invisible until someone notices a
+    // count that is slightly too high.
+    const prefix = `${f.folder}/`;
+    if (photo.dir !== f.folder && !photo.dir.startsWith(prefix)) return false;
+  }
+
   if (f.band !== "all" && (photo.band ?? "review") !== f.band) return false;
 
   switch (f.decision) {

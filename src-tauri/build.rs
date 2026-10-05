@@ -39,8 +39,23 @@ fn main() {
     println!("cargo:rustc-env=CHAFF_GIT_SHA={sha}{}", if dirty { "+dirty" } else { "" });
     println!("cargo:rustc-env=CHAFF_BUILD_EPOCH={now}");
 
-    // Rebuild when the commit changes, so the stamp cannot go stale.
-    println!("cargo:rerun-if-changed=../.git/HEAD");
+    // **Watch the ref the branch points at, not HEAD.**
+    //
+    // `.git/HEAD` contains `ref: refs/heads/main` and does not change when a commit is
+    // made — the commit SHA is written to `.git/refs/heads/main`. Watching HEAD, which is
+    // what the first version did, meant this script never re-ran on a commit and every
+    // binary built after the first embedded a stale SHA.
+    //
+    // Found because the install script compared the stamp against `git rev-parse` and
+    // reported a mismatch on a binary that had just been built. The verification caught
+    // the bug in the thing it was verifying, which is the only reason it is worth having.
+    let head = std::fs::read_to_string("../.git/HEAD").unwrap_or_default();
+    if let Some(reference) = head.strip_prefix("ref: ") {
+        println!("cargo:rerun-if-changed=../.git/{}", reference.trim());
+    } else {
+        // Detached HEAD: the file holds the SHA directly, so it does change.
+        println!("cargo:rerun-if-changed=../.git/HEAD");
+    }
 
     tauri_build::build();
 }

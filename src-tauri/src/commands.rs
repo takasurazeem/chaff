@@ -173,6 +173,70 @@ pub async fn open_library(
     .map_err(err)?
 }
 
+#[derive(Debug, Serialize)]
+pub struct DirectoryView {
+    pub path: String,
+    pub direct: usize,
+    pub recursive: usize,
+}
+
+/// Every remembered value.
+///
+/// Returned as a map so the frontend reads what it needs in one call rather than one round
+/// trip per preference.
+#[tauri::command]
+pub async fn get_settings(
+    state: State<'_, AppState>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<std::collections::HashMap<String, String>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::settings(&conn).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Remember a value.
+#[tauri::command]
+pub async fn set_setting(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let db = state.db();
+    let now = now_seconds();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::set_setting(&conn, &key, &value, now).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Every folder in a library that holds photographs, with counts.
+///
+/// Returned flat and turned into a tree by the frontend. The engine has no opinion about
+/// how a hierarchy is displayed, and a tree built here would have to be re-built whenever
+/// the display changed.
+#[tauri::command]
+pub async fn list_directories(
+    state: State<'_, AppState>,
+    library_id: i64,
+) -> Result<Vec<DirectoryView>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<DirectoryView>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let rows = store::directories(&conn, library_id).map_err(err)?;
+        Ok(rows
+            .into_iter()
+            .map(|d| DirectoryView { path: d.path, direct: d.direct, recursive: d.recursive })
+            .collect())
+    })
+    .await
+    .map_err(err)?
+}
+
 /// Every photograph in a library, with its score.
 ///
 /// Deliberately does **not** generate thumbnails. A 50,000-photo library would take

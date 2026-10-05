@@ -833,6 +833,103 @@ mod tests {
         assert_eq!(decision_count(&conn, b).unwrap(), 0);
     }
 
+    // ---------------------------------------------------------------------
+    // Directories
+    // ---------------------------------------------------------------------
+    #[test]
+    fn directories_count_both_directly_and_recursively() {
+        // Both numbers, because they answer different questions: "how many in this shoot?"
+        // and "how many under 2024?". A tree showing only direct counts makes every parent
+        // look empty.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = [
+            "/lib/2024/01 - Iceland/IMG_0001.CR3",
+            "/lib/2024/01 - Iceland/IMG_0002.CR3",
+            "/lib/2024/02 - Portugal/IMG_0003.CR3",
+            "/lib/2023/party/IMG_0004.CR3",
+        ];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+
+        let dirs = directories(&conn, lib).unwrap();
+        let find = |p: &str| dirs.iter().find(|d| d.path == p).cloned();
+
+        assert_eq!(find("/lib/2024/01 - Iceland").unwrap().direct, 2);
+        assert_eq!(find("/lib/2024/01 - Iceland").unwrap().recursive, 2);
+        assert_eq!(find("/lib/2024").unwrap().direct, 0, "nothing sits directly in 2024");
+        assert_eq!(find("/lib/2024").unwrap().recursive, 3, "but three are beneath it");
+        assert_eq!(find("/lib").unwrap().recursive, 4);
+    }
+
+    #[test]
+    fn a_prefix_does_not_leak_across_sibling_folders() {
+        // `2024-01` must not be counted under `2024`. A plain string prefix would do
+        // exactly that, which is why the test uses a separator.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/2024/a.CR3", "/lib/2024-01/b.CR3", "/lib/2024-01/c.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+
+        let dirs = directories(&conn, lib).unwrap();
+        let find = |p: &str| dirs.iter().find(|d| d.path == p).cloned();
+        assert_eq!(find("/lib/2024").unwrap().recursive, 1, "only its own");
+        assert_eq!(find("/lib/2024-01").unwrap().recursive, 2);
+    }
+
+    #[test]
+    fn trashed_photographs_are_not_counted_in_the_tree() {
+        // The tree must agree with the grid. A folder reading "12" that shows 9 is the
+        // kind of small lie that erodes trust in every other number.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/shoot/IMG_0001.CR3", "/lib/shoot/IMG_0002.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+
+        assert_eq!(directories(&conn, lib).unwrap().iter().find(|d| d.path == "/lib/shoot").unwrap().recursive, 2);
+
+        let id = photos(&conn, lib).unwrap()[0].id;
+        mark_photo_trashed(&conn, id, 200).unwrap();
+
+        assert_eq!(
+            directories(&conn, lib).unwrap().iter().find(|d| d.path == "/lib/shoot").unwrap().recursive,
+            1,
+            "the tree must count what the grid shows"
+        );
+    }
+
+    #[test]
+    fn an_empty_library_has_no_directories() {
+        let conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        assert!(directories(&conn, lib).unwrap().is_empty());
+    }
+
+    #[test]
+    fn settings_round_trip_and_replace() {
+        let conn = crate::catalog::open_in_memory().unwrap();
+        assert!(settings(&conn).unwrap().is_empty());
+
+        set_setting(&conn, "last_library", "/photos", 100).unwrap();
+        set_setting(&conn, "last_folder", "/photos/2024", 100).unwrap();
+        let m = settings(&conn).unwrap();
+        assert_eq!(m.get("last_library").map(String::as_str), Some("/photos"));
+        assert_eq!(m.get("last_folder").map(String::as_str), Some("/photos/2024"));
+
+        // Replacing, not appending — a preference has one value, not a history.
+        set_setting(&conn, "last_folder", "/photos/2023", 200).unwrap();
+        assert_eq!(settings(&conn).unwrap().len(), 2);
+        assert_eq!(
+            settings(&conn).unwrap().get("last_folder").map(String::as_str),
+            Some("/photos/2023")
+        );
+
+        clear_setting(&conn, "last_folder").unwrap();
+        assert_eq!(settings(&conn).unwrap().len(), 1);
+        // Removing a key that is not there is not an error: a caller clearing a preference
+        // that was never set should not have to check first.
+        clear_setting(&conn, "never_set").unwrap();
+    }
+
     #[test]
     fn stems_are_stored_normalised_so_platforms_agree() {
         // The same Unicode-correction that pair.rs applies must survive into storage,
@@ -1364,4 +1461,99 @@ pub fn delete_measurements_at_version(
     scorer_version: i64,
 ) -> Result<usize, CatalogError> {
     Ok(conn.execute("DELETE FROM measurement WHERE scorer_version = ?1", params![scorer_version])?)
+}
+
+// ---------------------------------------------------------------------------
+// Directories
+// ---------------------------------------------------------------------------
+/// One folder in a library, with how many photographs it holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectoryRow {
+    pub path: String,
+    /// Photographs whose files sit directly in this folder.
+    pub direct: usize,
+    /// Photographs in this folder **or any folder beneath it**.
+    ///
+    /// Both numbers, because they answer different questions. "How many are in this
+    /// shoot?" is `direct`. "How many are under 2024?" is `recursive`, and a tree that
+    /// showed only the direct count would make every parent look empty.
+    pub recursive: usize,
+}
+
+/// Every folder in a library that holds photographs, and its counts.
+///
+/// One query for the direct counts, then the recursive totals accumulated in memory.
+/// Doing it in SQL would need a recursive CTE per folder, and a library has tens of
+/// thousands of photographs across a few hundred folders — the arithmetic is cheaper than
+/// the query.
+pub fn directories(conn: &Connection, library_id: i64) -> Result<Vec<DirectoryRow>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT dir, COUNT(*) FROM photo
+          WHERE library_id = ?1 AND trashed_at IS NULL
+          GROUP BY dir ORDER BY dir",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize))
+    })?;
+    let direct: Vec<(String, usize)> = rows.collect::<Result<Vec<_>, _>>()?;
+
+    // Every ancestor of every folder that holds a photograph, so a parent appears even
+    // when nothing sits directly in it. A tree with holes is not a tree.
+    let mut all: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for (dir, n) in &direct {
+        all.insert(dir.clone(), *n);
+        let mut current = Path::new(dir).parent();
+        while let Some(parent) = current {
+            let p = parent.to_string_lossy().to_string();
+            if p.is_empty() {
+                break;
+            }
+            all.entry(p).or_insert(0);
+            current = parent.parent();
+        }
+    }
+
+    let mut out: Vec<DirectoryRow> = all
+        .into_iter()
+        .map(|(path, count)| {
+            // Recursive: this folder's own photographs plus every descendant's. A prefix
+            // test on the path with a separator, so `2024-01` does not match `2024-010`.
+            let prefix = format!("{path}/");
+            let recursive: usize = direct
+                .iter()
+                .filter(|(d, _)| *d == path || d.starts_with(&prefix))
+                .map(|(_, n)| *n)
+                .sum();
+            DirectoryRow { path, direct: count, recursive }
+        })
+        .collect();
+
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+/// Every remembered value.
+pub fn settings(conn: &Connection) -> Result<std::collections::HashMap<String, String>, CatalogError> {
+    let mut stmt = conn.prepare("SELECT key, value FROM setting")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)
+}
+
+/// Remember a value, replacing any previous one.
+pub fn set_setting(conn: &Connection, key: &str, value: &str, now: i64) -> Result<(), CatalogError> {
+    conn.execute(
+        "INSERT INTO setting (key, value, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![key, value, now],
+    )?;
+    Ok(())
+}
+
+/// Forget a value. Removing a key that is not there is not an error.
+pub fn clear_setting(conn: &Connection, key: &str) -> Result<(), CatalogError> {
+    conn.execute("DELETE FROM setting WHERE key = ?1", params![key])?;
+    Ok(())
 }

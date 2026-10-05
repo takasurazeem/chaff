@@ -26,21 +26,34 @@ pub fn run() {
         // installed but not registered fails at runtime and only at runtime.
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // **Logging, so the numbers are inspectable rather than inferred.**
+            // **Logging, to a file.**
             //
             // The engine reports what it did — how many photographs, how they resolved,
-            // how many were scored — and until now those numbers existed only as a struct
-            // nobody read. On macOS this goes to the unified log, where `log show
-            // --predicate 'process == "chaff"'` retrieves it. On Linux and Windows, stderr.
+            // how many were scored — and until this existed those numbers were a struct
+            // nobody read.
             //
-            // `RUST_LOG` filters it. The default is `info`, which is the level the index
-            // report is written at: enough to answer "what happened?", not enough to bury
-            // it.
-            env_logger::Builder::from_env(
-                env_logger::Env::default().default_filter_or("info"),
-            )
-            .format_timestamp_millis()
-            .init();
+            // To a **file**, not stderr. A windowed application launched from Finder has no
+            // terminal, so stderr goes nowhere a person can look, and the first version of
+            // this wrote to stderr and was invisible. The log lives beside the catalog,
+            // where `cat` retrieves it and where it survives the window closing.
+            //
+            // `RUST_LOG` still filters it; the default is `info`, which is the level the
+            // index report is written at.
+            if let Ok(dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&dir);
+                if let Ok(file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(dir.join("chaff.log"))
+                {
+                    env_logger::Builder::from_env(
+                        env_logger::Env::default().default_filter_or("info"),
+                    )
+                    .format_timestamp_millis()
+                    .target(env_logger::Target::Pipe(Box::new(file)))
+                    .init();
+                }
+            }
 
             // The catalog and the thumbnail cache live under the app data directory, never
             // inside the user's library. Nothing Chaff writes is written beside their
@@ -53,6 +66,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_library,
             commands::list_photos,
+            commands::list_directories,
+            commands::get_settings,
+            commands::set_setting,
             commands::photo_thumbnail,
             commands::photo_explanation,
             commands::plan_delete,

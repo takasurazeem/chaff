@@ -12,7 +12,11 @@ import {
   listPhotos,
   onIndexProgress,
   openLibrary,
+  getSettings,
+  listDirectories,
+  setSetting,
   planDelete,
+  type DirectoryView,
   type IndexProgress,
   setDecision,
   type DeletePlanView,
@@ -21,6 +25,7 @@ import { DeleteDialog } from "./components/DeleteDialog";
 import { ProgressBar } from "./components/ProgressBar";
 import { Loupe } from "./components/Loupe";
 import { FilterBar } from "./components/FilterBar";
+import { FolderTree } from "./components/FolderTree";
 import { apply as applyFilters, counts as computeCounts, NO_FILTERS, type Filters } from "./filters";
 import { TrashPanel } from "./components/TrashPanel";
 import type { LibraryView, PhotoView } from "./types";
@@ -80,6 +85,15 @@ export default function App() {
    * this plan back — it sends the photograph ids and the Rust side resolves and re-hashes
    * from scratch, so nothing the webview holds can name a file the engine did not choose.
    */
+  /**
+   * Restore the library and folder from the last session.
+   *
+   * Read once on mount and applied once. Guarded by a ref rather than state because the
+   * restore must not re-run when the library changes — it would fight the user for control
+   * of the folder on every render.
+   */
+  const restored = useRef(false);
+
   /** Live index progress, from the engine's own events. */
   const [progress, setProgress] = useState<IndexProgress | null>(null);
 
@@ -88,6 +102,7 @@ export default function App() {
   const [trashOpen, setTrashOpen] = useState(false);
 
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [directories, setDirectories] = useState<DirectoryView[]>([]);
 
   /**
    * The list the loupe is navigating, captured when it opened.
@@ -104,6 +119,30 @@ export default function App() {
   // Cursor for keyboard navigation: the photograph the arrow keys move from.
   const cursor = useRef<number>(0);
   const columns = useRef<number>(1);
+
+  /** Open a library by path, without a dialog. Shared by the picker and the restore. */
+  const loadLibrary = useCallback(async (root: string) => {
+    setProgress(null);
+    setStatus({ kind: "indexing", root });
+    try {
+      const view = await openLibrary(root);
+      const list = await listPhotos(view.library_id);
+      const dirs = await listDirectories(view.library_id).catch(() => []);
+      setLibrary(view);
+      setPhotos(list);
+      setDecisions(new Map(list.map((p) => [p.id, { rating: p.rating, rejected: p.rejected }])));
+      setDirectories(dirs);
+      undoStack.current = [];
+      setUndoDepth(0);
+      setSelected(new Set());
+      cursor.current = 0;
+      void setSetting("last_library", root).catch(() => {});
+      return { libraryId: view.library_id, directories: dirs };
+    } catch (e) {
+      setStatus({ kind: "error", message: String(e) });
+      return null;
+    }
+  }, []);
 
   const chooseFolder = useCallback(async () => {
     // **Inside the try, not outside it.** This call used to sit above the try/catch, so a
@@ -122,26 +161,11 @@ export default function App() {
     }
     if (typeof picked !== "string") return;
 
-    setProgress(null);
-    setStatus({ kind: "indexing", root: picked });
-    try {
-      const view = await openLibrary(picked);
-      const list = await listPhotos(view.library_id);
-      setLibrary(view);
-      setPhotos(list);
-      // Seed from what the catalog already holds, so a reopened library shows its ratings.
-      setDecisions(new Map(list.map((p) => [p.id, { rating: p.rating, rejected: p.rejected }])));
-      undoStack.current = [];
-      setUndoDepth(0);
-      setSelected(new Set());
-      cursor.current = 0;
-      setStatus({ kind: "ready" });
-    } catch (e) {
-      // The engine's errors are written to be read by a person, so they are shown as-is
-      // rather than replaced with a generic message.
-      setStatus({ kind: "error", message: String(e) });
-    }
-  }, []);
+    // A new library starts with no folder selected. Carrying the previous library's folder
+    // over would filter the new one down to nothing.
+    setFilters(NO_FILTERS);
+    if (await loadLibrary(picked)) setStatus({ kind: "ready" });
+  }, [loadLibrary]);
 
   const activate = useCallback(
     (photo: PhotoView, event: React.MouseEvent) => {
@@ -292,6 +316,34 @@ export default function App() {
     [photos, decisions, filters],
   );
   const filterCounts = useMemo(() => computeCounts(photos, decisions), [photos, decisions]);
+
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+
+    void (async () => {
+      try {
+        const saved = await getSettings();
+        const root = saved["last_library"];
+        if (!root) return;
+
+        const loaded = await loadLibrary(root);
+        if (!loaded) return;
+
+        // **Only restore the folder if it still exists.** A library reorganised between
+        // sessions would otherwise come back filtered to a folder that is gone — an empty
+        // grid with no explanation, which reads as "Chaff lost my photographs".
+        const folder = saved["last_folder"];
+        if (folder && loaded.directories.some((d) => d.path === folder)) {
+          setFilters((f) => ({ ...f, folder }));
+        }
+        setStatus({ kind: "ready" });
+      } catch {
+        // A failed restore is not worth an error screen: the user gets the empty state and
+        // picks a folder, which is where they would have started anyway.
+      }
+    })();
+  }, [loadLibrary]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -585,7 +637,25 @@ export default function App() {
         />
       )}
 
-      <main className="min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
+        {status.kind === "ready" && photos.length > 0 && (
+          <FolderTree
+            rows={directories}
+            root={library?.root ?? ""}
+            selected={filters.folder}
+            total={photos.length}
+            onSelect={(path) => {
+              setFilters((f) => ({ ...f, folder: path }));
+              cursor.current = 0;
+              // Remembered so the next launch lands where this one left off. A folder is
+              // where you are in a library, and re-finding it every time is the kind of
+              // small tax that makes a tool tiring.
+              void setSetting("last_folder", path ?? "").catch(() => {});
+            }}
+          />
+        )}
+
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {status.kind === "idle" && (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <p className="text-lg">Open a folder of photographs to begin.</p>
@@ -653,7 +723,8 @@ export default function App() {
             }}
           />
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

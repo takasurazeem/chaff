@@ -60,7 +60,7 @@ describe("filters", () => {
   });
 
   it("combines filters as AND, not OR", () => {
-    const f: Filters = { band: "keep", decision: "all", text: "sunset" };
+    const f: Filters = { ...NO_FILTERS, band: "keep", text: "sunset" };
     expect(apply(LIB, new Map(), f).map((p) => p.id)).toEqual([1]);
   });
 
@@ -94,6 +94,32 @@ describe("filters", () => {
     const decided = LIB.length - c.decision.unrated;
     expect(decided).toBeGreaterThanOrEqual(c.decision.rated);
     expect(decided).toBeGreaterThanOrEqual(c.decision.rejected);
+  });
+
+  it("a folder filter is recursive, and does not leak across siblings", () => {
+    // Selecting `2024/` includes `2024/Iceland/` — that is what a folder means to someone
+    // navigating a library. But `2024-01/` must NOT be swept in, which a bare string
+    // prefix would do and which is invisible until a count looks slightly too high.
+    const lib = [
+      { ...photo(1, "keep"), dir: "/lib/2024/Iceland" },
+      { ...photo(2, "keep"), dir: "/lib/2024" },
+      { ...photo(3, "keep"), dir: "/lib/2024-01" },
+      { ...photo(4, "keep"), dir: "/lib/2023" },
+    ];
+    const in2024 = apply(lib, new Map(), { ...NO_FILTERS, folder: "/lib/2024" });
+    expect(in2024.map((p) => p.id)).toEqual([1, 2]);
+
+    const exact = apply(lib, new Map(), { ...NO_FILTERS, folder: "/lib/2023" });
+    expect(exact.map((p) => p.id)).toEqual([4]);
+  });
+
+  it("a folder filter composes with the others rather than replacing them", () => {
+    const lib = [
+      { ...photo(1, "keep"), dir: "/lib/shoot" },
+      { ...photo(2, "reject"), dir: "/lib/shoot" },
+    ];
+    const f = { ...NO_FILTERS, folder: "/lib/shoot", band: "keep" as const };
+    expect(apply(lib, new Map(), f).map((p) => p.id)).toEqual([1]);
   });
 
   it("a photograph with no band is treated as review", () => {
