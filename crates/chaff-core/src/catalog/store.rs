@@ -948,6 +948,200 @@ mod tests {
         }
     }
 
+    /// A library with `n` faces in one photograph, each with a distinct embedding.
+    fn faces_lib(embeddings: &[Vec<f32>]) -> (Connection, i64, Vec<i64>) {
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let fid = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+
+        let rows: Vec<FaceRow> = (0..embeddings.len())
+            .map(|i| FaceRow {
+                file_id: fid,
+                x: i as f64,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+                confidence: 1.0,
+            })
+            .collect();
+        let landmarks: Vec<Vec<u8>> = (0..embeddings.len()).map(|_| vec![0u8; 40]).collect();
+        replace_faces(&conn, &FaceDetection {
+            file_id: fid, faces: &rows, landmarks: &landmarks,
+            size: 1, mtime: 1, detector: "test", now: 100,
+        }).unwrap();
+
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM face ORDER BY id").unwrap();
+            let rows = stmt.query_map([], |r| r.get::<_, i64>(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        for (id, v) in ids.iter().zip(embeddings) {
+            upsert_embedding(&conn, *id, v, "test", 100).unwrap();
+        }
+        (conn, lib, ids)
+    }
+
+    fn basis(dim: usize, block: usize) -> Vec<f32> {
+        let mut v = vec![0f32; dim];
+        for k in 0..4 {
+            v[(block * 16 + k) % dim] = 1.0;
+        }
+        v
+    }
+
+    #[test]
+    fn naming_a_person_confirms_the_group() {
+        // Naming **is** the confirmation. A group a human put a name to is a decision, and
+        // the next clustering pass must leave it alone.
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 0)]);
+        replace_people(&conn, lib, std::slice::from_ref(&ids), 100).unwrap();
+        let p = people(&conn, lib).unwrap()[0].id;
+        assert!(!people(&conn, lib).unwrap()[0].confirmed);
+
+        name_person(&conn, p, Some("  Ada  "), 200).unwrap();
+        let after = &people(&conn, lib).unwrap()[0];
+        assert_eq!(after.name.as_deref(), Some("Ada"), "the name must be trimmed");
+        assert!(after.confirmed);
+    }
+
+    #[test]
+    fn an_empty_name_is_the_same_as_no_name() {
+        // "" and "not named" are one state to every reader, and two representations of one
+        // state is how they drift apart.
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 0)]);
+        replace_people(&conn, lib, &[ids], 100).unwrap();
+        let p = people(&conn, lib).unwrap()[0].id;
+
+        name_person(&conn, p, Some("   "), 200).unwrap();
+        assert_eq!(people(&conn, lib).unwrap()[0].name, None);
+    }
+
+    #[test]
+    fn merging_moves_every_face_and_confirms_both_sides() {
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 0), basis(128, 1), basis(128, 1)]);
+        replace_people(&conn, lib, &[vec![ids[0], ids[1]], vec![ids[2], ids[3]]], 100).unwrap();
+        let all = people(&conn, lib).unwrap();
+        assert_eq!(all.len(), 2);
+
+        let moved = merge_people(&conn, all[1].id, all[0].id, 200).unwrap();
+        assert_eq!(moved, 2);
+
+        let after = people(&conn, lib).unwrap();
+        assert_eq!(after.len(), 1, "the source group must be gone");
+        assert_eq!(after[0].faces, 4);
+        assert!(after[0].confirmed, "a hand-made merge is a decision");
+    }
+
+    #[test]
+    fn merging_a_group_into_itself_does_nothing() {
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 0)]);
+        replace_people(&conn, lib, &[ids], 100).unwrap();
+        let p = people(&conn, lib).unwrap()[0].id;
+        assert_eq!(merge_people(&conn, p, p, 200).unwrap(), 0);
+        assert_eq!(people(&conn, lib).unwrap().len(), 1, "and must not delete it");
+    }
+
+    #[test]
+    fn splitting_creates_a_confirmed_group_and_leaves_the_source_alive() {
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 1), basis(128, 2), basis(128, 3)]);
+        replace_people(&conn, lib, std::slice::from_ref(&ids), 100).unwrap();
+        let p = people(&conn, lib).unwrap()[0].id;
+
+        let new_id = split_person(&conn, p, &[ids[0], ids[1]], 200).unwrap();
+        assert!(new_id.is_some());
+
+        let after = people(&conn, lib).unwrap();
+        assert_eq!(after.len(), 2, "one group became two");
+        assert!(after.iter().all(|g| g.confirmed), "a hand-made split is a decision");
+        let sizes: Vec<usize> = after.iter().map(|g| g.faces).collect();
+        assert!(sizes.contains(&2), "each side has two faces: {sizes:?}");
+    }
+
+    #[test]
+    fn splitting_everything_out_is_refused() {
+        // A person with no faces is not a group. Leaving one behind puts an empty row in the
+        // list that cannot be selected or removed.
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 1)]);
+        replace_people(&conn, lib, std::slice::from_ref(&ids), 100).unwrap();
+        let p = people(&conn, lib).unwrap()[0].id;
+
+        assert_eq!(split_person(&conn, p, &ids, 200).unwrap(), None);
+        assert_eq!(split_person(&conn, p, &[], 200).unwrap(), None);
+        assert_eq!(people(&conn, lib).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn deleting_a_person_keeps_the_faces() {
+        // Only the grouping is discarded. The faces are still detections, still in their
+        // photographs, and the next pass may group them differently.
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 0)]);
+        replace_people(&conn, lib, std::slice::from_ref(&ids), 100).unwrap();
+        let p = people(&conn, lib).unwrap()[0].id;
+
+        delete_person(&conn, p).unwrap();
+        assert!(people(&conn, lib).unwrap().is_empty());
+        let remaining: i64 = conn.query_row("SELECT COUNT(*) FROM face", [], |r| r.get(0)).unwrap();
+        assert_eq!(remaining, ids.len() as i64, "the faces must survive");
+    }
+
+    #[test]
+    fn a_face_between_two_groups_is_flagged_for_review() {
+        // **What the review queue exists for.** A face that landed on the wrong side of a
+        // threshold is simply wrong, and without this nobody ever sees it.
+        //
+        // **Two groups are required** — the first version of this test put all three faces
+        // in one group and expected ambiguity, which contradicts
+        // `a_single_group_has_nothing_ambiguous` two tests down. A face is ambiguous
+        // *relative to another group*; with one group there is nothing to be between.
+        let a = basis(128, 0);
+        let b = basis(128, 1);
+        // A face sitting exactly between the two groups.
+        let between: Vec<f32> = a.iter().zip(b.iter()).map(|(x, y)| (x + y) / 2.0).collect();
+
+        // Two settled faces in A, two in B, and the waverer placed in A.
+        let (conn, lib, ids) = faces_lib(&[
+            a.clone(),
+            a.clone(),
+            b.clone(),
+            b.clone(),
+            between,
+        ]);
+        replace_people(&conn, lib, &[vec![ids[0], ids[1], ids[4]], vec![ids[2], ids[3]]], 100)
+            .unwrap();
+
+        let flagged = ambiguous_faces(&conn, lib, "test", 0.5, 10).unwrap();
+        assert!(
+            flagged.iter().any(|f| f.face_id == ids[4]),
+            "the face between two groups must be flagged: {flagged:?}"
+        );
+
+        // The settled faces must not be. A review queue that flags everything is one nobody
+        // reads.
+        for settled in [ids[0], ids[2]] {
+            assert!(
+                !flagged.iter().any(|f| f.face_id == settled),
+                "a settled face was flagged: {flagged:?}"
+            );
+        }
+
+        // Worst margin first, because the most likely to be wrong is the most worth looking
+        // at.
+        if flagged.len() > 1 {
+            assert!(flagged[0].own - flagged[0].other <= flagged[1].own - flagged[1].other);
+        }
+    }
+
+    #[test]
+    fn a_single_group_has_nothing_ambiguous() {
+        // With one group there is no "other" to be confused with, so the queue is empty.
+        // Returning everything would make the review queue useless on a small library.
+        let (conn, lib, ids) = faces_lib(&[basis(128, 0), basis(128, 0)]);
+        replace_people(&conn, lib, &[ids], 100).unwrap();
+        assert!(ambiguous_faces(&conn, lib, "test", 0.5, 10).unwrap().is_empty());
+    }
+
     #[test]
     fn an_embedding_round_trips_through_the_blob() {
         // 128 f32 as 512 bytes. An off-by-one in the encoding gives vectors that are subtly
@@ -2360,6 +2554,15 @@ pub fn people(conn: &Connection, library_id: i64) -> Result<Vec<PersonRow>, Cata
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
+/// The faces in a group.
+pub fn faces_for_person(conn: &Connection, person_id: i64) -> Result<Vec<i64>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT face_id FROM person_face WHERE person_id = ?1 ORDER BY face_id",
+    )?;
+    let rows = stmt.query_map(params![person_id], |r| r.get::<_, i64>(0))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
 /// The photographs a person appears in.
 pub fn photos_for_person(conn: &Connection, person_id: i64) -> Result<Vec<i64>, CatalogError> {
     let mut stmt = conn.prepare(
@@ -2390,4 +2593,258 @@ fn decode_vector(b: &[u8]) -> Vec<f32> {
     b.chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Naming, merging and splitting people
+// ---------------------------------------------------------------------------
+/// Name a person, and mark the group confirmed.
+///
+/// **Naming confirms.** A group a human has put a name to is a decision, not a suggestion,
+/// and the next clustering pass must leave it alone — which is what `confirmed` means and
+/// why it is set here rather than by a separate button.
+pub fn name_person(conn: &Connection, person_id: i64, name: Option<&str>, now: i64) -> Result<(), CatalogError> {
+    // An empty name is not a name. Stored as NULL, because "" and "not named" are the same
+    // thing to every reader and two representations of one state is how they drift.
+    let name = name.map(str::trim).filter(|n| !n.is_empty());
+    conn.execute(
+        "UPDATE person SET name = ?2, confirmed = 1, updated_at = ?3 WHERE id = ?1",
+        params![person_id, name, now],
+    )?;
+    Ok(())
+}
+
+/// Move every face from one person into another, and remove the source.
+///
+/// Merging is how a user says "these are the same person". Both groups end up confirmed:
+/// the destination because it now carries a decision, the faces because they were moved by
+/// hand and a later pass must not pull them apart again.
+pub fn merge_people(conn: &Connection, from_id: i64, into_id: i64, now: i64) -> Result<usize, CatalogError> {
+    if from_id == into_id {
+        return Ok(0);
+    }
+    let tx = conn.unchecked_transaction()?;
+
+    let moved = tx.execute(
+        "INSERT OR IGNORE INTO person_face (person_id, face_id)
+         SELECT ?2, face_id FROM person_face WHERE person_id = ?1",
+        params![from_id, into_id],
+    )?;
+
+    tx.execute("DELETE FROM person WHERE id = ?1", params![from_id])?;
+    tx.execute(
+        "UPDATE person SET confirmed = 1, updated_at = ?2 WHERE id = ?1",
+        params![into_id, now],
+    )?;
+
+    tx.commit()?;
+    Ok(moved)
+}
+
+/// Move faces out of a person into a new one.
+///
+/// Splitting is how a user says "these are two different people". The new group is created
+/// confirmed for the same reason a merge is: the faces were separated by hand.
+///
+/// Refuses to empty the source. A "person" with no faces is not a group, and leaving one
+/// behind would put an empty row in the list that cannot be selected or removed.
+pub fn split_person(
+    conn: &Connection,
+    person_id: i64,
+    face_ids: &[i64],
+    now: i64,
+) -> Result<Option<i64>, CatalogError> {
+    let tx = conn.unchecked_transaction()?;
+
+    let total: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM person_face WHERE person_id = ?1",
+        params![person_id],
+        |r| r.get(0),
+    )?;
+    if face_ids.is_empty() || face_ids.len() as i64 >= total {
+        tx.commit()?;
+        return Ok(None);
+    }
+
+    let library_id: i64 = tx.query_row(
+        "SELECT library_id FROM person WHERE id = ?1",
+        params![person_id],
+        |r| r.get(0),
+    )?;
+
+    tx.execute(
+        "INSERT INTO person (library_id, name, confirmed, created_at, updated_at)
+         VALUES (?1, NULL, 1, ?2, ?2)",
+        params![library_id, now],
+    )?;
+    let new_id = tx.last_insert_rowid();
+
+    for face_id in face_ids {
+        tx.execute(
+            "INSERT OR IGNORE INTO person_face (person_id, face_id) VALUES (?1, ?2)",
+            params![new_id, face_id],
+        )?;
+        tx.execute(
+            "DELETE FROM person_face WHERE person_id = ?1 AND face_id = ?2",
+            params![person_id, face_id],
+        )?;
+    }
+
+    tx.execute(
+        "UPDATE person SET confirmed = 1, updated_at = ?2 WHERE id = ?1",
+        params![person_id, now],
+    )?;
+
+    tx.commit()?;
+    Ok(Some(new_id))
+}
+
+/// Remove a person without touching the faces.
+///
+/// The faces stay in the catalog — they are still detections, still in their photographs.
+/// Only the grouping is discarded, and the next clustering pass may group them differently.
+pub fn delete_person(conn: &Connection, person_id: i64) -> Result<(), CatalogError> {
+    conn.execute("DELETE FROM person WHERE id = ?1", params![person_id])?;
+    Ok(())
+}
+
+/// A face that the clustering could not place confidently.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AmbiguousFace {
+    pub face_id: i64,
+    pub photo_id: i64,
+    /// The group it was put in, if any.
+    pub person_id: Option<i64>,
+    /// Similarity to the group it is in.
+    pub own: f32,
+    /// Similarity to the nearest group it is *not* in.
+    pub other: f32,
+}
+
+/// Faces that sit between two groups.
+///
+/// # What "ambiguous" means here, precisely
+///
+/// A face whose similarity to the group it is in is barely higher than its similarity to
+/// some other group. The margin is the whole signal: a face at 0.8 in its own group and 0.3
+/// in the next is settled; one at 0.52 and 0.50 could go either way, and a person looking at
+/// it can decide in a second what no threshold can.
+///
+/// This is what the review queue (#47) exists for. Without it, a face that landed on the
+/// wrong side of a threshold is simply wrong, and nobody ever sees it.
+pub fn ambiguous_faces(
+    conn: &Connection,
+    library_id: i64,
+    model: &str,
+    margin: f32,
+    limit: usize,
+) -> Result<Vec<AmbiguousFace>, CatalogError> {
+    let faces = faces_with_embeddings(conn, library_id, model)?;
+    if faces.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    // Which group each face is in, and what its centroid is.
+    let mut membership: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    let mut members: std::collections::HashMap<i64, Vec<usize>> = std::collections::HashMap::new();
+    for (i, (face_id, _, _)) in faces.iter().enumerate() {
+        if let Some(pid) = person_for_face(conn, *face_id)? {
+            membership.insert(*face_id, pid);
+            members.entry(pid).or_default().push(i);
+        }
+    }
+
+    let mut centroids: std::collections::HashMap<i64, Vec<f32>> = std::collections::HashMap::new();
+    for (pid, idxs) in &members {
+        centroids.insert(*pid, centroid(&idxs.iter().map(|i| faces[*i].2.clone()).collect::<Vec<_>>()));
+    }
+
+    let mut out = Vec::new();
+    for (i, (face_id, photo_id, vector)) in faces.iter().enumerate() {
+        let own_id = membership.get(face_id).copied();
+        let own = own_id
+            .and_then(|p| centroids.get(&p))
+            .map(|c| cosine_f32(vector, c))
+            .unwrap_or(0.0);
+
+        // The best group this face is not in. A face in no group is ambiguous by definition
+        // if it is close to any group at all.
+        let (other, other_id) = centroids
+            .iter()
+            .filter(|(pid, _)| Some(**pid) != own_id)
+            .map(|(pid, c)| (cosine_f32(vector, c), *pid))
+            .fold((f32::NEG_INFINITY, None), |acc, (s, pid)| {
+                if s > acc.0 { (s, Some(pid)) } else { acc }
+            });
+
+        let Some(other_id) = other_id else { continue };
+        let _ = (i, other_id);
+
+        // Close to another group, and not clearly settled in its own.
+        if other > 0.0 && own - other < margin {
+            out.push(AmbiguousFace {
+                face_id: *face_id,
+                photo_id: *photo_id,
+                person_id: own_id,
+                own,
+                other,
+            });
+        }
+    }
+
+    // Worst margin first: the faces most likely to be wrong are the ones worth looking at.
+    out.sort_by(|a, b| {
+        (a.own - a.other)
+            .partial_cmp(&(b.own - b.other))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.face_id.cmp(&b.face_id))
+    });
+    out.truncate(limit);
+    Ok(out)
+}
+
+/// The person a face belongs to, if any.
+pub fn person_for_face(conn: &Connection, face_id: i64) -> Result<Option<i64>, CatalogError> {
+    let mut stmt = conn.prepare("SELECT person_id FROM person_face WHERE face_id = ?1 LIMIT 1")?;
+    let mut rows = stmt.query(params![face_id])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(r.get(0)?)),
+        None => Ok(None),
+    }
+}
+
+/// The average of a set of embeddings, renormalised.
+fn centroid(vectors: &[Vec<f32>]) -> Vec<f32> {
+    if vectors.is_empty() {
+        return Vec::new();
+    }
+    let dim = vectors[0].len();
+    let mut sum = vec![0f32; dim];
+    for v in vectors {
+        for (i, x) in v.iter().enumerate().take(dim) {
+            sum[i] += x;
+        }
+    }
+    let n = vectors.len() as f32;
+    for x in sum.iter_mut() {
+        *x /= n;
+    }
+    sum
+}
+
+/// Cosine similarity, over `f64`-free slices.
+fn cosine_f32(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0f32;
+    let mut na = 0f32;
+    let mut nb = 0f32;
+    for i in 0..a.len() {
+        dot += a[i] * b[i];
+        na += a[i] * a[i];
+        nb += b[i] * b[i];
+    }
+    let d = na.sqrt() * nb.sqrt();
+    if d <= f32::EPSILON { 0.0 } else { dot / d }
 }

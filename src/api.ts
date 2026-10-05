@@ -77,6 +77,58 @@ export async function listPeople(libraryId: number): Promise<PersonView[]> {
   return invoke<PersonView[]>("list_people", { libraryId });
 }
 
+/**
+ * Name a person. **Naming confirms the group** — a group a human has put a name to is a
+ * decision, and the next clustering pass leaves it alone.
+ */
+export async function namePerson(personId: number, name: string | null): Promise<void> {
+  return invoke<void>("name_person", { personId, name });
+}
+
+/** Merge one group into another, moving every face. Both end up confirmed. */
+export async function mergePeople(fromId: number, intoId: number): Promise<number> {
+  return invoke<number>("merge_people", { fromId, intoId });
+}
+
+/**
+ * Move faces out of a group into a new one.
+ *
+ * Returns the new group's id, or `null` when the split would empty the source — a person
+ * with no faces is not a group.
+ */
+export async function splitPerson(personId: number, faceIds: number[]): Promise<number | null> {
+  return invoke<number | null>("split_person", { personId, faceIds });
+}
+
+/** Discard a grouping, keeping the faces. */
+export async function deletePerson(personId: number): Promise<void> {
+  return invoke<void>("delete_person", { personId });
+}
+
+/** A face the clustering could not place confidently. */
+export interface AmbiguousFaceView {
+  faceId: number;
+  photoId: number;
+  personId: number | null;
+  /** Similarity to the group it is in, and to the nearest group it is not in. */
+  own: number;
+  other: number;
+}
+
+/** Faces sitting between two groups, worst margin first. */
+export async function ambiguousFaces(
+  libraryId: number,
+  margin?: number,
+  limit?: number,
+): Promise<AmbiguousFaceView[]> {
+  return invoke<AmbiguousFaceView[]>("ambiguous_faces", { libraryId, margin, limit });
+}
+
+/** The faces in a group, for undoing a merge. */
+export async function personFaces(personId: number): Promise<number[]> {
+  return invoke<number[]>("person_faces", { personId });
+}
+
 /** The photographs a person appears in. */
 export async function personPhotos(personId: number): Promise<number[]> {
   return invoke<number[]>("person_photos", { personId });

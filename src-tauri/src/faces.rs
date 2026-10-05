@@ -195,7 +195,10 @@ pub fn run(
 ///
 /// The filename, not "SFace": two versions of one model are different recognisers, and
 /// reusing one's embeddings for the other would silently mix two definitions of identity.
-fn recogniser_model() -> &'static str {
+///
+/// Public because the person commands need the same key. Two functions returning "the model
+/// name" is how a lookup starts missing rows.
+pub fn recogniser_model() -> &'static str {
     SFACE.file
 }
 

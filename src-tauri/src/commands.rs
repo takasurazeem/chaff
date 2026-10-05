@@ -291,6 +291,137 @@ pub async fn list_people(
     .map_err(err)?
 }
 
+/// Name a person. **Naming confirms the group.**
+///
+/// A group a human has put a name to is a decision, not a suggestion, and the next
+/// clustering pass must leave it alone — which is what `confirmed` means, and why it is set
+/// here rather than by a separate button nobody would press.
+#[tauri::command]
+pub async fn name_person(
+    state: State<'_, AppState>,
+    person_id: i64,
+    name: Option<String>,
+) -> Result<(), String> {
+    let db = state.db();
+    let now = now_seconds();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::name_person(&conn, person_id, name.as_deref(), now).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Merge one group into another, moving every face. Both end up confirmed.
+#[tauri::command]
+pub async fn merge_people(
+    state: State<'_, AppState>,
+    from_id: i64,
+    into_id: i64,
+) -> Result<usize, String> {
+    let db = state.db();
+    let now = now_seconds();
+    tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::merge_people(&conn, from_id, into_id, now).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Move faces out of a group into a new one. Returns the new group's id, or `None` when the
+/// split would empty the source — a person with no faces is not a group.
+#[tauri::command]
+pub async fn split_person(
+    state: State<'_, AppState>,
+    person_id: i64,
+    face_ids: Vec<i64>,
+) -> Result<Option<i64>, String> {
+    let db = state.db();
+    let now = now_seconds();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<i64>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::split_person(&conn, person_id, &face_ids, now).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Discard a grouping, keeping the faces.
+#[tauri::command]
+pub async fn delete_person(state: State<'_, AppState>, person_id: i64) -> Result<(), String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::delete_person(&conn, person_id).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The faces in a group.
+///
+/// Needed to undo a merge: reversing one means putting a specific set of faces back into a
+/// group of their own, and the panel shows counts rather than ids.
+#[tauri::command]
+pub async fn person_faces(state: State<'_, AppState>, person_id: i64) -> Result<Vec<i64>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<i64>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::faces_for_person(&conn, person_id).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// A face the clustering could not place confidently.
+#[derive(Debug, Serialize)]
+pub struct AmbiguousFaceView {
+    pub face_id: i64,
+    pub photo_id: i64,
+    pub person_id: Option<i64>,
+    /// Similarity to the group it is in, and to the nearest group it is not in.
+    pub own: f32,
+    pub other: f32,
+}
+
+/// Faces sitting between two groups, worst margin first.
+///
+/// What the review queue (#47) exists for: a face that landed on the wrong side of a
+/// threshold is simply wrong, and without this nobody ever sees it.
+#[tauri::command]
+pub async fn ambiguous_faces(
+    state: State<'_, AppState>,
+    library_id: i64,
+    margin: Option<f32>,
+    limit: Option<usize>,
+) -> Result<Vec<AmbiguousFaceView>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<AmbiguousFaceView>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let rows = store::ambiguous_faces(
+            &conn,
+            library_id,
+            crate::faces::recogniser_model(),
+            margin.unwrap_or(0.25),
+            limit.unwrap_or(100),
+        )
+        .map_err(err)?;
+        Ok(rows
+            .into_iter()
+            .map(|f| AmbiguousFaceView {
+                face_id: f.face_id,
+                photo_id: f.photo_id,
+                person_id: f.person_id,
+                own: f.own,
+                other: f.other,
+            })
+            .collect())
+    })
+    .await
+    .map_err(err)?
+}
+
 /// The photographs a person appears in.
 #[tauri::command]
 pub async fn person_photos(state: State<'_, AppState>, person_id: i64) -> Result<Vec<i64>, String> {
