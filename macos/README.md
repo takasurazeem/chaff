@@ -65,6 +65,25 @@ memory:  94 MB
 WebKit:  none — otool shows no webview library
 ```
 
+## The layout, inspired by Xcode
+
+| Xcode | Chaff |
+|---|---|
+| Navigator on the left | Folders / Tags / People |
+| **Segmented bar** switching navigators | the same — one at a time, not stacked |
+| **Filter field pinned to the bottom** | the same |
+| Editor in the centre | the grid |
+| Inspector on the right | EXIF, score, files |
+| **Status line** under the editor | "2,956 photographs" / "412 of 2,956" |
+
+The segmented bar is the part that matters. The web app **stacks** folders, tags and people in
+one narrow column — three unrelated lists competing for 200 points of width, with the one you
+want usually scrolled off. Xcode's answer has been the same for twenty years: a bar saying what
+is available, one navigator visible, and a filter that narrows whatever is showing.
+
+The filter sits at the **bottom** because it is a control *over the list above it*; at the top it
+pushes the content down a row for something used occasionally.
+
 ## What exists now
 
 | | |

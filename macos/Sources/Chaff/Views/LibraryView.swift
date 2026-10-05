@@ -22,8 +22,8 @@ struct LibraryView: View {
         @Bindable var culling = culling
 
         return NavigationSplitView {
-            FolderSidebar(chosen: $chosenFolder, folders: model.folders)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
+            Navigator(chosenFolder: $chosenFolder)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
         } detail: {
             ZStack {
                 if model.photos.isEmpty && !model.isIndexing {
@@ -39,6 +39,10 @@ struct LibraryView: View {
                 if model.isIndexing {
                     IndexingOverlay(progress: model.progress, label: model.progressLabel)
                 }
+            }
+            // Xcode's status line, along the bottom of the editor: what is shown, out of what.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                StatusBar(shown: visible.count, total: model.photos.count, selection: selection.count)
             }
             .navigationTitle(
                 model.library.map { URL(fileURLWithPath: $0.root).lastPathComponent } ?? "Chaff"
@@ -89,6 +93,38 @@ struct LibraryView: View {
     private var visible: [Photo] {
         guard let folder = chosenFolder else { return model.photos }
         return model.photos.filter { $0.dir == folder || $0.dir.hasPrefix(folder + "/") }
+    }
+}
+
+/// The status line, as Xcode has under the editor.
+///
+/// A count that answers "what am I looking at?" — which is not the same as "how many are there",
+/// and a filter that hides 2,900 photographs without saying so is a filter that looks like a
+/// bug.
+private struct StatusBar: View {
+    let shown: Int
+    let total: Int
+    let selection: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if shown == total {
+                Text("\(total) photographs")
+            } else {
+                Text("\(shown) of \(total) photographs")
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if selection > 0 {
+                Text("\(selection) selected")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 

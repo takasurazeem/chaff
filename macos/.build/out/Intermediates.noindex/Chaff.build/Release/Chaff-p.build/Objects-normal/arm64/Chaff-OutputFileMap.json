@@ -33,11 +33,6 @@
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/DeleteConfirmation.bc",
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/DeleteConfirmation.o"
   },
-  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FolderSidebar.swift" : {
-    "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FolderSidebar.o",
-    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FolderSidebar.bc",
-    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FolderSidebar.o"
-  },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Inspector.swift" : {
     "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Inspector.o",
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Inspector.bc",
@@ -47,6 +42,11 @@
     "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/LibraryView.o",
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/LibraryView.bc",
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/LibraryView.o"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Navigator.swift" : {
+    "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Navigator.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Navigator.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Navigator.o"
   },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/PhotoGrid.swift" : {
     "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/PhotoGrid.o",

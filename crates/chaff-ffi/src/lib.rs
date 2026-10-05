@@ -494,6 +494,27 @@ pub struct PhotoDetail {
     pub rejected: bool,
 }
 
+/// A tag and how many photographs carry it.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TagCount {
+    pub name: String,
+    pub count: u32,
+}
+
+/// A suggested person: a group of faces that might be one individual.
+///
+/// **A suggestion, not a name.** Nothing here is confirmed until a human confirms it, and the
+/// wording in the UI reflects that — treating a cluster as fact is how a stranger's face ends up
+/// under someone's name.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Person {
+    pub id: i64,
+    pub name: Option<String>,
+    pub confirmed: bool,
+    pub faces: u32,
+    pub photos: u32,
+}
+
 /// What a delete will move, before it moves it.
 ///
 /// `op_id` is the identity SwiftUI's `.sheet(item:)` needs — and it is the right one, because
@@ -702,6 +723,34 @@ impl Engine {
             .map_err(|e| ChaffError::engine("delete", e))?;
 
         Ok(report.restored as u32)
+    }
+
+        /// Every tag in a library, with counts, ranked by how many photographs carry it.
+    pub fn tags(&self, library_id: i64) -> Result<Vec<TagCount>> {
+        let conn = self.lock()?;
+        let rows = store::tag_counts(&conn, library_id, None)
+            .map_err(|e| ChaffError::engine("photos", e))?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, count)| TagCount { name, count: count as u32 })
+            .collect())
+    }
+
+    /// Every suggested person, most photographs first.
+    pub fn people(&self, library_id: i64) -> Result<Vec<Person>> {
+        let conn = self.lock()?;
+        let rows =
+            store::people(&conn, library_id).map_err(|e| ChaffError::engine("photos", e))?;
+        Ok(rows
+            .into_iter()
+            .map(|p| Person {
+                id: p.id,
+                name: p.name,
+                confirmed: p.confirmed,
+                faces: p.faces as u32,
+                photos: p.photos as u32,
+            })
+            .collect())
     }
 
     /// Is a delete waiting to be confirmed?

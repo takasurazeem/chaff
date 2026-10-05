@@ -299,6 +299,11 @@ int8_t uniffi_chaff_ffi_fn_method_engine_has_pending_delete(uint64_t ptr, RustCa
 RustBuffer uniffi_chaff_ffi_fn_method_engine_open_library(uint64_t ptr, RustBuffer root, uint64_t progress, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PEOPLE
+RustBuffer uniffi_chaff_ffi_fn_method_engine_people(uint64_t ptr, int64_t library_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTO_DETAIL
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTO_DETAIL
 RustBuffer uniffi_chaff_ffi_fn_method_engine_photo_detail(uint64_t ptr, int64_t photo_id, RustCallStatus *_Nonnull out_status
@@ -327,6 +332,11 @@ uint32_t uniffi_chaff_ffi_fn_method_engine_restore_trash(uint64_t ptr, RustBuffe
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SET_DECISION
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SET_DECISION
 void uniffi_chaff_ffi_fn_method_engine_set_decision(uint64_t ptr, int64_t photo_id, uint8_t rating, int8_t rejected, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TAGS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TAGS
+RustBuffer uniffi_chaff_ffi_fn_method_engine_tags(uint64_t ptr, int64_t library_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_THUMBNAIL
@@ -640,6 +650,12 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_open_library(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PEOPLE
+uint16_t uniffi_chaff_ffi_checksum_method_engine_people(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTO_DETAIL
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTO_DETAIL
 uint16_t uniffi_chaff_ffi_checksum_method_engine_photo_detail(void
@@ -673,6 +689,12 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_restore_trash(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_SET_DECISION
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_SET_DECISION
 uint16_t uniffi_chaff_ffi_checksum_method_engine_set_decision(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TAGS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TAGS
+uint16_t uniffi_chaff_ffi_checksum_method_engine_tags(void
     
 );
 #endif

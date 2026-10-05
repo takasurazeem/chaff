@@ -709,6 +709,11 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func openLibrary(root: String, progress: Progress) throws  -> OpenReport
     
     /**
+     * Every suggested person, most photographs first.
+     */
+    func people(libraryId: Int64) throws  -> [Person]
+    
+    /**
      * Everything known about one photograph.
      */
     func photoDetail(photoId: Int64) throws  -> PhotoDetail
@@ -760,6 +765,11 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * Set a photograph's rating and reject flag.
      */
     func setDecision(photoId: Int64, rating: UInt8, rejected: Bool) throws 
+    
+    /**
+     * Every tag in a library, with counts, ranked by how many photographs carry it.
+     */
+    func tags(libraryId: Int64) throws  -> [TagCount]
     
     /**
      * The path of a photograph's thumbnail, generating it if needed.
@@ -944,6 +954,19 @@ open func openLibrary(root: String, progress: Progress)throws  -> OpenReport  {
 }
     
     /**
+     * Every suggested person, most photographs first.
+     */
+open func people(libraryId: Int64)throws  -> [Person]  {
+    return try  FfiConverterSequenceTypePerson.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_people(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(libraryId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Everything known about one photograph.
      */
 open func photoDetail(photoId: Int64)throws  -> PhotoDetail  {
@@ -1046,6 +1069,19 @@ open func setDecision(photoId: Int64, rating: UInt8, rejected: Bool)throws   {tr
         FfiConverterBool.lower(rejected),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Every tag in a library, with counts, ranked by how many photographs carry it.
+     */
+open func tags(libraryId: Int64)throws  -> [TagCount]  {
+    return try  FfiConverterSequenceTypeTagCount.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_tags(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(libraryId),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -1578,6 +1614,79 @@ public func FfiConverterTypeOpenReport_lower(_ value: OpenReport) -> RustBuffer 
 
 
 /**
+ * A suggested person: a group of faces that might be one individual.
+ *
+ * **A suggestion, not a name.** Nothing here is confirmed until a human confirms it, and the
+ * wording in the UI reflects that — treating a cluster as fact is how a stranger's face ends up
+ * under someone's name.
+ */
+public struct Person: Equatable, Hashable {
+    public var id: Int64
+    public var name: String?
+    public var confirmed: Bool
+    public var faces: UInt32
+    public var photos: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, name: String?, confirmed: Bool, faces: UInt32, photos: UInt32) {
+        self.id = id
+        self.name = name
+        self.confirmed = confirmed
+        self.faces = faces
+        self.photos = photos
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Person: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePerson: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Person {
+        return
+            try Person(
+                id: FfiConverterInt64.read(from: &buf), 
+                name: FfiConverterOptionString.read(from: &buf), 
+                confirmed: FfiConverterBool.read(from: &buf), 
+                faces: FfiConverterUInt32.read(from: &buf), 
+                photos: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Person, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.name, into: &buf)
+        FfiConverterBool.write(value.confirmed, into: &buf)
+        FfiConverterUInt32.write(value.faces, into: &buf)
+        FfiConverterUInt32.write(value.photos, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePerson_lift(_ buf: RustBuffer) throws -> Person {
+    return try FfiConverterTypePerson.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePerson_lower(_ value: Person) -> RustBuffer {
+    return FfiConverterTypePerson.lower(value)
+}
+
+
+/**
  * One photograph, as the grid needs it.
  *
  * Deliberately **not** the engine's `PhotoView`: this is what a UI row reads, and keeping it
@@ -1900,6 +2009,63 @@ public func FfiConverterTypeScoreTerm_lift(_ buf: RustBuffer) throws -> ScoreTer
 #endif
 public func FfiConverterTypeScoreTerm_lower(_ value: ScoreTerm) -> RustBuffer {
     return FfiConverterTypeScoreTerm.lower(value)
+}
+
+
+/**
+ * A tag and how many photographs carry it.
+ */
+public struct TagCount: Equatable, Hashable {
+    public var name: String
+    public var count: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, count: UInt32) {
+        self.name = name
+        self.count = count
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TagCount: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTagCount: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TagCount {
+        return
+            try TagCount(
+                name: FfiConverterString.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TagCount, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTagCount_lift(_ buf: RustBuffer) throws -> TagCount {
+    return try FfiConverterTypeTagCount.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTagCount_lower(_ value: TagCount) -> RustBuffer {
+    return FfiConverterTypeTagCount.lower(value)
 }
 
 
@@ -2479,6 +2645,31 @@ fileprivate struct FfiConverterSequenceTypeFolder: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePerson: FfiConverterRustBuffer {
+    typealias SwiftType = [Person]
+
+    public static func write(_ value: [Person], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePerson.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Person] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Person]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePerson.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypePhoto: FfiConverterRustBuffer {
     typealias SwiftType = [Photo]
 
@@ -2521,6 +2712,31 @@ fileprivate struct FfiConverterSequenceTypeScoreTerm: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeScoreTerm.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTagCount: FfiConverterRustBuffer {
+    typealias SwiftType = [TagCount]
+
+    public static func write(_ value: [TagCount], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTagCount.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TagCount] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TagCount]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTagCount.read(from: &buf))
         }
         return seq
     }
@@ -2572,6 +2788,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_open_library() != 2463) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_people() != 5396) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_photo_detail() != 54102) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2588,6 +2807,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_set_decision() != 38375) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_tags() != 10764) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_thumbnail() != 9552) {

@@ -37,6 +37,8 @@ final class EngineModel {
     private(set) var photos: [Photo] = []
     private(set) var folders: [Folder] = []
     private(set) var library: Library?
+    private(set) var tags: [(String, UInt32)] = []
+    private(set) var people: [Person] = []
     private(set) var isIndexing = false
     /// `0...1`, or `nil` while the total is unknown.
     ///
@@ -80,6 +82,8 @@ final class EngineModel {
             library = report.library
             photos = try engine.photos(libraryId: report.library.id)
             folders = try engine.folders(libraryId: report.library.id)
+            tags = try engine.tags(libraryId: report.library.id).map { ($0.name, $0.count) }
+            people = try engine.people(libraryId: report.library.id)
             progress = nil
         } catch {
             errorMessage = describe(error)

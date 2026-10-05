@@ -1,4 +1,0 @@
-module chaff_ffiFFI {
-umbrella header "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/chaff_ffiFFI.h"
-export *
-}

@@ -93,6 +93,12 @@ pub struct ScanReport {
     /// Paths that could not be read, with the reason. Never fatal: one unreadable file
     /// must not abandon an index of ten thousand others.
     pub unreadable: Vec<(PathBuf, String)>,
+    /// Files of zero bytes, by path.
+    ///
+    /// A copy that never finished, a download that failed, a truncated transfer. They are not
+    /// photographs and must not become tiles — but they are also **the user's files**, so they
+    /// are named rather than deleted or silently ignored.
+    pub empty: Vec<PathBuf>,
 }
 
 impl ScanReport {
@@ -127,6 +133,12 @@ pub struct IndexOutcome {
     pub exif: ExifStats,
     pub scanned_files: usize,
     pub unreadable: Vec<(PathBuf, String)>,
+    /// Files of zero bytes, by path.
+    ///
+    /// A copy that never finished, a download that failed, a truncated transfer. They are not
+    /// photographs and must not become tiles — but they are also **the user's files**, so they
+    /// are named rather than deleted or silently ignored.
+    pub empty: Vec<PathBuf>,
 }
 
 impl IndexOutcome {
@@ -200,11 +212,26 @@ pub fn scan_with_progress(root: &Path, on_files: &mut dyn FnMut(usize)) -> ScanR
         }
 
         match entry.metadata() {
-            Ok(md) => report.files.push(ScannedFile {
-                path,
-                kind,
-                meta: store::FileMeta::from_metadata(&md),
-            }),
+            Ok(md) => {
+                // **A zero-byte file is not a photograph.**
+                //
+                // Found in a real library: eight `IMG_XXXX 2.CR3` files of exactly 0 bytes —
+                // the name macOS gives a copy, where the copy never finished. Each became a
+                // tile in the grid: a photograph that cannot be opened, cannot be scored, and
+                // cannot be told apart from a real frame without selecting it.
+                //
+                // Reported by name rather than silently dropped, because the user has to
+                // delete them and cannot act on a count.
+                if md.len() == 0 {
+                    report.empty.push(path);
+                    continue;
+                }
+                report.files.push(ScannedFile {
+                    path,
+                    kind,
+                    meta: store::FileMeta::from_metadata(&md),
+                })
+            }
             Err(err) => report.unreadable.push((path, err.to_string())),
         }
 
@@ -215,7 +242,13 @@ pub fn scan_with_progress(root: &Path, on_files: &mut dyn FnMut(usize)) -> ScanR
     on_files(report.files.len());
 
     // Deterministic order regardless of what order the filesystem returned entries in.
+    //
+    // **Both lists.** The first version sorted only `files`, so the empty-file report came back
+    // in whatever order the filesystem happened to give — and a report that reshuffles between
+    // runs is one a user cannot diff against the last one.
     report.files.sort_by(|a, b| a.path.cmp(&b.path));
+    report.empty.sort();
+    report.unreadable.sort_by(|a, b| a.0.cmp(&b.0));
     report
 }
 
@@ -261,6 +294,7 @@ pub fn index_with_progress(
         exif: exif_stats,
         scanned_files: report.files.len(),
         unreadable,
+        empty: report.empty,
     })
 }
 
@@ -323,6 +357,44 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, b"x").unwrap();
+    }
+
+    #[test]
+    fn a_zero_byte_file_is_not_a_photograph() {
+        // **Found in a real library.** Eight `IMG_XXXX 2.CR3` files of exactly 0 bytes — the
+        // name macOS gives a copy, where the copy never finished. Each became a tile: a
+        // photograph that cannot be opened, cannot be scored, and cannot be told apart from a
+        // real frame without selecting it.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("IMG_0001.CR3"), b"real bytes").unwrap();
+        std::fs::write(dir.path().join("IMG_0001 2.CR3"), b"").unwrap();
+
+        let report = scan(dir.path());
+
+        assert_eq!(report.files.len(), 1, "only the real file is a photograph");
+        assert!(report.files[0].path.ends_with("IMG_0001.CR3"));
+        assert_eq!(report.empty.len(), 1, "the empty one is reported, not silently dropped");
+        assert!(report.empty[0].ends_with("IMG_0001 2.CR3"), "and named, so it can be deleted");
+    }
+
+    #[test]
+    fn an_empty_file_is_reported_by_path_because_the_user_has_to_delete_it() {
+        // A count is not actionable. The user needs to know *which* files to remove, and this
+        // is their library — the application names them and touches nothing.
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a.CR3", "b.JPG", "c.NEF"] {
+            std::fs::write(dir.path().join(name), b"").unwrap();
+        }
+        let report = scan(dir.path());
+        assert!(report.files.is_empty());
+        assert_eq!(report.empty.len(), 3);
+        // Sorted, so a report is stable between runs.
+        let names: Vec<String> = report
+            .empty
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, vec!["a.CR3", "b.JPG", "c.NEF"]);
     }
 
     #[test]
