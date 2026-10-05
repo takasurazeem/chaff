@@ -9,7 +9,11 @@
 # Linux build host without installing a desktop stack first.
 [workspace]
 resolver = "2"
-members = ["crates/chaff-core", "src-tauri"]
+members = [
+    "crates/chaff-core",
+    "crates/chaff-faces",
+    "src-tauri",
+]
 
 [workspace.package]
 version = "0.1.0"

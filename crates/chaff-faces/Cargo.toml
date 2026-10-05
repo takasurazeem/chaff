@@ -1,0 +1,29 @@
+[package]
+name = "chaff-faces"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+chaff-core = { path = "../chaff-core" }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+thiserror = "2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+
+# **A separate crate on purpose.**
+#
+# ONNX Runtime is a large native dependency that downloads platform binaries at build time.
+# Putting it in `chaff-core` would make every engine test — 430 of them, running in two
+# seconds on a bare Linux box — depend on it, and would make the CI matrix download ONNX
+# Runtime three times over.
+#
+# ADR-0002 chose in-process ONNX over a Python sidecar for the *product*. This is the same
+# choice expressed in the build: the product gets ONNX, the engine keeps its fast test path.
+ort = "2.0.0-rc.13"
+# The tensor type `ort` speaks. Building an NCHW input by hand into a `Vec<f32>` and hoping
+# the shape is right is how an off-by-one in the channel order produces plausible nonsense.
+ndarray = "0.16"
+
+[dev-dependencies]
+tempfile = "3"
