@@ -50,6 +50,9 @@ type Status =
   | { kind: "idle" }
   | { kind: "indexing"; root: string }
   | { kind: "ready" }
+  // **Not every message is an error.** An operation that did less than it said — a file gone
+  // from under the dialog — is worth telling the user without colouring it as a failure.
+  | { kind: "warning"; message: string }
   | { kind: "error"; message: string };
 
 export default function App() {
@@ -485,9 +488,23 @@ export default function App() {
         setUndoDepth(undoStack.current.length);
       }
       await reload(library.library_id);
-      setStatus({ kind: "ready" });
-      if (receipt.moved === 0) {
-        setStatus({ kind: "error", message: "Nothing was moved." });
+
+      // **What the move discovered, said out loud.**
+      //
+      // `receipt.warnings` was discarded, so a dialog that showed 2 files could produce a
+      // receipt saying `moved: 1` and the user had no way to know why. A file that vanished
+      // while the dialog was open is *warned about rather than refused* — nine of ten is the
+      // right outcome — and the requirement that comes with that choice is that the warning
+      // reaches the person who agreed to it.
+      //
+      // Shown as a warning rather than an error: nothing went wrong. The operation did less
+      // than the dialog said, and that is worth knowing without being a failure.
+      if (receipt.warnings.length > 0) {
+        setStatus({ kind: "warning", message: receipt.warnings.join(" ") });
+      } else if (receipt.moved === 0) {
+        setStatus({ kind: "warning", message: "Nothing was moved — the files were already gone." });
+      } else {
+        setStatus({ kind: "ready" });
       }
     } catch (e) {
       setDeletePlan(null);
@@ -897,6 +914,14 @@ export default function App() {
         {status.kind === "error" && (
           <div role="alert" className="flex h-full items-center justify-center px-8">
             <p className="max-w-prose text-sm text-rose-400">{status.message}</p>
+          </div>
+        )}
+
+        {/* A warning is `role="status"`, not `role="alert"`: it is worth reading and is not an
+            interruption. Amber rather than rose for the same reason. */}
+        {status.kind === "warning" && (
+          <div role="status" className="flex h-full items-center justify-center px-8">
+            <p className="max-w-prose text-sm text-amber-400">{status.message}</p>
           </div>
         )}
 

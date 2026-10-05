@@ -57,6 +57,10 @@ pub enum SessionError {
          confirmation and the move. Nothing was moved; select the photographs again."
     )]
     Appeared { path: String },
+    #[error(
+        "{path} was in the plan you were shown and is no longer there — it was deleted or moved          between the confirmation and the move. Nothing was moved; select the photographs again."
+    )]
+    Vanished { path: String },
     #[error(transparent)]
     Trash(#[from] trash::TrashError),
     #[error(transparent)]
@@ -192,6 +196,21 @@ impl DeleteSession {
         // the same failure as the original ADR-0004 bug: a guarantee stated in a comment and
         // absent from the code. `Trash::commit` now refuses an unhashed file as well, so this
         // is the second of two independent checks rather than the only one.
+        // **A file that vanished is warned about, not refused — and the warning is the point.**
+        //
+        // I first wrote a `Vanished` refusal here, mirroring `Appeared`, and a test showed it
+        // could not fire: deleting a file from disk does not remove its catalog row, so it is
+        // still in `files` and the check passes. What actually notices is `Trash::plan`, which
+        // produces `Warning::Missing` naming the file.
+        //
+        // That is the better design, and the difference is worth stating. `Appeared` is refused
+        // because moving a file nobody was shown is a **safety** failure. A vanished file is a
+        // **truthfulness** one: the other nine files are still exactly what the user agreed to,
+        // and refusing all ten would be a worse outcome than doing nine and saying so.
+        //
+        // So the requirement is not a refusal. It is that the warning **reaches the user** — and
+        // it did not: the receipt carried it and both shells closed the dialog without showing
+        // it. `DeleteReceipt::warnings` is surfaced by both now.
         if let Some(extra) = files.iter().find(|f| !pending.hashes.contains_key(*f)) {
             return Err(SessionError::Appeared {
                 path: extra.display().to_string(),
@@ -271,6 +290,55 @@ mod tests {
         let _ = (lib, meta);
 
         (dir, conn, lib, photo)
+    }
+
+    #[test]
+    fn a_file_that_vanishes_after_the_dialog_is_refused_not_skipped() {
+        // **The mirror of `Appeared`, and it was missing.**
+        //
+        // `commit` refused files that appeared and said nothing about ones that vanished. A file
+        // deleted from Finder between the dialog and the button became a `Warning::Missing` and
+        // was quietly skipped — so a dialog that said "2 files" produced a receipt saying
+        // `moved: 1`, and the user had no way to know the operation was not the one they agreed
+        // to.
+        //
+        // Not a safety hole the way `Appeared` was: "the file is gone" cannot mean "a different
+        // file was moved". It is a **truthfulness** hole, and this application's whole claim is
+        // that the dialog says what will happen.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+
+        // Two photographs, each a JPEG.
+        let a = root.join("IMG_0001.JPG");
+        let b = root.join("IMG_0002.JPG");
+        std::fs::write(&a, b"aaa").unwrap();
+        std::fs::write(&b, b"bbb").unwrap();
+
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        crate::indexer::index(&mut conn, &root, 0).unwrap();
+        let lib = store::library_id_for_root(&conn, &root.to_string_lossy()).unwrap().unwrap();
+        let ids: Vec<i64> = store::photos(&conn, lib).unwrap().iter().map(|p| p.id).collect();
+        assert_eq!(ids.len(), 2, "two photographs to plan");
+
+        let mut s = DeleteSession::new();
+        s.plan(&conn, &root, &ids, 0).unwrap();
+
+        // One of them goes away while the dialog is open.
+        std::fs::remove_file(&b).unwrap();
+
+        let receipt = s.commit(&conn, &root, 1).expect("the other file still moves");
+
+        // **Nine of ten is the right outcome; saying so is the requirement.**
+        assert_eq!(receipt.moved, 1, "the file that is still there moves");
+        assert!(
+            receipt.warnings.iter().any(|w| w.contains("IMG_0002")),
+            "the vanished file must be named in the warnings — a receipt saying `moved: 1` for a \
+             dialog that showed 2, with no explanation, is the bug. Got {:?}",
+            receipt.warnings
+        );
+
+        // And the one that is still there actually moved.
+        assert!(!a.exists(), "the file that was there moved to the trash");
     }
 
     #[test]

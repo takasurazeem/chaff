@@ -979,13 +979,67 @@ pub fn set_data_root(path: String) {
     }
 }
 
+/// Where thumbnails live, once `set_data_root` has been called.
+///
+/// # Why this no longer falls back to `.`
+///
+/// It did, and `.` is the **current working directory** — which for a GUI application launched
+/// from Finder is `/`, and for one launched from a terminal is wherever that terminal happened
+/// to be. So a caller that forgot `set_data_root` wrote its cache into the filesystem root, or
+/// into the user's home, or into a source checkout, and nothing said so.
+///
+/// A cache that lands somewhere unexpected is worse than one that fails: it accumulates, nobody
+/// knows to clear it, and on a sandboxed app it is the difference between running and being
+/// killed for writing outside the container.
+///
+/// The fallback is now the **platform cache directory**, which is where a cache belongs, and it
+/// says so in the log. Still a fallback — but one whose failure mode is a cache in the right
+/// place rather than a cache in `/`.
 fn thumbnail_root() -> std::path::PathBuf {
-    DATA_ROOT
-        .lock()
-        .ok()
-        .and_then(|r| r.clone())
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("thumbnails")
+    match DATA_ROOT.lock().ok().and_then(|r| r.clone()) {
+        Some(root) => root.join("thumbnails"),
+        None => {
+            let fallback = platform_cache_dir().join("chaff").join("thumbnails");
+            log::warn!(
+                "set_data_root was never called; thumbnails are going to {} — the caller should \
+                 pass a path at launch",
+                fallback.display()
+            );
+            fallback
+        }
+    }
+}
+
+/// The platform's cache directory, without a dependency for three cases.
+///
+/// `dirs` would do this, and pulling a crate for three `cfg` arms in one function is the trade
+/// this file already declined for `libc` in the CLI.
+fn platform_cache_dir() -> std::path::PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            return std::path::PathBuf::from(home).join("Library").join("Caches");
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            return std::path::PathBuf::from(local);
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        // The XDG answer, and the right default on every other Unix.
+        if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
+            return std::path::PathBuf::from(xdg);
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            return std::path::PathBuf::from(home).join(".cache");
+        }
+    }
+    // Nothing to go on. The temporary directory is a poor cache — it is cleared — but it is
+    // **inside** the system's expectations, which `/` is not.
+    std::env::temp_dir()
 }
 
 /// The thumbnail cache cap, matching the desktop app's.

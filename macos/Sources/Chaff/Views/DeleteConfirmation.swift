@@ -37,13 +37,31 @@ struct DeleteConfirmation: View {
 
     @State private var working = false
     @State private var refusal: String?
+    /// Warnings raised **at commit time** — a file that vanished while the dialog was open.
+    ///
+    /// The sheet already showed `plan.warnings`, which are the ones known *before* the user
+    /// confirms. The receipt's are the ones discovered *during* the move, and they were dropped:
+    /// the dialog closed and a receipt saying `moved: 1` for a dialog that showed 2 went
+    /// unremarked. A warning nobody sees is not a warning.
+    @State private var afterWarnings: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Move to trash?", systemImage: "trash")
                 .font(.headline)
 
-            if let refusal {
+            if !afterWarnings.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Moved, with something to report", systemImage: "info.circle")
+                        .font(.callout)
+                    ForEach(afterWarnings, id: \.self) { warning in
+                        Text(warning)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else if let refusal {
                 // A refusal is not an error the user caused. It says what happened and what to
                 // do, and nothing has moved.
                 Text(refusal)
@@ -83,20 +101,28 @@ struct DeleteConfirmation: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") {
-                    // Cancelling clears the plan rather than leaving it. A plan that is not
-                    // cancelled sits until the next one replaces it, and a stale plan is one a
-                    // stray call could commit.
-                    model.cancelDelete()
-                    onFinished()
-                }
-                .keyboardShortcut(.cancelAction)
+                // **Cancel becomes Done once the move has happened.** The operation is not
+                // reversible by closing a dialog, and a button still labelled Cancel after the
+                // files have moved is a lie about what it does.
+                if !afterWarnings.isEmpty {
+                    Button("Done") { onFinished() }
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Cancel") {
+                        // Cancelling clears the plan rather than leaving it. A plan that is not
+                        // cancelled sits until the next one replaces it, and a stale plan is one
+                        // a stray call could commit.
+                        model.cancelDelete()
+                        onFinished()
+                    }
+                    .keyboardShortcut(.cancelAction)
 
-                Button(working ? "Moving…" : "Move \(plan.files) file\(plan.files == 1 ? "" : "s")") {
-                    Task { await confirm() }
+                    Button(working ? "Moving…" : "Move \(plan.files) file\(plan.files == 1 ? "" : "s")") {
+                        Task { await confirm() }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(working || plan.files == 0 || !plan.refusals.isEmpty)
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(working || plan.files == 0 || !plan.refusals.isEmpty)
             }
         }
         .padding(20)
@@ -116,6 +142,14 @@ struct DeleteConfirmation: View {
             let receipt = try await model.commitDelete(root: root)
             // Recorded **after** the engine committed: the operation id only exists once it has.
             culling.recordTrash(opId: receipt.opId, moved: receipt.moved)
+
+            // **What the move discovered, before the sheet closes.** A file that vanished while
+            // the dialog was open is warned about rather than refused — nine of ten is the right
+            // outcome — and the sheet stays up to say so.
+            if !receipt.warnings.isEmpty {
+                afterWarnings = receipt.warnings
+                return
+            }
             onFinished()
         } catch {
             // A refusal leaves the sheet open with the reason. The plan is already dropped by
