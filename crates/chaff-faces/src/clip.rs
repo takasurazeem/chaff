@@ -216,6 +216,15 @@ pub fn bundled_model() -> Option<PathBuf> {
     model_in(&crate::models::ModelStore::new(default_store_root()))
 }
 
+/// Where models live when no store is given.
+///
+/// Public because an integration test has to look in the same place the library does, and a test
+/// that guesses the path is a test that silently skips when the guess is wrong — which is worse
+/// than one that fails.
+pub fn default_store() -> crate::models::ModelStore {
+    crate::models::ModelStore::new(default_store_root())
+}
+
 /// Where downloaded models live when nothing else is specified.
 fn default_store_root() -> PathBuf {
     std::env::var("CHAFF_DATA")

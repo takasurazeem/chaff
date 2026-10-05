@@ -16,3 +16,14 @@ fixtures/corpus/
 *.log
 .vscode/*
 !.vscode/extensions.json
+
+# Downloaded models. **The two that ship are committed; the rest are not.**
+#
+# `face_detection_yunet_2023mar.onnx` is 233 KB and `clip/vocabulary.bin` is 78 KB — both small,
+# both needed for the tests that must run everywhere, both committed on purpose.
+#
+# The encoders are 38 MB and 88 MB. They are verified by blake3 on download and cached, and
+# committing them would put a hundred megabytes in every clone for something the first run
+# fetches anyway.
+crates/chaff-faces/models/clip_vision_int8.onnx
+crates/chaff-faces/models/face_recognition_sface_2021dec.onnx
