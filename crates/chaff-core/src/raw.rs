@@ -23,8 +23,11 @@
 use std::ffi::CString;
 use std::path::Path;
 
-use image::{DynamicImage, RgbImage};
+use image::DynamicImage;
 
+#[cfg(not(windows))]
+use image::RgbImage;
+#[cfg(not(windows))]
 use libraw_rs_vendor as lr;
 
 #[derive(Debug, thiserror::Error)]
