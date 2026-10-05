@@ -25,6 +25,27 @@ export type IndexProgress =
  * Events rather than polling, because `openLibrary` is one blocking call and there is no
  * state for the frontend to read while it runs. Returns an unsubscribe function.
  */
+/**
+ * How far a face or tag pass has got.
+ *
+ * **`total` can be zero** — the scan phase of an index genuinely does not know how many files
+ * there are until the walk finishes — so a caller shows an indeterminate indicator rather than
+ * dividing by it.
+ */
+export interface PassProgress {
+  /** `faces` or `tagging`, so one listener serves both. */
+  stage: string;
+  done: number;
+  total: number;
+}
+
+export async function onPassProgress(
+  handler: (p: PassProgress) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<PassProgress>("chaff://pass-progress", (e) => handler(e.payload));
+}
+
 export async function onIndexProgress(
   handler: (p: IndexProgress) => void,
 ): Promise<() => void> {
@@ -59,6 +80,20 @@ export interface FacePassReport {
  *
  * Long-running, and resumable — each file is committed as it is processed.
  */
+/**
+ * Ask the running pass to stop.
+ *
+ * **Nothing is lost.** Both passes commit each file as they go and the work list is the catalog
+ * rather than a list in memory, so stopping leaves the catalog consistent and the next pass
+ * resumes from where this one stopped.
+ *
+ * Returns as soon as the flag is set; the pass checks it between photographs and stops on its
+ * own, which is why this is a flag and not a kill.
+ */
+export async function cancelPass(): Promise<void> {
+  return invoke("cancel_pass");
+}
+
 export async function runFacePass(libraryId: number): Promise<FacePassReport> {
   return invoke<FacePassReport>("run_face_pass", { libraryId });
 }

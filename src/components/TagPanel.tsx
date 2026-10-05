@@ -14,7 +14,17 @@
  * different fix, and a port check sends you looking in the wrong place.
  */
 import { useCallback, useEffect, useState } from "react";
-import { diagnoseEndpoint, listTags, runTagPass, type EndpointReport, type TagOutcome } from "../api";
+import {
+  cancelPass,
+  diagnoseEndpoint,
+  listTags,
+  onPassProgress,
+  runTagPass,
+  type EndpointReport,
+  type PassProgress,
+  type TagOutcome,
+} from "../api";
+import { PassProgressBar } from "./PassProgressBar";
 
 interface Props {
   libraryId: number;
@@ -26,6 +36,7 @@ interface Props {
 export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Props) {
   const [tags, setTags] = useState<Array<[string, number]>>([]);
   const [busy, setBusy] = useState(false);
+  const [pass, setPass] = useState<PassProgress | null>(null);
   const [outcome, setOutcome] = useState<TagOutcome | null>(null);
   const [diagnosis, setDiagnosis] = useState<EndpointReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +69,10 @@ export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Pro
     setBusy(true);
     setError(null);
     setOutcome(null);
+    setPass(null);
+    // Subscribed **before** the call, not after: the pass emits its first event within a second
+    // and a listener attached afterwards would miss it and show nothing until the second one.
+    const off = await onPassProgress((p) => setPass(p));
     try {
       const r = await runTagPass(libraryId, 200);
       setOutcome(r);
@@ -66,8 +81,16 @@ export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Pro
     } catch (e) {
       setError(String(e));
     } finally {
+      off();
       setBusy(false);
+      setPass(null);
     }
+  };
+
+  const stop = async () => {
+    // Fire and forget: the pass checks the flag between photographs, so the button returning
+    // immediately is correct — it has asked, and the pass will stop on its own.
+    await cancelPass().catch(() => {});
   };
 
   return (
@@ -93,6 +116,8 @@ export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Pro
           {busy ? "Working…" : tags.length > 0 ? "Tag more" : "Tag"}
         </button>
       </div>
+
+      <PassProgressBar progress={pass} busy={busy} onCancel={() => void stop()} />
 
       {error && (
         <p role="alert" className="mb-1 text-[11px] text-rose-400">

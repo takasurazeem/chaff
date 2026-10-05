@@ -20,16 +20,20 @@
  * undoes is not a correction.
  */
 import { useCallback, useEffect, useState } from "react";
+import { PassProgressBar } from "./PassProgressBar";
 import {
   ambiguousFaces,
   deletePerson,
   listPeople,
   mergePeople,
+  cancelPass,
   namePerson,
+  onPassProgress,
   runFacePass,
   splitPerson,
   type AmbiguousFaceView,
   type FacePassReport,
+  type PassProgress,
   type PersonView,
 } from "../api";
 
@@ -50,6 +54,7 @@ export function PeoplePanel({ libraryId, onChanged, onSelectPerson, selectedPers
   const [people, setPeople] = useState<PersonView[]>([]);
   const [queue, setQueue] = useState<AmbiguousFaceView[]>([]);
   const [busy, setBusy] = useState(false);
+  const [pass, setPass] = useState<PassProgress | null>(null);
   const [report, setReport] = useState<FacePassReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -85,6 +90,10 @@ export function PeoplePanel({ libraryId, onChanged, onSelectPerson, selectedPers
 
   const run = async () => {
     setBusy(true);
+    setPass(null);
+    // Subscribed **before** the call: the pass emits within a second and a listener attached
+    // afterwards misses the first event.
+    const off = await onPassProgress((p) => setPass(p));
     setError(null);
     setReport(null);
     try {
@@ -95,8 +104,15 @@ export function PeoplePanel({ libraryId, onChanged, onSelectPerson, selectedPers
     } catch (e) {
       setError(String(e));
     } finally {
+      off();
       setBusy(false);
+      setPass(null);
     }
+  };
+
+  const stop = async () => {
+    // The pass checks the flag between photographs, so returning immediately is correct.
+    await cancelPass().catch(() => {});
   };
 
   const commitName = async (personId: number) => {
@@ -212,6 +228,8 @@ export function PeoplePanel({ libraryId, onChanged, onSelectPerson, selectedPers
           {busy ? "Looking…" : people.length > 0 ? "Find again" : "Find people"}
         </button>
       </div>
+
+      <PassProgressBar progress={pass} busy={busy} onCancel={() => void stop()} />
 
       {error && (
         <p role="alert" className="mb-1 text-[11px] text-rose-400">

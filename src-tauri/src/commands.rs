@@ -55,6 +55,16 @@ pub struct AppState {
     pending_delete: Arc<Mutex<chaff_core::delete_session::DeleteSession>>,
     /// The library watcher, when one is running.
     watch: Arc<Mutex<Option<crate::watcher::Watch>>>,
+    /// Set when the user asks a long pass to stop.
+    ///
+    /// **One flag for every pass**, not one per operation. The interface can only run one at a
+    /// time — the connection lock makes sure of that — so a second flag would be a second way to
+    /// express the same state, and the two would eventually disagree.
+    ///
+    /// Cleared at the start of each pass rather than at the end: a pass that ended early would
+    /// otherwise leave the flag set and the *next* pass would stop immediately, which looks
+    /// exactly like a hang.
+    pass_cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -66,6 +76,7 @@ impl AppState {
                 chaff_core::delete_session::DeleteSession::new(),
             )),
             watch: Arc::new(Mutex::new(None)),
+            pass_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -229,6 +240,8 @@ pub async fn run_face_pass(
 ) -> Result<crate::faces::FacePassReport, String> {
     let db = state.db();
     let now = now_seconds();
+    let cancel = Arc::clone(&state.pass_cancel);
+    cancel.store(false, std::sync::atomic::Ordering::Relaxed);
     let app_data = app
         .path()
         .app_data_dir()
@@ -253,6 +266,35 @@ pub async fn run_face_pass(
     })
     .await
     .map_err(err)?
+}
+
+/// How far a long pass has got.
+///
+/// **`total` can be zero.** The scan phase of an index genuinely does not know how many files
+/// there are until the walk finishes, and a bar over an unknown total is a lie — so the frontend
+/// shows an indeterminate indicator when it is zero rather than dividing by it.
+#[derive(Debug, Clone, Serialize)]
+pub struct PassProgress {
+    /// `faces` or `tagging`, so one listener can serve both.
+    pub stage: String,
+    pub done: usize,
+    pub total: usize,
+}
+
+/// Ask the running pass to stop.
+///
+/// **Nothing is lost.** Both passes commit each file as they go and the work list is the catalog
+/// rather than a list in memory, so stopping leaves the catalog consistent and the next pass
+/// resumes from where this one stopped.
+///
+/// Returns immediately: the pass checks the flag between photographs and stops on its own, which
+/// is why this is a flag and not a kill.
+#[tauri::command]
+pub async fn cancel_pass(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .pass_cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
 }
 
 /// What a sidecar write did.
@@ -469,6 +511,8 @@ pub async fn run_tag_pass(
 ) -> Result<TagOutcome, String> {
     let db = state.db();
     let now = now_seconds();
+    let cancel = Arc::clone(&state.pass_cancel);
+    cancel.store(false, std::sync::atomic::Ordering::Relaxed);
     let app_data = app
         .path()
         .app_data_dir()
@@ -489,7 +533,25 @@ pub async fn run_tag_pass(
         // Without one, use CLIP, and **say so** — "tagged 200 photographs" with no model
         // named is a claim the user cannot check.
         if let Some(endpoint) = vlm_endpoint() {
-            let report = crate::tagging::run(&mut conn, library_id, &endpoint, limit, now, &mut |_, _| true)?;
+            let report = crate::tagging::run(
+                &mut conn,
+                library_id,
+                &endpoint,
+                limit,
+                now,
+                &mut |done, total| {
+                    // Same throttle and the same event as the face pass, with a different
+                    // `stage` — one listener in the frontend serves both.
+                    if done % 20 == 0 || done == total {
+                        use tauri::Emitter;
+                        let _ = app.emit(
+                            "chaff://pass-progress",
+                            &PassProgress { stage: "tagging".into(), done, total },
+                        );
+                    }
+                    !cancel.load(std::sync::atomic::Ordering::Relaxed)
+                },
+            )?;
             return Ok(TagOutcome::Remote { model: endpoint.model, report });
         }
 

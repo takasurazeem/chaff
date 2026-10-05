@@ -75,6 +75,7 @@ pub fn run() {
             commands::stop_watching,
             commands::watch_status,
             commands::run_tag_pass,
+            commands::cancel_pass,
             commands::diagnose_endpoint,
             commands::list_tags,
             commands::photo_tags,
