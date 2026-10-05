@@ -37,6 +37,10 @@ neither knows about the other's decisions. That is a known limitation, not a bug
 ./tools/mac/install.sh
 ```
 
+For a **distributable** bundle rather than a local install — the `.app` and a `.dmg` — see
+[`docs/PACKAGING.md`](PACKAGING.md), which also states plainly that nothing is signed and what
+that costs on each platform.
+
 Builds, installs to `/Applications/Chaff.app`, **and verifies what landed**: it hashes the
 installed binary, checks the commit stamp is inside it, and launches it. A successful build
 is not a successful install — this script exists because a stale DMG was dragged onto the

@@ -39,6 +39,22 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Photography",
+    "shortDescription": "Cull photographs fast.",
+    "longDescription": "Chaff scores a photo library for focus and exposure, groups faces, tags with a local vision model, and moves a photograph's raw and JPEG together when you cull it. Everything runs on your machine.",
+    "publisher": "Chaff",
+    "copyright": "Chaff contributors",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      }
+    }
   }
 }
