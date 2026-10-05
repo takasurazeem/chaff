@@ -454,7 +454,23 @@ pub fn decode_source(path: &Path) -> Result<image::DynamicImage, ThumbError> {
         path: path.to_path_buf(),
         source,
     })?;
-    decode_source_bytes(&data, path)
+
+    // The cheap paths first, then the full raw decode (#8). Order matters: a preview is
+    // instant and is what the camera thought the photograph looked like, and demosaicing
+    // every raw in a library would turn a two-second index into a twenty-minute one.
+    match decode_source_bytes(&data, path) {
+        Ok(img) => Ok(img),
+        Err(cheap) => match decode_raw_fallback(path) {
+            Ok(img) => {
+                log::debug!("decoded {} in full: no usable preview", path.display());
+                Ok(img)
+            }
+            // The *first* error, not the last: it names what was actually tried and what the
+            // file most likely is, and "LibRaw could not open it" after "no preview and not a
+            // readable image" is the less informative of the two.
+            Err(_) => Err(cheap),
+        },
+    }
 }
 
 /// The decoding itself, over bytes already in memory.
@@ -470,8 +486,31 @@ pub fn decode_source_bytes(
         }
     }
 
-    // 2. A direct decode.
-    image::load_from_memory(data).map_err(|_| ThumbError::NoSource { path: path.to_path_buf() })
+    // 2. A direct decode, which handles JPEG, PNG, TIFF and the rest.
+    if let Ok(img) = image::load_from_memory(data) {
+        return Ok(img);
+    }
+
+    // 3. **Full LibRaw decode (#8).**
+    //
+    // The last resort, and the expensive one: it runs the demosaic rather than reading a
+    // preview. Reached only when there is no usable embedded preview *and* the `image` crate
+    // cannot read the file — which is the set of raws that were previously unreadable, and
+    // therefore unscored, ungrouped and untagged.
+    //
+    // `decode_source_bytes` cannot use it: LibRaw reads from a path, not from memory, and
+    // duplicating the file into a temporary one to satisfy it would be slower and would put
+    // a copy of the user's photograph somewhere they did not ask for.
+    Err(ThumbError::NoSource { path: path.to_path_buf() })
+}
+
+/// Decode a raw in full, when nothing cheaper worked (#8).
+///
+/// Separate from [`decode_source`] because it is a *fallback*: the caller tries the cheap
+/// paths first and calls this only when they fail. Folding it in would make every thumbnail
+/// pay for a capability almost no photograph needs.
+pub fn decode_raw_fallback(path: &Path) -> Result<image::DynamicImage, ThumbError> {
+    crate::raw::decode(path).map_err(|_| ThumbError::NoSource { path: path.to_path_buf() })
 }
 
 /// Resize and encode an already-decoded image.
@@ -612,6 +651,48 @@ mod tests {
     // ---------------------------------------------------------------------
     // Content addressing
     // ---------------------------------------------------------------------
+    #[test]
+    fn the_raw_fallback_is_reached_only_when_nothing_cheaper_works() {
+        // **Order matters.** A preview is instant and is what the camera thought the
+        // photograph looked like; demosaicing every raw would turn a two-second index into a
+        // twenty-minute one. A readable JPEG must never reach LibRaw.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plain.jpg");
+        let img = image::RgbImage::from_fn(8, 8, |x, y| {
+            image::Rgb([(x * 30) as u8, (y * 30) as u8, 128])
+        });
+        img.save(&path).unwrap();
+
+        // Decoded, and identical to what the cheap path gives on its own.
+        let via_source = decode_source(&path).expect("a plain JPEG");
+        let cheap = decode_source_bytes(&std::fs::read(&path).unwrap(), &path).unwrap();
+        assert_eq!(via_source.to_rgb8().dimensions(), cheap.to_rgb8().dimensions());
+    }
+
+    #[test]
+    fn a_file_no_decoder_can_read_reports_the_cheap_error_not_the_last_one() {
+        // The first error names what was actually tried. "LibRaw could not open it" after "no
+        // preview and not a readable image" is the less informative of the two.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nothing.cr3");
+        std::fs::write(&path, b"not an image at all").unwrap();
+
+        match decode_source(&path) {
+            Err(ThumbError::NoSource { path: p }) => assert_eq!(p, path),
+            other => panic!("expected NoSource, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_missing_file_still_reports_io_not_a_decode_failure() {
+        // The fallback must not turn "the file is not there" into "the file is unreadable" —
+        // those send someone looking in different places.
+        match decode_source(Path::new("/nonexistent-xyz/a.jpg")) {
+            Err(ThumbError::Io { .. }) => {}
+            other => panic!("expected Io, got {other:?}"),
+        }
+    }
+
     #[test]
     fn the_same_content_yields_the_same_key() {
         assert_eq!(key_from_bytes(b"hello"), key_from_bytes(b"hello"));

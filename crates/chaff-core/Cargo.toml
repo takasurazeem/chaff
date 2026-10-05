@@ -71,6 +71,7 @@ kamadak-exif = "0.6"
 # The VLM client. One HTTP client for two request shapes, rather than a dependency
 # per feature — and `chaff-faces` already uses it for verified model downloads.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+libraw_rs_vendor = "1.0.0"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

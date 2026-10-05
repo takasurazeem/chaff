@@ -22,6 +22,7 @@ pub mod imaging;
 pub mod pair;
 pub mod pipeline;
 pub mod preview;
+pub mod raw;
 pub mod scoring;
 pub mod tagging;
 pub mod thumb;
