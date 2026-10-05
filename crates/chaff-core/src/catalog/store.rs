@@ -962,11 +962,29 @@ mod tests {
             FaceRow { file_id: fid, x: 1.0, y: 2.0, width: 3.0, height: 4.0, confidence: 0.9 },
             FaceRow { file_id: fid, x: 5.0, y: 6.0, width: 7.0, height: 8.0, confidence: 0.8 },
         ];
-        replace_faces(&conn, fid, &two, &[vec![0; 40], vec![0; 40]], 1, 1, "test", 100).unwrap();
+        replace_faces(&conn, &FaceDetection {
+            file_id: fid,
+            faces: &two,
+            landmarks: &[vec![0; 40], vec![0; 40]],
+            size: 1,
+            mtime: 1,
+            detector: "test",
+            now: 100,
+        })
+        .unwrap();
         assert_eq!(faces_for_photo(&conn, photos(&conn, lib).unwrap()[0].id).unwrap().len(), 2);
 
         // A second pass that finds one face must leave one, not three.
-        replace_faces(&conn, fid, &two[..1], &[vec![0; 40]], 1, 1, "test", 200).unwrap();
+        replace_faces(&conn, &FaceDetection {
+            file_id: fid,
+            faces: &two[..1],
+            landmarks: &[vec![0; 40]],
+            size: 1,
+            mtime: 1,
+            detector: "test",
+            now: 200,
+        })
+        .unwrap();
         assert_eq!(faces_for_photo(&conn, photos(&conn, lib).unwrap()[0].id).unwrap().len(), 1);
     }
 
@@ -985,7 +1003,16 @@ mod tests {
             height: 1.0,
             confidence: 1.0,
         }];
-        replace_faces(&conn, fid, &one, &[vec![0; 40]], 1, 1, "test", 100).unwrap();
+        replace_faces(&conn, &FaceDetection {
+            file_id: fid,
+            faces: &one,
+            landmarks: &[vec![0; 40]],
+            size: 1,
+            mtime: 1,
+            detector: "test",
+            now: 100,
+        })
+        .unwrap();
 
         conn.execute("DELETE FROM file WHERE id = ?1", params![fid]).unwrap();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM face", [], |r| r.get(0)).unwrap();
@@ -1006,7 +1033,16 @@ mod tests {
         assert_eq!(files_needing_faces(&conn, lib, "yunet").unwrap().len(), 2);
 
         let one = vec![FaceRow { file_id: raws[0].id, x: 0.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 }];
-        replace_faces(&conn, raws[0].id, &one, &[vec![0; 40]], raws[0].size_bytes, raws[0].mtime_ns, "yunet", 100).unwrap();
+        replace_faces(&conn, &FaceDetection {
+            file_id: raws[0].id,
+            faces: &one,
+            landmarks: &[vec![0; 40]],
+            size: raws[0].size_bytes,
+            mtime: raws[0].mtime_ns,
+            detector: "yunet",
+            now: 100,
+        })
+        .unwrap();
 
         let pending = files_needing_faces(&conn, lib, "yunet").unwrap();
         assert_eq!(pending.len(), 1, "the detected file must drop out");
@@ -1901,6 +1937,24 @@ fn chaff_civil_year(epoch: i64) -> Option<i32> {
 // ---------------------------------------------------------------------------
 // Faces
 // ---------------------------------------------------------------------------
+/// One detection pass over one file.
+///
+/// A struct rather than eight positional arguments. Four of them are `i64` — file id, size,
+/// mtime, timestamp — and swapping two of those compiles, runs, and produces a catalog that
+/// is quietly wrong. Clippy flagged the count; the reason it is worth fixing is the types.
+#[derive(Debug, Clone, Copy)]
+pub struct FaceDetection<'a> {
+    pub file_id: i64,
+    pub faces: &'a [FaceRow],
+    /// One blob per face, in the same order.
+    pub landmarks: &'a [Vec<u8>],
+    /// The file's size and modification time at detection, for staleness.
+    pub size: i64,
+    pub mtime: i64,
+    pub detector: &'a str,
+    pub now: i64,
+}
+
 /// One detected face, as stored.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FaceRow {
@@ -1919,14 +1973,9 @@ pub struct FaceRow {
 /// ghost that no later pass could remove.
 pub fn replace_faces(
     conn: &Connection,
-    file_id: i64,
-    faces: &[FaceRow],
-    landmarks: &[Vec<u8>],
-    size: i64,
-    mtime: i64,
-    detector: &str,
-    now: i64,
+    detection: &FaceDetection<'_>,
 ) -> Result<(), CatalogError> {
+    let FaceDetection { file_id, faces, landmarks, size, mtime, detector, now } = *detection;
     let tx = conn.unchecked_transaction()?;
     tx.execute("DELETE FROM face WHERE file_id = ?1", params![file_id])?;
     for (f, lm) in faces.iter().zip(landmarks) {
