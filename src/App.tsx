@@ -29,6 +29,7 @@ import { ProgressBar } from "./components/ProgressBar";
 import { Loupe } from "./components/Loupe";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
+import { Compare, panesFor } from "./components/Compare";
 import { InfoPanel } from "./components/InfoPanel";
 import { PeoplePanel } from "./components/PeoplePanel";
 import { TagPanel } from "./components/TagPanel";
@@ -138,6 +139,8 @@ export default function App() {
   /** The tag being filtered on, and the photographs carrying it. */
   const [tagPhotos, setTagPhotos] = useState<Set<number> | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  /** The photographs being compared, or null. See `Compare`. */
+  const [comparing, setComparing] = useState<PhotoView[] | null>(null);
 
   /**
    * The list the loupe is navigating, captured when it opened.
@@ -405,6 +408,20 @@ export default function App() {
   }, []);
 
 
+  /**
+   * Compare the selected frames, or the one under the cursor.
+   *
+   * A single frame is a legitimate thing to open here — it is the same view with the zoom —
+   * and requiring two would mean a different key for "look closely at this one".
+   */
+  const startComparing = useCallback(() => {
+    const chosen = selected.size > 0
+      ? visible.filter((p) => selected.has(p.id))
+      : visible.slice(cursor.current, cursor.current + 1);
+    if (chosen.length === 0) return;
+    setComparing(panesFor(chosen));
+  }, [selected, visible]);
+
   const undo = useCallback(async () => {
     const entry = undoStack.current.pop();
     if (!entry) return;
@@ -498,6 +515,18 @@ export default function App() {
         return;
       }
 
+      // `c` compares the selected frames, or the one under the cursor.
+      //
+      // A single frame is legitimate here — the same view with a zoom — and requiring two
+      // would mean a different key for "look closely at this one". Chosen over a modifier
+      // because culling is a keyboard activity, and reaching for a chord between every
+      // decision is the tax this exists to avoid.
+      if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        startComparing();
+        return;
+      }
+
       // Delete opens the confirmation. It does **not** delete anything — nothing in
       // Chaff removes a file without a second, explicit step.
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -552,7 +581,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [visible, applyDecision, undo, beginDelete]);
+  }, [visible, applyDecision, undo, beginDelete, startComparing]);
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-200">
@@ -608,7 +637,35 @@ export default function App() {
           </div>
         )}
 
-        {library && (
+        {comparing && (
+        <Compare
+          photos={comparing}
+          onClose={() => setComparing(null)}
+          onRate={(photoId, rating) => {
+            void setDecision(photoId, rating, decisions.get(photoId)?.rejected ?? false)
+              .then(() => {
+                setDecisions((prev) => {
+                  const next = new Map(prev);
+                  const old = next.get(photoId) ?? { rating: 0, rejected: false };
+                  next.set(photoId, { ...old, rating });
+                  return next;
+                });
+                // Reflected into the open panes, so a rating is visible where it was made.
+                setComparing((prev) =>
+                  prev ? prev.map((p) => (p.id === photoId ? { ...p, rating } : p)) : prev,
+                );
+              })
+              .catch((e) => setStatus({ kind: "error", message: String(e) }));
+          }}
+          onReject={(photoId) => {
+            void setDecision(photoId, decisions.get(photoId)?.rating ?? 0, true)
+              .then(() => setComparing((prev) => (prev ? prev.filter((p) => p.id !== photoId) : prev)))
+              .catch((e) => setStatus({ kind: "error", message: String(e) }));
+          }}
+        />
+      )}
+
+      {library && (
           <button
             type="button"
             onClick={() => setTrashOpen(true)}
@@ -740,7 +797,35 @@ export default function App() {
               void setSetting("last_folder", path ?? "").catch(() => {});
             }}
             />
-            {library && (
+            {comparing && (
+        <Compare
+          photos={comparing}
+          onClose={() => setComparing(null)}
+          onRate={(photoId, rating) => {
+            void setDecision(photoId, rating, decisions.get(photoId)?.rejected ?? false)
+              .then(() => {
+                setDecisions((prev) => {
+                  const next = new Map(prev);
+                  const old = next.get(photoId) ?? { rating: 0, rejected: false };
+                  next.set(photoId, { ...old, rating });
+                  return next;
+                });
+                // Reflected into the open panes, so a rating is visible where it was made.
+                setComparing((prev) =>
+                  prev ? prev.map((p) => (p.id === photoId ? { ...p, rating } : p)) : prev,
+                );
+              })
+              .catch((e) => setStatus({ kind: "error", message: String(e) }));
+          }}
+          onReject={(photoId) => {
+            void setDecision(photoId, decisions.get(photoId)?.rating ?? 0, true)
+              .then(() => setComparing((prev) => (prev ? prev.filter((p) => p.id !== photoId) : prev)))
+              .catch((e) => setStatus({ kind: "error", message: String(e) }));
+          }}
+        />
+      )}
+
+      {library && (
               // Two panels, one condition: both need a library and neither is meaningful
               // without one. A fragment rather than a second guard, so they cannot drift
               // apart and leave one rendering while the other does not.
