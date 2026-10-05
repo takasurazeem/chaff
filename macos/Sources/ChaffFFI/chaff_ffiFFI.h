@@ -339,6 +339,11 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_photos_with_tag(uint64_t ptr, int64
 RustBuffer uniffi_chaff_ffi_fn_method_engine_plan_delete(uint64_t ptr, RustBuffer root, RustBuffer photo_ids, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PURGE_TRASH
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PURGE_TRASH
+uint32_t uniffi_chaff_ffi_fn_method_engine_purge_trash(uint64_t ptr, RustBuffer root, RustBuffer op_ids, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RESCORE
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RESCORE
 RustBuffer uniffi_chaff_ffi_fn_method_engine_rescore(uint64_t ptr, int64_t library_id, uint64_t progress, RustCallStatus *_Nonnull out_status
@@ -377,6 +382,11 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_tags(uint64_t ptr, int64_t library_
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_THUMBNAIL
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_THUMBNAIL
 RustBuffer uniffi_chaff_ffi_fn_method_engine_thumbnail(uint64_t ptr, int64_t photo_id, RustBuffer size, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TRASH
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TRASH
+RustBuffer uniffi_chaff_ffi_fn_method_engine_trash(uint64_t ptr, RustBuffer root, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_INIT_CALLBACK_VTABLE_PROGRESS
@@ -733,6 +743,12 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_plan_delete(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PURGE_TRASH
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PURGE_TRASH
+uint16_t uniffi_chaff_ffi_checksum_method_engine_purge_trash(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RESCORE
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RESCORE
 uint16_t uniffi_chaff_ffi_checksum_method_engine_rescore(void
@@ -778,6 +794,12 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_tags(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_THUMBNAIL
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_THUMBNAIL
 uint16_t uniffi_chaff_ffi_checksum_method_engine_thumbnail(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TRASH
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TRASH
+uint16_t uniffi_chaff_ffi_checksum_method_engine_trash(void
     
 );
 #endif

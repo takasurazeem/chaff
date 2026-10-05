@@ -340,6 +340,26 @@ final class EngineModel {
         return moved
     }
 
+    /// Everything in the library's trash, newest first.
+    func trash() async throws -> [TrashEntry] {
+        guard let root = library?.root else { return [] }
+        let engine = self.engine
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.trash(root: root)
+        }.value
+    }
+
+    /// Permanently remove operations. **The only irreversible thing in this application.**
+    func purgeTrash(opIds: [String]) async throws -> UInt32 {
+        guard let root = library?.root else { return 0 }
+        let engine = self.engine
+        let n = try await Task.detached(priority: .userInitiated) {
+            try engine.purgeTrash(root: root, opIds: opIds)
+        }.value
+        if let library { photos = try engine.photos(libraryId: library.id) }
+        return n
+    }
+
     /// Write a decision.
     func setDecision(photoId: Int64, rating: UInt8, rejected: Bool) async throws {
         let engine = self.engine

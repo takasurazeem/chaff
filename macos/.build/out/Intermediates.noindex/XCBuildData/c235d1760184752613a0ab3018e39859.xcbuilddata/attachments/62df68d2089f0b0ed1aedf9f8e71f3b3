@@ -45,5 +45,15 @@
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/FormattingTests.o",
     "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/FormattingTests.swiftdeps",
     "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/FormattingTests~partial.swiftmodule"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Tests/ChaffTests/NarrowingTests.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.dia",
+    "index-unit-output-path" : "/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.swiftdeps",
+    "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests~partial.swiftmodule"
   }
 }

@@ -798,6 +798,14 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func planDelete(root: String, photoIds: [Int64]) throws  -> DeletePlan
     
     /**
+     * Permanently remove operations from the trash.
+     *
+     * **The only irreversible thing in this application**, which is why the UI that calls it
+     * asks twice and why the count is returned rather than a bare `Ok`.
+     */
+    func purgeTrash(root: String, opIds: [String]) throws  -> UInt32
+    
+    /**
      * Forget everything about a library and index it again from scratch.
      *
      * Used when the *scorer* changed but `SCORER_VERSION` did not. Explicit rather than
@@ -864,6 +872,15 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * purpose.
      */
     func thumbnail(photoId: Int64, size: String) throws  -> String?
+    
+    /**
+     * Everything in the library's trash.
+     *
+     * Newest first, because the thing a user wants back is almost always the last thing they
+     * moved — and a panel that opened on the oldest operation would make the common case a
+     * scroll.
+     */
+    func trash(root: String) throws  -> [TrashEntry]
     
 }
 /**
@@ -1196,6 +1213,23 @@ open func planDelete(root: String, photoIds: [Int64])throws  -> DeletePlan  {
 }
     
     /**
+     * Permanently remove operations from the trash.
+     *
+     * **The only irreversible thing in this application**, which is why the UI that calls it
+     * asks twice and why the count is returned rather than a bare `Ok`.
+     */
+open func purgeTrash(root: String, opIds: [String])throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_purge_trash(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(root),
+        FfiConverterSequenceString.lower(opIds),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Forget everything about a library and index it again from scratch.
      *
      * Used when the *scorer* changed but `SCORER_VERSION` did not. Explicit rather than
@@ -1335,6 +1369,23 @@ open func thumbnail(photoId: Int64, size: String)throws  -> String?  {
             self.uniffiCloneHandle(),
         FfiConverterInt64.lower(photoId),
         FfiConverterString.lower(size),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Everything in the library's trash.
+     *
+     * Newest first, because the thing a user wants back is almost always the last thing they
+     * moved — and a panel that opened on the oldest operation would make the common case a
+     * scroll.
+     */
+open func trash(root: String)throws  -> [TrashEntry]  {
+    return try  FfiConverterSequenceTypeTrashEntry.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_trash(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(root),uniffiCallStatus
     )
 })
 }
@@ -2513,6 +2564,105 @@ public func FfiConverterTypeTagPassReport_lower(_ value: TagPassReport) -> RustB
 
 
 /**
+ * One operation in the trash.
+ *
+ * **An operation, not a file.** The manifest records what one confirmation moved, and restoring
+ * is per-operation — so the panel lists operations and says how many files each holds. A list of
+ * individual files would make "put back what I deleted" a matter of selecting the right twelve.
+ */
+public struct TrashEntry: Equatable, Hashable {
+    public var opId: String
+    /**
+     * When it happened, as a Unix timestamp.
+     */
+    public var at: Int64
+    /**
+     * The user's own words from the dialog, or the default.
+     */
+    public var reason: String
+    public var files: UInt32
+    public var bytes: UInt64
+    /**
+     * True when some of the operation's files are no longer in the trash — moved by something
+     * else, or restored individually. Said rather than hidden, because a restore that brings
+     * back nine of twelve should not surprise anyone.
+     */
+    public var incomplete: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(opId: String, 
+        /**
+         * When it happened, as a Unix timestamp.
+         */at: Int64, 
+        /**
+         * The user's own words from the dialog, or the default.
+         */reason: String, files: UInt32, bytes: UInt64, 
+        /**
+         * True when some of the operation's files are no longer in the trash — moved by something
+         * else, or restored individually. Said rather than hidden, because a restore that brings
+         * back nine of twelve should not surprise anyone.
+         */incomplete: Bool) {
+        self.opId = opId
+        self.at = at
+        self.reason = reason
+        self.files = files
+        self.bytes = bytes
+        self.incomplete = incomplete
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TrashEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTrashEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TrashEntry {
+        return
+            try TrashEntry(
+                opId: FfiConverterString.read(from: &buf), 
+                at: FfiConverterInt64.read(from: &buf), 
+                reason: FfiConverterString.read(from: &buf), 
+                files: FfiConverterUInt32.read(from: &buf), 
+                bytes: FfiConverterUInt64.read(from: &buf), 
+                incomplete: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TrashEntry, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.opId, into: &buf)
+        FfiConverterInt64.write(value.at, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+        FfiConverterUInt32.write(value.files, into: &buf)
+        FfiConverterUInt64.write(value.bytes, into: &buf)
+        FfiConverterBool.write(value.incomplete, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTrashEntry_lift(_ buf: RustBuffer) throws -> TrashEntry {
+    return try FfiConverterTypeTrashEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTrashEntry_lower(_ value: TrashEntry) -> RustBuffer {
+    return FfiConverterTypeTrashEntry.lower(value)
+}
+
+
+/**
  * An error crossing the boundary.
  */
 public 
@@ -3189,6 +3339,31 @@ fileprivate struct FfiConverterSequenceTypeTagCount: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTrashEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [TrashEntry]
+
+    public static func write(_ value: [TrashEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTrashEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TrashEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TrashEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTrashEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
 /**
  * Tell the engine where to keep its caches.
  *
@@ -3260,6 +3435,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_plan_delete() != 56430) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_purge_trash() != 30215) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_rescore() != 40822) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3282,6 +3460,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_thumbnail() != 9552) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_trash() != 22919) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_constructor_engine_new() != 43103) {

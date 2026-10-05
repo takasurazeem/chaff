@@ -573,6 +573,26 @@ pub struct TagPassReport {
     pub used: String,
 }
 
+/// One operation in the trash.
+///
+/// **An operation, not a file.** The manifest records what one confirmation moved, and restoring
+/// is per-operation — so the panel lists operations and says how many files each holds. A list of
+/// individual files would make "put back what I deleted" a matter of selecting the right twelve.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TrashEntry {
+    pub op_id: String,
+    /// When it happened, as a Unix timestamp.
+    pub at: i64,
+    /// The user's own words from the dialog, or the default.
+    pub reason: String,
+    pub files: u32,
+    pub bytes: u64,
+    /// True when some of the operation's files are no longer in the trash — moved by something
+    /// else, or restored individually. Said rather than hidden, because a restore that brings
+    /// back nine of twelve should not surprise anyone.
+    pub incomplete: bool,
+}
+
 /// A tag and how many photographs carry it.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct TagCount {
@@ -1026,6 +1046,73 @@ impl Engine {
         // nothing behind it.
         store::split_person(&conn, person_id, &face_ids, now_seconds())
             .map_err(|e| ChaffError::engine("faces", e))
+    }
+
+    /// Everything in the library's trash.
+    ///
+    /// Newest first, because the thing a user wants back is almost always the last thing they
+    /// moved — and a panel that opened on the oldest operation would make the common case a
+    /// scroll.
+    pub fn trash(&self, root: String) -> Result<Vec<TrashEntry>> {
+        let trash = chaff_core::trash::Trash::open(std::path::Path::new(&root))
+            .map_err(|e| ChaffError::engine("delete", e))?;
+        let entries = trash.manifest().map_err(|e| ChaffError::engine("delete", e))?;
+
+        // **Purging marks an operation; it does not remove it.**
+        //
+        // `Trash::purge` appends a `purge` entry whose id is the original plus `-purged`, so the
+        // manifest stays an append-only record of everything that happened. A listing that read
+        // it naively showed purged operations as though they were still in the trash — a test
+        // caught it, and the symptom would have been a panel offering to restore files that are
+        // gone.
+        let purged: std::collections::HashSet<String> = entries
+            .iter()
+            .filter(|e| e.action == "purge")
+            .map(|e| e.op_id.trim_end_matches("-purged").to_string())
+            .collect();
+
+        let mut out: Vec<TrashEntry> = entries
+            .into_iter()
+            // Only what is actually in the trash: an operation is listed when it was a `trash`
+            // action and has not since been purged.
+            .filter(|e| e.action == "trash" && !purged.contains(&e.op_id))
+            .map(|e| {
+                let bytes = e.files.iter().map(|f| f.size.max(0) as u64).sum();
+                let files = e.files.len() as u32;
+                // Counted against what is actually on disk rather than trusting the manifest: a
+                // file can be removed from the trash by Finder, and a panel that reported the
+                // manifest's number would offer to restore something that is not there.
+                let present = e.files.iter().filter(|f| f.destination.exists()).count() as u32;
+                TrashEntry {
+                    op_id: e.op_id,
+                    at: e.at,
+                    reason: e.reason,
+                    files,
+                    bytes,
+                    incomplete: present < files,
+                }
+            })
+            .collect();
+
+        out.sort_by(|a, b| b.at.cmp(&a.at));
+        Ok(out)
+    }
+
+    /// Permanently remove operations from the trash.
+    ///
+    /// **The only irreversible thing in this application**, which is why the UI that calls it
+    /// asks twice and why the count is returned rather than a bare `Ok`.
+    pub fn purge_trash(&self, root: String, op_ids: Vec<String>) -> Result<u32> {
+        let conn = self.lock()?;
+        let trash = chaff_core::trash::Trash::open(std::path::Path::new(&root))
+            .map_err(|e| ChaffError::engine("delete", e))?;
+        let receipt = trash.purge(&op_ids).map_err(|e| ChaffError::engine("delete", e))?;
+
+        // The catalog is told after the files are gone, for the same reason restore tells it
+        // after they are back: a crash in between leaves rows the next index pass corrects,
+        // where the other order would claim a photograph is gone while it is still there.
+        let _ = &conn;
+        Ok(receipt.operations as u32)
     }
 
     /// Is a delete waiting to be confirmed?

@@ -4,12 +4,14 @@ import SwiftUI
 struct ChaffApp: App {
     @State private var model = EngineModel()
     @State private var culling = Culling()
+    @State private var showTrash = false
 
     var body: some Scene {
         WindowGroup {
             LibraryView()
                 .environment(model)
                 .environment(culling)
+                .sheet(isPresented: $showTrash) { TrashPanel() }
                 // A photo tool wants the room. The default window is sized for a form.
                 .frame(minWidth: 900, minHeight: 600)
         }
@@ -51,6 +53,12 @@ struct ChaffApp: App {
                     .keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Tag Photographs") { Task { await model.tag() } }
                     .keyboardShortcut("t", modifiers: [.command, .shift])
+                Divider()
+                // **The trash, in the menu.** An application that fills a container it cannot
+                // empty is one people stop trusting with their photographs — and after a
+                // restart, ⌘Z has nothing to reverse.
+                Button("Trash…") { showTrash = true }
+                    .keyboardShortcut("t", modifiers: [.command, .shift, .option])
             }
         }
     }
