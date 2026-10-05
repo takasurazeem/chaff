@@ -56,6 +56,25 @@ const EXCLUDED_DIRS: &[&str] = &[
 /// How many files to walk between progress reports.
 const PROGRESS_INTERVAL: usize = 64;
 
+/// Is this a macOS AppleDouble stub rather than a real file?
+///
+/// When macOS writes to a filesystem without native extended-attribute support — a FAT
+/// card, an SMB share, an exFAT drive, anything a download lands on — it puts the real
+/// file's metadata in a sibling named `._` plus the original name.
+///
+/// **These are not duplicates and not images.** They are a few kilobytes of resource-fork
+/// header, and because they keep the original extension they sail straight through
+/// extension-based classification: `._IMG_0537.CR3` looks exactly like a raw file to
+/// `classify`. A real library had nine of them, each becoming a photograph with no
+/// readable pixels, which is what "some CR3 files did not load" turned out to mean.
+///
+/// They are skipped at the filesystem level, like the trash directories, rather than
+/// flagged in pairing. There is nothing to pair, nothing to score and nothing to show —
+/// a placeholder tile for a 4 KB metadata stub is worse than no tile.
+fn is_appledouble(name: &str) -> bool {
+    name.starts_with("._")
+}
+
 #[derive(Debug, Error)]
 pub enum IndexError {
     #[error(transparent)]
@@ -153,6 +172,17 @@ pub fn scan_with_progress(root: &Path, on_files: &mut dyn FnMut(usize)) -> ScanR
         };
 
         if !entry.file_type().is_file() {
+            continue;
+        }
+
+        // Before classification, because an AppleDouble stub carries the original
+        // extension and would otherwise classify as a photograph.
+        if entry
+            .file_name()
+            .to_str()
+            .map(is_appledouble)
+            .unwrap_or(false)
+        {
             continue;
         }
 
@@ -655,3 +685,60 @@ mod tests {
             );
         }
     }
+
+#[cfg(test)]
+mod appledouble_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn appledouble_stubs_are_recognised() {
+        assert!(is_appledouble("._IMG_0537.CR3"));
+        assert!(is_appledouble("._IMG_0616 2.CR3"));
+        assert!(is_appledouble("._photo.jpg"));
+        // A real file that merely starts with a dot is not a stub.
+        assert!(!is_appledouble(".DS_Store"));
+        assert!(!is_appledouble("IMG_0537.CR3"));
+        assert!(!is_appledouble("_IMG_0537.CR3"));
+    }
+
+    #[test]
+    fn a_scan_skips_appledouble_stubs_but_keeps_the_real_files() {
+        // The bug this fixes: `._IMG.CR3` keeps the `.CR3` extension, so extension-based
+        // classification called it a raw file and it became a photograph with no pixels.
+        // A real library had nine of them, reported by the user as "some CR3 files did not
+        // load" — which was true, and was not about CR3 at all.
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("shoot")).unwrap();
+
+        fs::write(root.join("shoot/IMG_0001.CR3"), b"pretend raw").unwrap();
+        fs::write(root.join("shoot/IMG_0001.JPG"), b"pretend jpeg").unwrap();
+        // The stubs macOS leaves beside them on a non-native filesystem.
+        fs::write(root.join("shoot/._IMG_0001.CR3"), [0u8; 4096]).unwrap();
+        fs::write(root.join("shoot/._IMG_0001.JPG"), [0u8; 4096]).unwrap();
+
+        let report = scan(root);
+        let names: Vec<String> = report
+            .files
+            .iter()
+            .map(|f| f.path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        assert_eq!(
+            names,
+            vec!["IMG_0001.CR3".to_string(), "IMG_0001.JPG".to_string()],
+            "the stubs must be gone and the real files untouched"
+        );
+    }
+
+    #[test]
+    fn a_stub_alone_in_a_folder_yields_nothing() {
+        // A folder holding only stubs is a folder holding no photographs, and must not
+        // produce a placeholder tile.
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("._orphan.CR3"), [0u8; 4096]).unwrap();
+        assert!(scan(dir.path()).files.is_empty());
+    }
+}
