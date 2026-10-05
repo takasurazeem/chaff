@@ -62,6 +62,7 @@ container — rootless podman, nothing on the host is modified:
 
 ```bash
 distrobox create --name chaff-build --image fedora:41    # once
+distrobox enter chaff-build -- sudo dnf install -y webkit2gtk4.1-devel gcc-c++ clang-devel
 ./tools/linux/build_in_container.sh
 ./tools/linux/verify.sh
 ```

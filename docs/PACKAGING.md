@@ -133,13 +133,20 @@ bash tools/linux/perf.sh target/release/chaff
 
 ---
 
-## The Linux container needs two things the host does not
+## The Linux container needs three things the host does not
 
 1. `webkit2gtk4.1-devel` and friends — the webview.
 2. **`gcc-c++`** — ONNX Runtime links `libstdc++`, and without it the link fails with
    `cannot find -lstdc++`, which reads as a Rust problem and is not one.
+3. **`clang-devel`** — the vendored LibRaw generates its bindings with bindgen, which needs
+   `libclang`. Without it the build stops with `Unable to find libclang`, and the message
+   suggests `LIBCLANG_PATH` — which is the wrong fix, because there is no libclang to point
+   at until the package is installed.
 
 ```bash
 distrobox create --name chaff-build --image fedora:41
-distrobox enter chaff-build -- sudo dnf install -y webkit2gtk4.1-devel gcc-c++
+distrobox enter chaff-build -- sudo dnf install -y webkit2gtk4.1-devel gcc-c++ clang-devel
 ```
+
+Each of these three was found by a **build that failed**, in that order, and each one reads
+as a different kind of problem than it is.
