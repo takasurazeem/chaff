@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::CatalogError;
 use crate::ext::{classify, FileKind};
@@ -54,6 +54,8 @@ pub struct IndexStats {
     pub removed_files: usize,
     /// Photographs left with no files at all after the sweep.
     pub removed_photos: usize,
+    /// Decisions that followed a renamed photograph rather than dying with the old row.
+    pub adopted_decisions: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,6 +303,35 @@ pub fn upsert_groups(
     // The row is left for the trash to own. Emptying the trash by hand leaves a row whose
     // files are gone for good, and the *next* pass after `clear_photo_trashed` sweeps it —
     // which is the correct outcome, because the photograph really is gone.
+    // **A decision about to be orphaned is carried across before the cascade takes it.**
+    //
+    // `decision` cascades with `photo`, so a rename would destroy the rating before anything
+    // could adopt it — the row is deleted and the rating goes with it. Capturing here, in the
+    // same transaction as the sweep, is what makes the identity recorded in migration 010
+    // worth anything: without it the identity is a note on a row that is about to vanish.
+    //
+    // Only decisions whose photograph is genuinely gone are carried: a photograph still
+    // present keeps its own decision, and a decision cannot be adopted twice.
+    let doomed: Vec<(i64, i64, i64, i64)> = {
+        let mut stmt = tx.prepare(
+            "SELECT d.source_size, d.source_mtime, d.rating, d.rejected
+               FROM decision d
+               JOIN photo p ON p.id = d.photo_id
+              WHERE p.library_id = ?1
+                AND p.trashed_at IS NULL
+                AND d.source_size IS NOT NULL
+                AND d.source_mtime IS NOT NULL
+                AND p.id NOT IN (
+                    SELECT photo_id FROM file
+                     WHERE library_id = ?1 AND photo_id IS NOT NULL
+                )",
+        )?;
+        let rows = stmt.query_map(params![library_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
     stats.removed_photos = tx.execute(
         "DELETE FROM photo
           WHERE library_id = ?1
@@ -311,6 +342,36 @@ pub fn upsert_groups(
             )",
         params![library_id],
     )?;
+
+    // Now hand each carried decision to the photograph that matches it, if one is here.
+    for (size, mtime, rating, rejected) in &doomed {
+        let heir: Option<i64> = tx
+            .query_row(
+                "SELECT p.id FROM photo p
+                   JOIN file f ON f.photo_id = p.id
+                  WHERE p.library_id = ?1
+                    AND p.trashed_at IS NULL
+                    AND f.size_bytes = ?2
+                    AND f.mtime_ns = ?3
+                    AND f.role IN ('raw', 'raster')
+                    AND NOT EXISTS (SELECT 1 FROM decision d WHERE d.photo_id = p.id)
+                  ORDER BY CASE f.role WHEN 'raw' THEN 0 ELSE 1 END, p.id
+                  LIMIT 1",
+                params![library_id, size, mtime],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()?;
+
+        if let Some(heir) = heir {
+            tx.execute(
+                "INSERT INTO decision (photo_id, rating, rejected, decided_at, source_size, source_mtime)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![heir, rating, rejected, now, size, mtime],
+            )?;
+            stats.adopted_decisions += 1;
+            log::info!("a decision followed a renamed photograph to {heir}");
+        }
+    }
 
     tx.execute(
         "UPDATE library SET last_indexed_at = ?1 WHERE id = ?2",
@@ -999,6 +1060,81 @@ mod tests {
         index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
         let id = photos(&conn, lib).unwrap()[0].id;
         (conn, lib, id)
+    }
+
+    #[test]
+    fn a_rename_does_not_lose_a_rating() {
+        // **The bug this exists for.** A photograph is `(dir, stem)`, so renaming
+        // `IMG_0001.CR3` to `IMG_0001-edit.CR3` creates a *new* row on the next index and
+        // the rating stays attached to one nothing points at. The user renamed a file and
+        // lost their work on it.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+
+        let before = ["/lib/IMG_0001.CR3"];
+        index(&mut conn, lib, &before, &meta_for(&before, 100, 5000), 100);
+        let old_id = photos(&conn, lib).unwrap()[0].id;
+        set_decision(&conn, old_id, Decision { rating: Rating::new(5), rejected: false }, 150)
+            .unwrap();
+
+        // Renamed, with the same size and modification time — which is what `mv` does.
+        let after = ["/lib/IMG_0001-edit.CR3"];
+        index(&mut conn, lib, &after, &meta_for(&after, 100, 5000), 200);
+
+        let new_photos = photos(&conn, lib).unwrap();
+        assert_eq!(new_photos.len(), 1, "the rename is a new photograph");
+        let new_id = new_photos[0].id;
+        assert_ne!(new_id, old_id, "and it really is a different row");
+
+        // **The rating followed the file.** The first version of this test asserted the
+        // opposite — that the decision stayed on the old row, adoptable by identity — and it
+        // was wrong about the mechanism: `decision` cascades with `photo`, so the sweep
+        // destroys the row before anything can adopt it. The decision has to be carried
+        // across *inside* the index transaction, before the cascade, which is what the
+        // implementation now does.
+        let adopted = decision_for_photo(&conn, new_id).unwrap();
+        assert!(adopted.is_some(), "the rating must follow the rename");
+        assert_eq!(adopted.unwrap().rating.get(), 5);
+
+        // And nothing is left adoptable: the decision moved rather than being copied.
+        assert!(orphaned_decisions(&conn, lib).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_decision_whose_photograph_still_exists_is_not_adoptable() {
+        // **The rule that stops double-claiming.** Two photographs of the same size and
+        // time — a burst frame, a re-export — must not both claim one rating, or the second
+        // silently overwrites the first.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 100, 5000), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+        set_decision(&conn, id, Decision { rating: Rating::new(4), rejected: false }, 150).unwrap();
+
+        // The photograph is still here, so its decision is not looking for a new home.
+        assert!(orphaned_decisions(&conn, lib).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_decision_made_before_the_identity_existed_is_simply_not_adoptable() {
+        // Rows written by an older catalog have no identity. They are not adopted and they
+        // do not crash — the rating stays on the row it was made about, which is what
+        // happened before this feature existed.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 100, 5000), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+
+        conn.execute(
+            "INSERT INTO decision (photo_id, rating, rejected, decided_at) VALUES (?1, 3, 0, 100)",
+            params![id],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM photo WHERE id = ?1", params![id]).unwrap();
+
+        assert!(orphaned_decisions(&conn, lib).unwrap().is_empty());
     }
 
     #[test]
@@ -1944,14 +2080,30 @@ pub fn set_decision(
 ) -> Result<Decision, CatalogError> {
     let previous = decision_for_photo(conn, photo_id)?.unwrap_or_default();
 
+    // **What this decision is about, recorded while the file is known.**
+    //
+    // A photograph is `(dir, stem)`, so a rename creates a new one and the rating would stay
+    // attached to a row nothing points at. Size and modification time both survive a rename
+    // and cost nothing to record here — see migration 010.
+    let identity = primary_file_identity(conn, photo_id)?;
+
     conn.execute(
-        "INSERT INTO decision (photo_id, rating, rejected, decided_at)
-         VALUES (?1, ?2, ?3, ?4)
+        "INSERT INTO decision (photo_id, rating, rejected, decided_at, source_size, source_mtime)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT (photo_id) DO UPDATE SET
-             rating     = excluded.rating,
-             rejected   = excluded.rejected,
-             decided_at = excluded.decided_at",
-        params![photo_id, decision.rating.get() as i64, i64::from(decision.rejected), now],
+             rating       = excluded.rating,
+             rejected     = excluded.rejected,
+             decided_at   = excluded.decided_at,
+             source_size  = excluded.source_size,
+             source_mtime = excluded.source_mtime",
+        params![
+            photo_id,
+            decision.rating.get() as i64,
+            i64::from(decision.rejected),
+            now,
+            identity.map(|(s, _)| s),
+            identity.map(|(_, m)| m)
+        ],
     )?;
     Ok(previous)
 }
@@ -2274,6 +2426,73 @@ pub struct PhotoMetadata {
     pub lens: Option<String>,
     /// The year the camera recorded, from its local wall-clock. See `exif.rs`.
     pub year: Option<i32>,
+}
+
+/// Record what a decision was made about, so a rename does not orphan it.
+///
+/// Called whenever a decision is written. The primary file's size and modification time both
+/// survive a rename, and neither costs anything to record — see migration 010 for why a
+/// content hash is deliberately not used here.
+pub fn remember_decision_identity(
+    conn: &Connection,
+    photo_id: i64,
+) -> Result<(), CatalogError> {
+    conn.execute(
+        "UPDATE decision SET source_size = ?, source_mtime = ?
+          WHERE photo_id = ?",
+        params![
+            primary_file_identity(conn, photo_id)?.map(|(s, _)| s),
+            primary_file_identity(conn, photo_id)?.map(|(_, m)| m),
+            photo_id
+        ],
+    )?;
+    Ok(())
+}
+
+/// The size and modification time of a photograph's primary file.
+fn primary_file_identity(conn: &Connection, photo_id: i64) -> Result<Option<(i64, i64)>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT size_bytes, mtime_ns FROM file
+          WHERE photo_id = ?1 AND role IN ('raw', 'raster')
+          ORDER BY CASE role WHEN 'raw' THEN 0 ELSE 1 END, id
+          LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![photo_id])?;
+    match rows.next()? {
+        Some(r) => Ok(Some((r.get(0)?, r.get(1)?))),
+        None => Ok(None),
+    }
+}
+
+/// Decisions that belong to no photograph any more, keyed by what they were made about.
+///
+/// **Restricted to orphans on purpose.** A decision whose photograph still exists is not
+/// available for adoption: two photographs of the same size and time — a burst frame, a
+/// re-export — would both claim one rating, and the second would silently overwrite the
+/// first. Only a decision whose photograph has gone is looking for a new home.
+pub fn orphaned_decisions(
+    conn: &Connection,
+    library_id: i64,
+) -> Result<std::collections::HashMap<(i64, i64), Decision>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT d.source_size, d.source_mtime, d.rating, d.rejected
+           FROM decision d
+          WHERE d.source_size IS NOT NULL
+            AND d.source_mtime IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM photo p WHERE p.id = d.photo_id AND p.library_id = ?1
+            )",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((
+            (r.get::<_, i64>(0)?, r.get::<_, i64>(1)?),
+            Decision {
+                rating: Rating::new(r.get::<_, i64>(2)? as u8),
+                rejected: r.get::<_, i64>(3)? != 0,
+            },
+        ))
+    })?;
+    Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)
 }
 
 /// Every photograph's camera, lens and year, keyed by photograph.
