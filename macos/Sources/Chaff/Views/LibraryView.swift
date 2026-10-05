@@ -13,6 +13,8 @@ struct LibraryView: View {
     @Environment(Culling.self) private var culling
     @State private var selection: Set<Int64> = []
     @State private var chosenFolder: String?
+    /// A tag or a group the grid is narrowed to — see `Narrowing` for why it is one value.
+    @State private var narrowedTo: Narrowing?
     /// The plan the user is being asked to confirm, if any.
     @State private var pendingPlan: DeletePlan?
 
@@ -22,7 +24,7 @@ struct LibraryView: View {
         @Bindable var culling = culling
 
         return NavigationSplitView {
-            Navigator(chosenFolder: $chosenFolder)
+            Navigator(chosenFolder: $chosenFolder, narrowedTo: $narrowedTo)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
         } detail: {
             ZStack {
@@ -47,7 +49,12 @@ struct LibraryView: View {
             }
             // Xcode's status line, along the bottom of the editor: what is shown, out of what.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                StatusBar(shown: visible.count, total: model.photos.count, selection: selection.count)
+                StatusBar(
+                    shown: visible.count,
+                    total: model.photos.count,
+                    selection: selection.count,
+                    narrowing: narrowedTo?.label
+                )
             }
             .navigationTitle(
                 model.library.map { URL(fileURLWithPath: $0.root).lastPathComponent } ?? "Chaff"
@@ -91,12 +98,40 @@ struct LibraryView: View {
         }
     }
 
+    /// The photographs the grid is showing, after the folder and the narrowing.
+    ///
+    /// **Narrowing wins over the folder.** They answer the same question, and the last thing the
+    /// user clicked is the answer they meant — so choosing a tag clears the folder rather than
+    /// intersecting with it, and vice versa. Intersecting would show an empty grid with no
+    /// explanation of why.
+    private func matchesNarrowing(_ photo: Photo) -> Bool {
+        switch narrowedTo {
+        case nil: true
+        case let .tag(name): model.tagsByPhoto[photo.id]?.contains(name) ?? false
+        case let .person(id, _): model.peopleByPhoto[photo.id]?.contains(id) ?? false
+        }
+    }
+
     /// The photographs in the chosen folder, or all of them.
     ///
     /// Recursive, matching the sidebar's counts: a folder that says "2,071" and then shows 250
     /// is a folder whose count is a lie.
     private var visible: [Photo] {
-        guard let folder = chosenFolder else { return model.photos }
-        return model.photos.filter { $0.dir == folder || $0.dir.hasPrefix(folder + "/") }
+        // **The folder arrives relative and the photograph's path is absolute.**
+        //
+        // `folders` strips the library root so the navigator does not show the user's whole
+        // filesystem — which means comparing `chosenFolder` against `photo.dir` directly matches
+        // nothing at all. The root goes back on here, at the one place that needs it.
+        //
+        // The failure mode is the bad kind: an empty grid, no error, and a folder that says 2,071
+        // photographs.
+        if let narrowedTo {
+            return model.photos.filter(matchesNarrowing)
+        }
+        guard let folder = chosenFolder, let root = model.library?.root else {
+            return model.photos
+        }
+        let absolute = root.hasSuffix("/") ? root + folder : root + "/" + folder
+        return model.photos.filter { $0.dir == absolute || $0.dir.hasPrefix(absolute + "/") }
     }
 }

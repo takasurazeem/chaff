@@ -3,16 +3,33 @@ import chaff_ffiFFI
 
 /// Suggested people, most photographs first.
 struct PeopleList: View {
+    /// A `Binding<Set>` because `List(selection:)` wants one, but only ever holds one value.
+    private var selection: Binding<Set<Narrowing>> {
+        Binding(
+            get: { narrowedTo.map { [$0] } ?? [] },
+            set: { narrowedTo = $0.first }
+        )
+    }
+
     let people: [Person]
+    @Binding var narrowedTo: Narrowing?
 
     var body: some View {
-        List {
+        List(selection: selection) {
             ForEach(people, id: \.id) { person in
                 HStack {
-                    Text(person.name ?? "Group \(person.id)").lineLimit(1)
+                    Text(person.name ?? "Group \(person.id)")
+                        .lineLimit(1)
+                        // **A group with no name is a suggestion**, and the styling says so.
+                        // Italic and secondary until someone types a name, which is what
+                        // confirms it — treating a cluster as fact is how a stranger's face
+                        // ends up under someone's name.
+                        .italic(person.name == nil)
+                        .foregroundStyle(person.name == nil ? .secondary : .primary)
                     Spacer(minLength: 4)
                     Text("\(person.photos)").foregroundStyle(.secondary).monospacedDigit()
                 }
+                .tag(Narrowing.person(id: person.id, name: person.name))
             }
         }
         .listStyle(.sidebar)

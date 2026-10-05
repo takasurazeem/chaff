@@ -708,6 +708,28 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func hasPendingDelete()  -> Bool
     
     /**
+     * Merge one group into another.
+     *
+     * The common correction: a face that clustering put in its own group belongs with someone
+     * already named. **`into` is the survivor** — the group that keeps its name and its
+     * photographs — and the other is emptied into it.
+     */
+    func mergePeople(from: Int64, into: Int64) throws  -> UInt32
+    
+    /**
+     * Give a person a name.
+     *
+     * **Typing a name is what confirms a group.** There is deliberately no separate "confirm"
+     * button: a name a user has typed is the confirmation, and a second step to say "yes, I
+     * meant it" is a step nobody takes — leaving groups unconfirmed and the next clustering
+     * pass free to split them again.
+     *
+     * The wording in every UI reflects that a group is a *suggestion* until this is called.
+     * Treating a cluster as fact is how a stranger's face ends up under someone's name.
+     */
+    func namePerson(personId: Int64, name: String) throws 
+    
+    /**
      * Index a library and score it.
      *
      * Long-running: minutes for a large library.
@@ -736,6 +758,11 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func people(libraryId: Int64) throws  -> [Person]
     
     /**
+     * The photographs in a person's group.
+     */
+    func personPhotos(personId: Int64) throws  -> [Int64]
+    
+    /**
      * Everything known about one photograph.
      */
     func photoDetail(photoId: Int64) throws  -> PhotoDetail
@@ -748,6 +775,13 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * assuming it is fine, and the reason the grid must virtualise.
      */
     func photos(libraryId: Int64) throws  -> [Photo]
+    
+    /**
+     * The photographs carrying a tag.
+     *
+     * The navigator lists tags; selecting one has to filter the grid, and that is this.
+     */
+    func photosWithTag(libraryId: Int64, tag: String, model: String?) throws  -> [Int64]
     
     /**
      * Work out what a selection would move, and hold it for confirmation.
@@ -808,6 +842,14 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * Set a photograph's rating and reject flag.
      */
     func setDecision(photoId: Int64, rating: UInt8, rejected: Bool) throws 
+    
+    /**
+     * Split a face out of a group and into one of its own.
+     *
+     * The other correction, and the reason both exist: clustering errs in both directions, and
+     * a UI that can only merge cannot fix a group that is too large.
+     */
+    func splitPerson(personId: Int64, faceIds: [Int64]) throws  -> Int64?
     
     /**
      * Every tag in a library, with counts, ranked by how many photographs carry it.
@@ -987,6 +1029,45 @@ open func hasPendingDelete() -> Bool  {
 }
     
     /**
+     * Merge one group into another.
+     *
+     * The common correction: a face that clustering put in its own group belongs with someone
+     * already named. **`into` is the survivor** — the group that keeps its name and its
+     * photographs — and the other is emptied into it.
+     */
+open func mergePeople(from: Int64, into: Int64)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_merge_people(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(from),
+        FfiConverterInt64.lower(into),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Give a person a name.
+     *
+     * **Typing a name is what confirms a group.** There is deliberately no separate "confirm"
+     * button: a name a user has typed is the confirmation, and a second step to say "yes, I
+     * meant it" is a step nobody takes — leaving groups unconfirmed and the next clustering
+     * pass free to split them again.
+     *
+     * The wording in every UI reflects that a group is a *suggestion* until this is called.
+     * Treating a cluster as fact is how a stranger's face ends up under someone's name.
+     */
+open func namePerson(personId: Int64, name: String)throws   {try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_name_person(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(personId),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+}
+}
+    
+    /**
      * Index a library and score it.
      *
      * Long-running: minutes for a large library.
@@ -1032,6 +1113,19 @@ open func people(libraryId: Int64)throws  -> [Person]  {
 }
     
     /**
+     * The photographs in a person's group.
+     */
+open func personPhotos(personId: Int64)throws  -> [Int64]  {
+    return try  FfiConverterSequenceInt64.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_person_photos(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(personId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Everything known about one photograph.
      */
 open func photoDetail(photoId: Int64)throws  -> PhotoDetail  {
@@ -1057,6 +1151,23 @@ open func photos(libraryId: Int64)throws  -> [Photo]  {
     uniffi_chaff_ffi_fn_method_engine_photos(
             self.uniffiCloneHandle(),
         FfiConverterInt64.lower(libraryId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The photographs carrying a tag.
+     *
+     * The navigator lists tags; selecting one has to filter the grid, and that is this.
+     */
+open func photosWithTag(libraryId: Int64, tag: String, model: String?)throws  -> [Int64]  {
+    return try  FfiConverterSequenceInt64.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_photos_with_tag(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(libraryId),
+        FfiConverterString.lower(tag),
+        FfiConverterOptionString.lower(model),uniffiCallStatus
     )
 })
 }
@@ -1178,6 +1289,23 @@ open func setDecision(photoId: Int64, rating: UInt8, rejected: Bool)throws   {tr
         FfiConverterBool.lower(rejected),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Split a face out of a group and into one of its own.
+     *
+     * The other correction, and the reason both exist: clustering errs in both directions, and
+     * a UI that can only merge cannot fix a group that is too large.
+     */
+open func splitPerson(personId: Int64, faceIds: [Int64])throws  -> Int64?  {
+    return try  FfiConverterOptionInt64.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_split_person(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(personId),
+        FfiConverterSequenceInt64.lower(faceIds),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -3105,16 +3233,28 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_has_pending_delete() != 25653) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_merge_people() != 35800) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_name_person() != 12222) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_open_library() != 2463) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_people() != 5396) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_person_photos() != 20024) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_photo_detail() != 54102) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_photos() != 25175) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_photos_with_tag() != 41595) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_plan_delete() != 56430) {
@@ -3133,6 +3273,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_set_decision() != 38375) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_split_person() != 24982) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_tags() != 10764) {

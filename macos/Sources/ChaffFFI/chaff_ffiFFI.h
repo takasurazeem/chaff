@@ -294,6 +294,16 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_folders(uint64_t ptr, int64_t libra
 int8_t uniffi_chaff_ffi_fn_method_engine_has_pending_delete(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_MERGE_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_MERGE_PEOPLE
+uint32_t uniffi_chaff_ffi_fn_method_engine_merge_people(uint64_t ptr, int64_t from, int64_t into, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_NAME_PERSON
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_NAME_PERSON
+void uniffi_chaff_ffi_fn_method_engine_name_person(uint64_t ptr, int64_t person_id, RustBuffer name, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_OPEN_LIBRARY
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_OPEN_LIBRARY
 RustBuffer uniffi_chaff_ffi_fn_method_engine_open_library(uint64_t ptr, RustBuffer root, uint64_t progress, RustCallStatus *_Nonnull out_status
@@ -304,6 +314,11 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_open_library(uint64_t ptr, RustBuff
 RustBuffer uniffi_chaff_ffi_fn_method_engine_people(uint64_t ptr, int64_t library_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PERSON_PHOTOS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PERSON_PHOTOS
+RustBuffer uniffi_chaff_ffi_fn_method_engine_person_photos(uint64_t ptr, int64_t person_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTO_DETAIL
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTO_DETAIL
 RustBuffer uniffi_chaff_ffi_fn_method_engine_photo_detail(uint64_t ptr, int64_t photo_id, RustCallStatus *_Nonnull out_status
@@ -312,6 +327,11 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_photo_detail(uint64_t ptr, int64_t 
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTOS
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTOS
 RustBuffer uniffi_chaff_ffi_fn_method_engine_photos(uint64_t ptr, int64_t library_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTOS_WITH_TAG
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PHOTOS_WITH_TAG
+RustBuffer uniffi_chaff_ffi_fn_method_engine_photos_with_tag(uint64_t ptr, int64_t library_id, RustBuffer tag, RustBuffer model, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_PLAN_DELETE
@@ -342,6 +362,11 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_run_tag_pass(uint64_t ptr, RustBuff
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SET_DECISION
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SET_DECISION
 void uniffi_chaff_ffi_fn_method_engine_set_decision(uint64_t ptr, int64_t photo_id, uint8_t rating, int8_t rejected, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SPLIT_PERSON
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SPLIT_PERSON
+RustBuffer uniffi_chaff_ffi_fn_method_engine_split_person(uint64_t ptr, int64_t person_id, RustBuffer face_ids, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TAGS
@@ -654,6 +679,18 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_has_pending_delete(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_MERGE_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_MERGE_PEOPLE
+uint16_t uniffi_chaff_ffi_checksum_method_engine_merge_people(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_NAME_PERSON
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_NAME_PERSON
+uint16_t uniffi_chaff_ffi_checksum_method_engine_name_person(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_OPEN_LIBRARY
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_OPEN_LIBRARY
 uint16_t uniffi_chaff_ffi_checksum_method_engine_open_library(void
@@ -666,6 +703,12 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_people(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PERSON_PHOTOS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PERSON_PHOTOS
+uint16_t uniffi_chaff_ffi_checksum_method_engine_person_photos(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTO_DETAIL
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTO_DETAIL
 uint16_t uniffi_chaff_ffi_checksum_method_engine_photo_detail(void
@@ -675,6 +718,12 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_photo_detail(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTOS
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTOS
 uint16_t uniffi_chaff_ffi_checksum_method_engine_photos(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTOS_WITH_TAG
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_PHOTOS_WITH_TAG
+uint16_t uniffi_chaff_ffi_checksum_method_engine_photos_with_tag(void
     
 );
 #endif
@@ -711,6 +760,12 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_run_tag_pass(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_SET_DECISION
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_SET_DECISION
 uint16_t uniffi_chaff_ffi_checksum_method_engine_set_decision(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_SPLIT_PERSON
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_SPLIT_PERSON
+uint16_t uniffi_chaff_ffi_checksum_method_engine_split_person(void
     
 );
 #endif

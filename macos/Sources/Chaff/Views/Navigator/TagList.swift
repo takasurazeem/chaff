@@ -3,16 +3,26 @@ import chaff_ffiFFI
 
 /// Tags, most-used first.
 struct TagList: View {
+    /// A `Binding<Set>` because `List(selection:)` wants one, but only ever holds one value.
+    private var selection: Binding<Set<Narrowing>> {
+        Binding(
+            get: { narrowedTo.map { [$0] } ?? [] },
+            set: { narrowedTo = $0.first }
+        )
+    }
+
     let tags: [(String, UInt32)]
+    @Binding var narrowedTo: Narrowing?
 
     var body: some View {
-        List {
+        List(selection: selection) {
             ForEach(tags, id: \.0) { name, count in
                 HStack {
                     Text(name).lineLimit(1)
                     Spacer(minLength: 4)
                     Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
                 }
+                .tag(Narrowing.tag(name))
             }
         }
         .listStyle(.sidebar)

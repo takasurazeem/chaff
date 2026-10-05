@@ -9,10 +9,20 @@ struct StatusBar: View {
     let shown: Int
     let total: Int
     let selection: Int
+    /// **Why** the grid is showing what it is showing, when it is not the whole library.
+    ///
+    /// A count answers "how many"; a filter that hides 2,900 photographs without saying what it
+    /// filtered on is a filter that looks like a bug.
+    var narrowing: String?
 
     var body: some View {
         HStack(spacing: 8) {
-            if shown == total {
+            if let narrowing {
+                Text("\(shown) of \(total) photographs \(narrowing)")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else if shown == total {
                 Text("\(total) photographs")
             } else {
                 Text("\(shown) of \(total) photographs")

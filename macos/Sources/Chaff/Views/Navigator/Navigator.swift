@@ -22,6 +22,10 @@ import chaff_ffiFFI
 struct Navigator: View {
     @Environment(EngineModel.self) private var model
     @Binding var chosenFolder: String?
+    /// What the grid is narrowed to, when it is narrowed by a tag or a group rather than a
+    /// folder. **One selection, not two** — a folder and a tag at once is a filter combination
+    /// nothing in the interface explains, and the status line can only describe one.
+    @Binding var narrowedTo: Narrowing?
     @State private var mode: Mode = .folders
     @State private var filter = ""
 
@@ -97,9 +101,9 @@ struct Navigator: View {
         case .folders:
             FolderList(chosen: $chosenFolder, folders: matchingFolders)
         case .tags:
-            TagList(tags: model.tags.filter { matches($0.0) })
+            TagList(tags: model.tags.filter { matches($0.0) }, narrowedTo: $narrowedTo)
         case .people:
-            PeopleList(people: model.people.filter { matches($0.name ?? "Group \($0.id)") })
+            PeopleList(people: model.people.filter { matches($0.name ?? "Group \($0.id)") }, narrowedTo: $narrowedTo)
         }
     }
 

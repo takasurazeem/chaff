@@ -40,6 +40,12 @@ final class EngineModel {
     private(set) var tags: [(String, UInt32)] = []
     private(set) var people: [Person] = []
     private(set) var faceReport: FacePassReport?
+    /// Which tags each photograph carries, and which groups it belongs to.
+    ///
+    /// Built once after a pass rather than queried per tile: a grid asks this for every visible
+    /// photograph on every scroll, and a query per tile is 50,000 queries for one screenful.
+    private(set) var tagsByPhoto: [Int64: Set<String>] = [:]
+    private(set) var peopleByPhoto: [Int64: Set<Int64>] = [:]
     private(set) var tagReport: TagPassReport?
     private(set) var isIndexing = false
     /// `0...1`, or `nil` while the total is unknown.
@@ -107,6 +113,7 @@ final class EngineModel {
             folders = try engine.folders(libraryId: report.library.id)
             tags = try engine.tags(libraryId: report.library.id).map { ($0.name, $0.count) }
             people = try engine.people(libraryId: report.library.id)
+            try await rebuildLookups()
             progress = nil
         } catch {
             errorMessage = describe(error)
@@ -270,6 +277,67 @@ final class EngineModel {
         } catch {
             errorMessage = describe(error)
         }
+    }
+
+    /// Rebuild the two lookup tables the navigator's narrowing reads.
+    private func rebuildLookups() async throws {
+        guard let library else { return }
+        let engine = self.engine
+        let (byTag, byPerson) = try await Task.detached(priority: .utility) {
+            var byTag: [Int64: Set<String>] = [:]
+            for (name, _) in try engine.tags(libraryId: library.id).map({ ($0.name, $0.count) }) {
+                for id in try engine.photosWithTag(libraryId: library.id, tag: name, model: nil) {
+                    byTag[id, default: []].insert(name)
+                }
+            }
+            var byPerson: [Int64: Set<Int64>] = [:]
+            for person in try engine.people(libraryId: library.id) {
+                for id in try engine.personPhotos(personId: person.id) {
+                    byPerson[id, default: []].insert(person.id)
+                }
+            }
+            return (byTag, byPerson)
+        }.value
+        tagsByPhoto = byTag
+        peopleByPhoto = byPerson
+    }
+
+    /// The photographs carrying a tag.
+    func photosWithTag(_ tag: String) async throws -> [Int64] {
+        guard let library else { return [] }
+        let engine = self.engine
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.photosWithTag(libraryId: library.id, tag: tag, model: nil)
+        }.value
+    }
+
+    /// The photographs in a person's group.
+    func personPhotos(_ personId: Int64) async throws -> [Int64] {
+        let engine = self.engine
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.personPhotos(personId: personId)
+        }.value
+    }
+
+    /// Give a group a name. **Typing a name is what confirms it** — there is no separate
+    /// confirm step, because a second "yes, I meant it" is a step nobody takes, leaving groups
+    /// unconfirmed and the next clustering pass free to split them again.
+    func namePerson(_ personId: Int64, _ name: String) async throws {
+        let engine = self.engine
+        try await Task.detached(priority: .userInitiated) {
+            try engine.namePerson(personId: personId, name: name)
+        }.value
+        if let library { people = try engine.people(libraryId: library.id) }
+    }
+
+    /// Merge one group into another. `into` keeps its name and its photographs.
+    func mergePeople(from: Int64, into: Int64) async throws -> UInt32 {
+        let engine = self.engine
+        let moved = try await Task.detached(priority: .userInitiated) {
+            try engine.mergePeople(from: from, into: into)
+        }.value
+        if let library { people = try engine.people(libraryId: library.id) }
+        return moved
     }
 
     /// Write a decision.

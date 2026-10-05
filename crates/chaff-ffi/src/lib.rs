@@ -956,6 +956,78 @@ impl Engine {
         })
     }
 
+    /// The photographs carrying a tag.
+    ///
+    /// The navigator lists tags; selecting one has to filter the grid, and that is this.
+    pub fn photos_with_tag(&self, library_id: i64, tag: String, model: Option<String>) -> Result<Vec<i64>> {
+        let conn = self.lock()?;
+        // `model` narrows to tags a particular tagger wrote. Tags from CLIP and tags from a
+        // vision model are different vocabularies, and a filter that mixed them would show a
+        // user results from a model they did not choose.
+        store::photos_with_tag(&conn, library_id, &tag, model.as_deref())
+            .map_err(|e| ChaffError::engine("tags", e))
+    }
+
+    /// The photographs in a person's group.
+    pub fn person_photos(&self, person_id: i64) -> Result<Vec<i64>> {
+        let conn = self.lock()?;
+        store::photos_for_person(&conn, person_id)
+            .map_err(|e| ChaffError::engine("faces", e))
+    }
+
+    /// Give a person a name.
+    ///
+    /// **Typing a name is what confirms a group.** There is deliberately no separate "confirm"
+    /// button: a name a user has typed is the confirmation, and a second step to say "yes, I
+    /// meant it" is a step nobody takes — leaving groups unconfirmed and the next clustering
+    /// pass free to split them again.
+    ///
+    /// The wording in every UI reflects that a group is a *suggestion* until this is called.
+    /// Treating a cluster as fact is how a stranger's face ends up under someone's name.
+    pub fn name_person(&self, person_id: i64, name: String) -> Result<()> {
+        let conn = self.lock()?;
+        // An empty name **un-names** a group rather than storing `""`. A person called the empty
+        // string would sort first, match nothing, and be indistinguishable from a bug.
+        let name = name.trim();
+        let name = if name.is_empty() { None } else { Some(name) };
+        store::name_person(&conn, person_id, name, now_seconds())
+            .map_err(|e| ChaffError::engine("faces", e))
+    }
+
+    /// Merge one group into another.
+    ///
+    /// The common correction: a face that clustering put in its own group belongs with someone
+    /// already named. **`into` is the survivor** — the group that keeps its name and its
+    /// photographs — and the other is emptied into it.
+    pub fn merge_people(&self, from: i64, into: i64) -> Result<u32> {
+        let conn = self.lock()?;
+        // Refused when they are the same group: merging a person into themselves is a no-op that
+        // a UI could reach by double-clicking one row twice, and reporting "merged 0 faces" for
+        // it is better than the alternative of silently doing nothing.
+        if from == into {
+            return Err(ChaffError::with(
+                FailureKind::Refused,
+                "That is the same group — pick a different one to merge into.",
+            ));
+        }
+        store::merge_people(&conn, from, into, now_seconds())
+            .map(|n| n as u32)
+            .map_err(|e| ChaffError::engine("faces", e))
+    }
+
+    /// Split a face out of a group and into one of its own.
+    ///
+    /// The other correction, and the reason both exist: clustering errs in both directions, and
+    /// a UI that can only merge cannot fix a group that is too large.
+    pub fn split_person(&self, person_id: i64, face_ids: Vec<i64>) -> Result<Option<i64>> {
+        let conn = self.lock()?;
+        // The group keeps at least one face — `split_person` refuses to empty it, because a
+        // person with no faces is not a group and would appear in the navigator as a name with
+        // nothing behind it.
+        store::split_person(&conn, person_id, &face_ids, now_seconds())
+            .map_err(|e| ChaffError::engine("faces", e))
+    }
+
     /// Is a delete waiting to be confirmed?
     pub fn has_pending_delete(&self) -> bool {
         self.pending.lock().map(|s| s.has_pending()).unwrap_or(false)
