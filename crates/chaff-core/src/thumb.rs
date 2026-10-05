@@ -170,6 +170,9 @@ pub const DEFAULT_CAP_BYTES: u64 = 512 * 1024 * 1024;
 /// cache stays small. These are previews, not deliverables — the original is always there.
 pub const THUMB_QUALITY: u8 = 82;
 
+/// Distinguishes temp files written by concurrent threads in one process.
+static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// A bounded, content-addressed thumbnail store on disk.
 #[derive(Debug, Clone)]
 pub struct ThumbnailCache {
@@ -263,16 +266,41 @@ impl ThumbnailCache {
             source,
         })?;
 
-        let tmp = dir.join(format!(".{}.{}.tmp", key.as_str(), std::process::id()));
+        let tmp = dir.join(format!(
+            ".{}.{}.{}.tmp",
+            key.as_str(),
+            std::process::id(),
+            // A counter as well as the pid: two threads in one process writing the same key
+            // would otherwise share a temp name and one would truncate the other's file.
+            TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         std::fs::write(&tmp, bytes).map_err(|source| ThumbError::Io {
             path: tmp.clone(),
             source,
         })?;
-        std::fs::rename(&tmp, &path).map_err(|source| ThumbError::Io {
-            path: path.clone(),
-            source,
-        })?;
-        Ok(path)
+
+        // **`rename` does not replace on Windows.** On POSIX it silently overwrites; on
+        // Windows it fails with "file exists". Two concurrent requests for one key — both
+        // missing `peek`, both decoding, both writing — succeed on macOS and Linux and
+        // error on Windows, which is one of the three platforms this is meant to run on.
+        //
+        // The window is narrow because the frontend de-duplicates in-flight requests, but
+        // "narrow" is not "closed", and a failed thumbnail is a blank tile.
+        match std::fs::rename(&tmp, &path) {
+            Ok(()) => Ok(path),
+            Err(e) if path.exists() => {
+                // Someone else won the race. Their file is as good as ours, and the temp
+                // copy is ours to clean up.
+                let _ = std::fs::remove_file(&tmp);
+                log::debug!("thumbnail race on {}: keeping the existing file", key.as_str());
+                let _ = e;
+                Ok(path)
+            }
+            Err(source) => {
+                let _ = std::fs::remove_file(&tmp);
+                Err(ThumbError::Io { path: path.clone(), source })
+            }
+        }
     }
 
     /// Every managed file, with its size and modification time.
@@ -483,6 +511,35 @@ pub fn generate(source: &[u8], size: ThumbSize, quality: u8) -> Result<Vec<u8>, 
 /// whose embedded preview changed but whose sensor data did not is still the same
 /// photograph, and re-keying on the preview would regenerate it for no reason.
 pub fn generate_and_store(
+    cache: &ThumbnailCache,
+    source_path: &Path,
+    size: ThumbSize,
+) -> Result<PathBuf, ThumbError> {
+    let path = generate_and_store_without_eviction(cache, source_path, size)?;
+
+    // **Evict on write, not on request.**
+    //
+    // The cap was documented as load-bearing — "a cache that grows without limit is not a
+    // cache, it is a disk leak that works perfectly until it does not" — and never
+    // enforced: `evict_to_cap` was called from tests and from a command no component ever
+    // invoked. The module did the thing its own documentation called unacceptable.
+    //
+    // Cheap when under the cap: one directory walk that finds nothing to remove. At 3,000
+    // photographs and three sizes that is a few thousand `stat` calls spread across the
+    // thumbnails actually rendered, not per request.
+    //
+    // A failure to evict is not a failure to store. The thumbnail is written and usable;
+    // the cache being temporarily over its cap is a smaller problem than a tile that does
+    // not appear.
+    if let Err(e) = cache.evict_to_cap() {
+        log::warn!("could not trim the thumbnail cache: {e}");
+    }
+
+    Ok(path)
+}
+
+/// The generation and write, without the eviction pass.
+fn generate_and_store_without_eviction(
     cache: &ThumbnailCache,
     source_path: &Path,
     size: ThumbSize,

@@ -160,6 +160,23 @@ pub fn library_root(conn: &Connection, library_id: i64) -> Result<Option<String>
 /// goes with it. This is a mark-and-sweep rather than a comparison against a list of
 /// seen paths, because the list version needs one bound parameter per file and a large
 /// library has hundreds of thousands.
+/// The marker written to every file row this pass, and compared by the sweep.
+///
+/// **Unique to the pass, not the wall clock.** `now` is epoch *seconds*, so two passes in
+/// the same second could not be told apart and the sweep deleted nothing — leaving phantom
+/// photographs that no longer existed on disk, visible and ratable. That was unreachable
+/// while a re-run took nine minutes; the measurement cache took it to 0.1 s and made
+/// back-to-back passes in one second ordinary, turning a dormant flaw into a live one.
+///
+/// Nanoseconds, so two passes cannot collide. `indexed_at` is written and compared and
+/// never interpreted as a date, so the unit change is invisible everywhere else.
+fn pass_marker(now: i64) -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as i64)
+        .unwrap_or(now)
+}
+
 pub fn upsert_groups(
     conn: &mut Connection,
     library_id: i64,
@@ -167,6 +184,10 @@ pub fn upsert_groups(
     meta: &HashMap<PathBuf, FileMeta>,
     now: i64,
 ) -> Result<IndexStats, CatalogError> {
+    // One marker for the whole pass: every file row written gets it, and the sweep deletes
+    // whatever does not. See `pass_marker`.
+    let pass = pass_marker(now);
+
     let tx = conn.transaction()?;
     let mut stats = IndexStats::default();
 
@@ -176,11 +197,23 @@ pub fn upsert_groups(
         let needs_review = i64::from(group.needs_review());
 
         tx.execute(
+            // **`trashed_at` is cleared on conflict, and that is load-bearing.**
+            //
+            // This is only reached for a group that has files, so a photograph arriving
+            // here is present on disk. Without the clear, a photograph that came back —
+            // dragged out of `.cull-trash` in Finder, or restored by a backup or sync —
+            // kept its trashed marker and stayed invisible forever. The file was there,
+            // the catalog knew about it, and no UI path could reach it: it could not be
+            // selected because it was not shown, so it could not be restored either.
+            //
+            // Silent, permanent, and invisible from the user's side. Found by the review
+            // agent, which proved it by moving a file back and re-indexing.
             "INSERT INTO photo (library_id, dir, stem, state, needs_review)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT (library_id, dir, stem) DO UPDATE SET
                  state        = excluded.state,
-                 needs_review = excluded.needs_review",
+                 needs_review = excluded.needs_review,
+                 trashed_at   = NULL",
             params![library_id, dir, stem, state_of(group.state), needs_review],
         )?;
 
@@ -245,7 +278,7 @@ pub fn upsert_groups(
                     role,
                     m.size_bytes,
                     m.mtime_ns,
-                    now
+                    pass
                 ],
             )?;
             stats.files += 1;
@@ -254,7 +287,7 @@ pub fn upsert_groups(
 
     stats.removed_files = tx.execute(
         "DELETE FROM file WHERE library_id = ?1 AND indexed_at <> ?2",
-        params![library_id, now],
+        params![library_id, pass],
     )?;
 
     // Sweep photographs whose files are all gone — **except those in the trash**.
@@ -904,6 +937,137 @@ mod tests {
         assert!(directories(&conn, lib).unwrap().is_empty());
     }
 
+    /// An `ExifData` with just the fields the facet tests read.
+    fn exif_of(make: &str, model: &str, lens: &str, captured_at: i64) -> crate::exif::ExifData {
+        crate::exif::ExifData {
+            captured_at: Some(captured_at),
+            make: Some(make.to_string()),
+            model: Some(model.to_string()),
+            lens: Some(lens.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_photograph_that_comes_back_becomes_visible_again() {
+        // **Finding 2 from the review.** A photograph dragged out of `.cull-trash` in
+        // Finder, or restored by a backup or sync, kept its trashed marker and stayed
+        // invisible forever. The file was on disk, the catalog knew about it, and no UI
+        // path could reach it — it could not be selected because it was not shown, so it
+        // could not be restored either. Silent, permanent, and invisible from the user's
+        // side.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3"];
+        let meta = meta_for(&files, 1, 1);
+
+        index(&mut conn, lib, &files, &meta, 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+        mark_photo_trashed(&conn, id, 200).unwrap();
+        assert!(photos(&conn, lib).unwrap().is_empty(), "trashed, so hidden");
+
+        // The file comes back — by any means that is not Chaff's own restore.
+        index(&mut conn, lib, &files, &meta, 300);
+
+        let visible = photos(&conn, lib).unwrap();
+        assert_eq!(visible.len(), 1, "a photograph with files on disk must be visible");
+        assert_eq!(visible[0].id, id, "and it must be the same row, so the rating survives");
+    }
+
+    #[test]
+    fn two_index_passes_in_the_same_second_still_sweep() {
+        // **Finding 3 from the review.** The sweep compared `indexed_at` against epoch
+        // *seconds*, so two passes in one second could not be told apart and nothing was
+        // deleted — leaving phantom photographs visible and ratable. Unreachable while a
+        // re-run took nine minutes; the measurement cache took it to 0.1 s and made
+        // back-to-back passes in one second ordinary.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+
+        let three = ["/lib/a.CR3", "/lib/b.CR3", "/lib/c.CR3"];
+        index(&mut conn, lib, &three, &meta_for(&three, 1, 1), 1_700_000_000);
+        assert_eq!(photos(&conn, lib).unwrap().len(), 3);
+
+        // The same `now` — the caller's clock did not advance.
+        let two = ["/lib/a.CR3", "/lib/b.CR3"];
+        index(&mut conn, lib, &two, &meta_for(&two, 1, 1), 1_700_000_000);
+
+        assert_eq!(
+            photos(&conn, lib).unwrap().len(),
+            2,
+            "a file that is gone must be swept even when the clock has not moved"
+        );
+    }
+
+    #[test]
+    fn metadata_prefers_the_raw_and_does_not_repeat_the_make() {
+        // Two things at once, because they are the same query. The raw must win — a JPEG
+        // exported from it can have had its metadata rewritten — and "Canon" + "Canon EOS
+        // R5" is one camera, not two entries in a filter list.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3", "/lib/IMG_0001.JPG"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+
+        let raw_id = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+        let jpg_id = files_by_role(&conn, lib, "raster").unwrap()[0].id;
+        upsert_exif(&conn, raw_id, 1, Some(&exif_of("Canon", "Canon EOS R5", "RF 24-70", 1_700_000_000)), 100)
+            .unwrap();
+        upsert_exif(&conn, jpg_id, 1, Some(&exif_of("SOMETHING", "ELSE ENTIRELY", "wrong lens", 1)), 100)
+            .unwrap();
+
+        let m = photo_metadata(&conn, lib).unwrap();
+        let meta = m.get(&id).expect("the photograph must appear");
+        assert_eq!(meta.camera.as_deref(), Some("Canon EOS R5"), "the raw must win");
+        assert_eq!(meta.lens.as_deref(), Some("RF 24-70"));
+        assert_eq!(meta.year, Some(2023));
+    }
+
+    #[test]
+    fn a_make_the_model_does_not_contain_is_joined() {
+        // The other half of the rule: "NIKON CORPORATION" + "NIKON Z 6" contains the make,
+        // but "Canon" + "EOS R5" does not, and dropping it would lose the brand.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3", "/lib/b.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let all = photos(&conn, lib).unwrap();
+
+        let raws = files_by_role(&conn, lib, "raw").unwrap();
+        upsert_exif(&conn, raws[0].id, 1, Some(&exif_of("Canon", "EOS R5", "", 1_700_000_000)), 100)
+            .unwrap();
+        upsert_exif(
+            &conn,
+            raws[1].id,
+            1,
+            Some(&exif_of("NIKON CORPORATION", "NIKON Z 6", "", 1_700_000_000)),
+            100,
+        )
+        .unwrap();
+
+        let m = photo_metadata(&conn, lib).unwrap();
+        assert_eq!(m[&all[0].id].camera.as_deref(), Some("Canon EOS R5"));
+        assert_eq!(m[&all[1].id].camera.as_deref(), Some("NIKON Z 6"), "make already inside");
+    }
+
+    #[test]
+    fn metadata_ignores_trashed_photographs() {
+        // The filter lists must describe what the grid can show. An option that yields an
+        // empty result is a dead end the user has to discover by trying it.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+        let f = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+        upsert_exif(&conn, f, 1, Some(&exif_of("Canon", "EOS R5", "", 1_700_000_000)), 100).unwrap();
+
+        assert!(photo_metadata(&conn, lib).unwrap().contains_key(&id));
+        mark_photo_trashed(&conn, id, 200).unwrap();
+        assert!(!photo_metadata(&conn, lib).unwrap().contains_key(&id));
+    }
+
     #[test]
     fn settings_round_trip_and_replace() {
         let conn = crate::catalog::open_in_memory().unwrap();
@@ -1429,14 +1593,20 @@ pub fn upsert_measurement(
 /// avoid.
 pub fn measurements(
     conn: &Connection,
+    library_id: i64,
     scorer_version: i64,
 ) -> Result<std::collections::HashMap<i64, StoredMeasurement>, CatalogError> {
+    // **Scoped to the library being indexed.** Without the join this read every library's
+    // measurements and discarded the ones that did not match — tens of thousands of rows
+    // at scale, on every pass, for nothing.
     let mut stmt = conn.prepare(
-        "SELECT photo_id, measured_path, measured_size, measured_mtime, camera, captured_at,
-                m0, m1, m2, m3, m4, m5, m6, m7
-           FROM measurement WHERE scorer_version = ?1",
+        "SELECT m.photo_id, m.measured_path, m.measured_size, m.measured_mtime, m.camera,
+                m.captured_at, m.m0, m.m1, m.m2, m.m3, m.m4, m.m5, m.m6, m.m7
+           FROM measurement m
+           JOIN photo p ON p.id = m.photo_id
+          WHERE p.library_id = ?1 AND m.scorer_version = ?2",
     )?;
-    let rows = stmt.query_map(params![scorer_version], |r| {
+    let rows = stmt.query_map(params![library_id, scorer_version], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             StoredMeasurement {
@@ -1556,4 +1726,106 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str, now: i64) -> Resul
 pub fn clear_setting(conn: &Connection, key: &str) -> Result<(), CatalogError> {
     conn.execute("DELETE FROM setting WHERE key = ?1", params![key])?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Facets — what a library contains, for filtering by it
+// ---------------------------------------------------------------------------
+/// The camera, lens and capture time of a photograph, from whichever file carries them.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PhotoMetadata {
+    pub camera: Option<String>,
+    pub lens: Option<String>,
+    /// The year the camera recorded, from its local wall-clock. See `exif.rs`.
+    pub year: Option<i32>,
+}
+
+/// Every photograph's camera, lens and year, keyed by photograph.
+///
+/// One query rather than one per photograph. The join prefers the **raw** — it is the file
+/// the camera wrote, and a JPEG exported from it may have had its metadata rewritten or
+/// stripped — using the same `CASE` ordering the detail panel uses, so the two cannot
+/// disagree about which file describes a photograph.
+pub fn photo_metadata(
+    conn: &Connection,
+    library_id: i64,
+) -> Result<std::collections::HashMap<i64, PhotoMetadata>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT f.photo_id, e.make, e.model, e.lens, e.captured_at
+           FROM exif e
+           JOIN file f ON f.id = e.file_id
+           JOIN photo p ON p.id = f.photo_id
+          WHERE p.library_id = ?1 AND p.trashed_at IS NULL AND f.photo_id IS NOT NULL
+          ORDER BY CASE f.role WHEN 'raw' THEN 0 ELSE 1 END",
+    )?;
+
+    let mut out: std::collections::HashMap<i64, PhotoMetadata> = std::collections::HashMap::new();
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, Option<String>>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?,
+            r.get::<_, Option<i64>>(4)?,
+        ))
+    })?;
+
+    for row in rows {
+        let (photo_id, make, model, lens, captured_at) = row?;
+        // First row wins: the ORDER BY has already put the raw first, and a second file's
+        // EXIF must not overwrite it.
+        out.entry(photo_id).or_insert_with(|| PhotoMetadata {
+            camera: combine_camera(make, model),
+            lens: lens.filter(|l| !l.trim().is_empty()),
+            year: captured_at.and_then(year_of),
+        });
+    }
+    Ok(out)
+}
+
+/// `make` + `model`, without repeating the make when the model already contains it.
+///
+/// "Canon" and "Canon EOS R5" are one fact. A filter list showing both as separate options
+/// splits one camera's photographs across two entries, which is worse than showing neither.
+fn combine_camera(make: Option<String>, model: Option<String>) -> Option<String> {
+    let make = make.filter(|m| !m.trim().is_empty());
+    let model = model.filter(|m| !m.trim().is_empty());
+    match (make, model) {
+        (Some(m), Some(d)) if model_already_names_the_make(&m, &d) => Some(d),
+        (Some(m), Some(d)) => Some(format!("{m} {d}")),
+        (None, Some(d)) => Some(d),
+        (Some(m), None) => Some(m),
+        (None, None) => None,
+    }
+}
+
+/// Does the model already say who made it?
+///
+/// Two shapes, both common. `Canon` + `Canon EOS R5` repeats the make exactly. `NIKON
+/// CORPORATION` + `NIKON Z 6` does not — the model carries the make's **first word**, which
+/// is the brand, while the make carries the legal entity. A plain `starts_with` catches the
+/// first and misses the second, which is how one camera ends up split across two entries in
+/// a filter list.
+fn model_already_names_the_make(make: &str, model: &str) -> bool {
+    let make = make.to_lowercase();
+    let model_lower = model.to_lowercase();
+    if model_lower.starts_with(&make) {
+        return true;
+    }
+    match make.split_whitespace().next() {
+        // Only when the make has more than one word — otherwise this is the check above.
+        Some(first) if first.len() >= 3 && make.contains(' ') => model_lower.starts_with(first),
+        _ => false,
+    }
+}
+
+/// The year of a capture timestamp, which is a local wall-clock treated as UTC.
+fn year_of(epoch: i64) -> Option<i32> {
+    chaff_civil_year(epoch)
+}
+
+/// `YYYY` for an epoch second, in the same convention `exif.rs` uses.
+fn chaff_civil_year(epoch: i64) -> Option<i32> {
+    let date = crate::trash::civil_date(epoch);
+    date.get(..4)?.parse().ok()
 }

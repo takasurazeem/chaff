@@ -530,14 +530,49 @@ must never be a mystery.
 ### Security & Privacy
 
 - **No telemetry, no analytics, no crash reporting to any third party.** Ever.
-- Egress is enforced through a single chokepoint with an allowlist: `localhost`,
-  the user's explicitly configured LAN endpoints, and the model-download hosts the user
-  approved. Any other outbound connection is a bug and is treated as a security defect.
-- The local IPC surface binds to loopback only and is token-authenticated, so no other
-  process or page on the machine or LAN can drive the file-deletion API.
-- Sidecars and the catalog are the only files Chaff writes inside the library, both opt-in.
 - Face embeddings and identities never leave the catalog.
 - Images sent to a LAN endpoint are downscaled and stripped of EXIF GPS.
+
+#### What Chaff writes inside the library
+
+**Exactly one thing: `.cull-trash/`, on an explicit delete.** Originals are never modified.
+
+An earlier version of this document claimed "sidecars and the catalog are the only files
+Chaff writes inside the library, both opt-in". A review found it wrong three ways: the
+catalog lives in the application data directory, not the library; **no sidecars are written
+at all** (XMP write-back is #54 and still open); and the trash folder is written
+**unconditionally on every delete**, which is the whole design — a same-volume rename is
+atomic and a copy is not.
+
+#### Egress
+
+**Not built.** This section previously stated as fact that egress was "enforced through a
+single chokepoint with an allowlist". There is no chokepoint and no allowlist; issue #34
+tracks it.
+
+`capabilities()` used to accept a list of URLs from the frontend and open a TCP connection
+to each — an unallowlisted outbound-request primitive reachable by any script in the
+webview. It now reads `CHAFF_ENDPOINTS` from the environment, so nothing inside the webview
+chooses what the application connects to. That is narrower, and it is not the allowlist this
+section promised.
+
+#### The deletion API, stated accurately
+
+This section previously claimed "the local IPC surface binds to loopback only and is
+token-authenticated". There is no HTTP listener and no token; the real surface is Tauri
+`invoke`.
+
+- Plugin commands are gated by `capabilities/default.json`. **Application commands are
+  not** — `commit_delete` and `purge_trash` are callable by any script in the webview.
+- What protects the deletion path is that **`commit_delete` takes no argument naming a
+  file**. It commits the plan the user was shown, held server-side, and verifies every file
+  against the hash taken at that moment. A script cannot name a file, cannot supply a hash,
+  and cannot move anything the user was not shown.
+- A Content-Security-Policy is now set. It was `null` — no policy at all — which no previous
+  version of this document acknowledged.
+
+The honest summary: **the deletion API is reachable, and the reason that is survivable is
+that it cannot be aimed.**
 
 ### Integration
 

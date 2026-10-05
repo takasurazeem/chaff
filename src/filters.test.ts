@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { apply, counts, isFiltering, matches, NO_FILTERS, type Filters } from "./filters";
+import { apply, counts, facets, isFiltering, matches, NO_FILTERS, type Filters } from "./filters";
 import type { PhotoView } from "./types";
 
 function photo(id: number, band: PhotoView["band"], stem = `IMG_${id}`): PhotoView {
-  return { id, dir: "/lib", stem, state: "pair", needs_review: false, composite: 50, band, rating: 0, rejected: false };
+  return {
+    id, dir: "/lib", stem, state: "pair", needs_review: false, composite: 50, band,
+    rating: 0, rejected: false, camera: null, lens: null, year: null,
+  };
 }
 
 const LIB = [
@@ -120,6 +123,65 @@ describe("filters", () => {
     ];
     const f = { ...NO_FILTERS, folder: "/lib/shoot", band: "keep" as const };
     expect(apply(lib, new Map(), f).map((p) => p.id)).toEqual([1]);
+  });
+
+  it("filters by camera, lens and year", () => {
+    const lib = [
+      { ...photo(1, "keep"), camera: "Canon EOS R5", lens: "RF 24-70", year: 2024 },
+      { ...photo(2, "keep"), camera: "Canon EOS R5", lens: "RF 50", year: 2023 },
+      { ...photo(3, "keep"), camera: "NIKON Z 6", lens: "RF 24-70", year: 2024 },
+    ];
+    expect(apply(lib, new Map(), { ...NO_FILTERS, camera: "Canon EOS R5" }).map((p) => p.id)).toEqual([1, 2]);
+    expect(apply(lib, new Map(), { ...NO_FILTERS, lens: "RF 24-70" }).map((p) => p.id)).toEqual([1, 3]);
+    expect(apply(lib, new Map(), { ...NO_FILTERS, year: 2024 }).map((p) => p.id)).toEqual([1, 3]);
+    // All three compose.
+    expect(
+      apply(lib, new Map(), { ...NO_FILTERS, camera: "Canon EOS R5", year: 2023 }).map((p) => p.id),
+    ).toEqual([2]);
+  });
+
+  it("a photograph with no metadata matches no metadata filter", () => {
+    // A stripped JPEG has no camera. Selecting a camera must not sweep it in, and the
+    // "no camera" case is not a filter anyone asked for.
+    const lib = [{ ...photo(1, "keep") }];
+    expect(apply(lib, new Map(), { ...NO_FILTERS, camera: "Canon EOS R5" })).toHaveLength(0);
+    expect(apply(lib, new Map(), { ...NO_FILTERS, year: 2024 })).toHaveLength(0);
+  });
+
+  it("facets are ranked by count, because the camera you used most is the one you want", () => {
+    const lib = [
+      { ...photo(1, "keep"), camera: "Canon", lens: "A", year: 2024 },
+      { ...photo(2, "keep"), camera: "Canon", lens: "B", year: 2023 },
+      { ...photo(3, "keep"), camera: "Nikon", lens: "A", year: 2024 },
+      { ...photo(4, "keep"), camera: "Canon", lens: "A", year: 2024 },
+    ];
+    const f = facets(lib);
+    expect(f.cameras).toEqual([
+      { value: "Canon", count: 3 },
+      { value: "Nikon", count: 1 },
+    ]);
+    expect(f.lenses[0]).toEqual({ value: "A", count: 3 });
+    expect(f.years[0]).toEqual({ value: 2024, count: 3 });
+  });
+
+  it("every facet option yields at least one photograph", () => {
+    // **The property that matters.** An option offering a count that does not match what
+    // selecting it shows is a dead end the user has to discover by trying it.
+    const lib = [
+      { ...photo(1, "keep"), camera: "Canon", lens: "A", year: 2024 },
+      { ...photo(2, "reject"), camera: "Nikon", lens: "B", year: 2023 },
+      { ...photo(3, "keep"), camera: "Canon", lens: "A", year: 2024 },
+    ];
+    const f = facets(lib);
+    for (const { value, count } of f.cameras) {
+      expect(apply(lib, new Map(), { ...NO_FILTERS, camera: value })).toHaveLength(count);
+    }
+    for (const { value, count } of f.lenses) {
+      expect(apply(lib, new Map(), { ...NO_FILTERS, lens: value })).toHaveLength(count);
+    }
+    for (const { value, count } of f.years) {
+      expect(apply(lib, new Map(), { ...NO_FILTERS, year: value })).toHaveLength(count);
+    }
   });
 
   it("a photograph with no band is treated as review", () => {

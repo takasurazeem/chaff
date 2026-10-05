@@ -497,6 +497,35 @@ impl Trash {
         let mut missing = Vec::new();
 
         for m in &entry.files {
+            // **The manifest is a plaintext file inside the library.** Anything that can
+            // write to the library can edit it — the user, an editor, a sync client — so a
+            // `source` path in it is a claim, not a fact.
+            //
+            // `purge` already re-checks its destination before unlinking. This is the
+            // symmetric check, and it was missing: a hand-edited manifest could move a
+            // trashed file to an arbitrary absolute path. Not arbitrary *content*, but a
+            // violation of "never touch anything outside the library" all the same.
+            let source_ok = m
+                .source
+                .canonicalize()
+                .ok()
+                .zip(self.root.canonicalize().ok())
+                .map(|(src, root)| src.starts_with(&root))
+                // The source does not exist yet — `canonicalize` fails on a missing path —
+                // so fall back to a lexical containment test against the root.
+                .unwrap_or_else(|| m.source.starts_with(&self.root));
+
+            if !source_ok {
+                log::error!(
+                    "refusing to restore {}: the manifest names a destination outside the \
+                     library at {}",
+                    m.destination.display(),
+                    m.source.display()
+                );
+                missing.push(m.source.clone());
+                continue;
+            }
+
             if !m.destination.is_file() {
                 // Either it was purged, or it never moved because the operation failed
                 // after the manifest was written.

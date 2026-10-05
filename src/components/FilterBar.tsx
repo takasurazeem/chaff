@@ -10,12 +10,14 @@
  * Every option carries its count, because "Reject (312)" tells you whether the filter is
  * worth applying and "Reject" alone does not.
  */
-import type { Counts, Filters } from "../filters";
+import type { Counts, Facets, Filters } from "../filters";
 import { isFiltering } from "../filters";
 
 interface Props {
   filters: Filters;
   counts: Counts;
+  /** The cameras, lenses and years this library actually contains. */
+  facets: Facets;
   /** How many photographs the current filters show. */
   shown: number;
   total: number;
@@ -62,7 +64,49 @@ function Chip({
   );
 }
 
-export function FilterBar({ filters, counts, shown, total, onChange }: Props) {
+/**
+ * A dropdown of the values a library actually contains, with counts.
+ *
+ * Hidden entirely when there is nothing to choose between: a control that can only offer
+ * one option, or none, is furniture. A library of JPEGs with stripped metadata has no
+ * cameras, and showing an empty "Camera" dropdown would suggest a bug.
+ */
+function Select({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  options: Array<{ value: string; count: number }>;
+  onChange: (v: string | null) => void;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <select
+      aria-label={`Filter by ${label.toLowerCase()}`}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      className={[
+        "min-h-6 max-w-40 rounded px-1.5 py-0.5 text-[11px] ring-1 ring-inset",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400",
+        value
+          ? "bg-sky-500/20 text-sky-200 ring-sky-500/50"
+          : "bg-zinc-900 text-zinc-400 ring-zinc-800",
+      ].join(" ")}
+    >
+      <option value="">{label}</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.value} ({o.count})
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export function FilterBar({ filters, counts, facets, shown, total, onChange }: Props) {
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
   const filtering = isFiltering(filters);
 
@@ -87,6 +131,25 @@ export function FilterBar({ filters, counts, shown, total, onChange }: Props) {
         <Chip label="Rated" count={counts.decision.rated} active={filters.decision === "rated"} onClick={() => set({ decision: "rated" })} />
         <Chip label="Rejected" count={counts.decision.rejected} active={filters.decision === "rejected"} tone="reject" onClick={() => set({ decision: "rejected" })} />
       </div>
+
+      <Select
+        label="Camera"
+        value={filters.camera}
+        options={facets.cameras}
+        onChange={(v) => set({ camera: v })}
+      />
+      <Select
+        label="Lens"
+        value={filters.lens}
+        options={facets.lenses}
+        onChange={(v) => set({ lens: v })}
+      />
+      <Select
+        label="Year"
+        value={filters.year === null ? null : String(filters.year)}
+        options={facets.years.map((y) => ({ value: String(y.value), count: y.count }))}
+        onChange={(v) => set({ year: v === null ? null : Number(v) })}
+      />
 
       <input
         type="search"

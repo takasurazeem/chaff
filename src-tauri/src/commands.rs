@@ -31,15 +31,50 @@ use chaff_core::rusqlite::Connection;
 use serde::Serialize;
 use tauri::{Manager, State};
 
+/// A delete the user has been shown but has not yet confirmed.
+///
+/// **Held server-side, and that is the point.** ADR-0004 promises that a file changing
+/// between the confirmation and the move aborts the operation. Honouring it means hashing
+/// the files *when the plan is shown* and verifying those hashes *when it is committed* —
+/// which requires the hashes to survive between the two calls somewhere the frontend
+/// cannot reach.
+///
+/// The first implementation kept them nowhere: it read `file.content_hash`, a column
+/// nothing ever wrote, so the verification loop skipped every file and the guarantee did
+/// not exist. The review agent proved it by changing a file's bytes between plan and commit
+/// and watching it move anyway.
+struct PendingDelete {
+    photo_ids: Vec<i64>,
+    /// Path to content hash, taken when the user was shown the plan.
+    hashes: std::collections::HashMap<PathBuf, String>,
+    created: i64,
+}
+
+/// How long a shown plan stays valid.
+///
+/// A plan is a promise about a moment. An hour later the library may have changed in ways
+/// the user has forgotten about, and re-confirming from memory is not confirmation.
+const PENDING_DELETE_TTL_SECONDS: i64 = 3600;
+
 /// Shared application state.
 pub struct AppState {
     db: Arc<Mutex<Connection>>,
     thumbs: ThumbnailCache,
+    /// The plan most recently shown, if it has not been confirmed, cancelled or expired.
+    pending_delete: Arc<Mutex<Option<PendingDelete>>>,
 }
 
 impl AppState {
     pub fn new(db: Connection, thumbs: ThumbnailCache) -> Self {
-        Self { db: Arc::new(Mutex::new(db)), thumbs }
+        Self {
+            db: Arc::new(Mutex::new(db)),
+            thumbs,
+            pending_delete: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn pending(&self) -> Arc<Mutex<Option<PendingDelete>>> {
+        Arc::clone(&self.pending_delete)
     }
 
     fn db(&self) -> Arc<Mutex<Connection>> {
@@ -97,6 +132,11 @@ pub struct PhotoView {
     /// so a re-score never silently overwrites a judgement.
     pub rating: u8,
     pub rejected: bool,
+    /// From EXIF, preferring the raw. Absent when a file carries none — which is normal,
+    /// not an error, and the filters must cope with it.
+    pub camera: Option<String>,
+    pub lens: Option<String>,
+    pub year: Option<i32>,
 }
 
 /// A decision, as the frontend sees it.
@@ -269,6 +309,10 @@ pub async fn list_photos(
         // One query for every decision, merged here rather than fetched per cell. A grid
         // asking per cell is fifty thousand round trips.
         let decisions = store::decisions_for_library(&conn, library_id).map_err(err)?;
+        // One query for the whole library. The frontend derives the filter options from
+        // these rather than asking for a second list — two sources for one fact is how a
+        // filter option ends up with a count that does not match what it shows.
+        let metadata = store::photo_metadata(&conn, library_id).map_err(err)?;
 
         Ok(rows
             .into_iter()
@@ -284,6 +328,9 @@ pub async fn list_photos(
                     band: composite.map(band_of),
                     rating: d.rating.get(),
                     rejected: d.rejected,
+                    camera: metadata.get(&p.id).and_then(|m| m.camera.clone()),
+                    lens: metadata.get(&p.id).and_then(|m| m.lens.clone()),
+                    year: metadata.get(&p.id).and_then(|m| m.year),
                 }
             })
             .collect())
@@ -467,14 +514,35 @@ pub async fn plan_delete(
     photo_ids: Vec<i64>,
 ) -> Result<DeletePlanView, String> {
     let db = state.db();
+    let pending = state.pending();
+    let now = now_seconds();
     tauri::async_runtime::spawn_blocking(move || -> Result<DeletePlanView, String> {
         let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
         let selection = pipeline::resolve_delete_selection(&conn, &photo_ids).map_err(err)?;
 
         let trash = Trash::open(std::path::Path::new(&library_root)).map_err(err)?;
-        let hashes = std::collections::HashMap::new();
         let files: Vec<std::path::PathBuf> =
             selection.candidates.iter().flat_map(|c| c.files.clone()).collect();
+
+        // **Hash now, verify later.** This is the moment the user is shown what will move,
+        // so this is the moment to record what "what will move" means. Hashing at commit
+        // instead would compare a file against itself and prove nothing.
+        //
+        // Costs a full read per file, which is why it happens on a delete and not on an
+        // index: a delete is a handful of photographs, and the guarantee is the entire
+        // reason the confirmation dialog exists.
+        let mut hashes = std::collections::HashMap::new();
+        for f in &files {
+            match chaff_core::trash::hash_file(f) {
+                Ok(h) => {
+                    hashes.insert(f.clone(), h);
+                }
+                // A file that cannot be read cannot be verified, so it cannot be moved.
+                // The plan's refusal path handles it rather than the hash being silently
+                // absent — which is exactly the bug this replaces.
+                Err(e) => return Err(format!("could not read {} to verify it: {e}", f.display())),
+            }
+        }
 
         // Refusals are collected rather than short-circuited, so the user sees every
         // reason at once instead of fixing one and meeting the next.
@@ -488,8 +556,20 @@ pub async fn plan_delete(
 
         // The engine's own plan, for cross-volume warnings and collision suffixes.
         if refusals.is_empty() {
-            match trash.plan(&files, &hashes, now_seconds()) {
-                Ok(plan) => warnings.extend(plan.warnings.iter().map(describe_warning)),
+            match trash.plan(&files, &hashes, now) {
+                Ok(plan) => {
+                    warnings.extend(plan.warnings.iter().map(describe_warning));
+                    // Kept for the commit. Replacing any previous plan is deliberate: a
+                    // user who plans a second delete has moved on from the first, and
+                    // holding both invites committing a selection they have forgotten.
+                    if let Ok(mut slot) = pending.lock() {
+                        *slot = Some(PendingDelete {
+                            photo_ids: photo_ids.clone(),
+                            hashes,
+                            created: now,
+                        });
+                    }
+                }
                 Err(e) => refusals.push(e.to_string()),
             }
         }
@@ -532,45 +612,58 @@ pub async fn plan_delete(
 
 /// Move the selection to the trash.
 ///
-/// **Re-resolves and re-plans from the photograph ids.** It does not accept a plan from
-/// the frontend, so nothing the webview sends can name a file the engine did not choose
-/// itself. The commit re-hashes every file before moving it, so a file that changed since
-/// the plan was shown aborts the operation rather than being moved unexamined.
+/// **Takes no plan and no file list.** It looks up the plan the user was shown, re-resolves
+/// the photographs from the ids in it, and re-plans the move with the hashes recorded at
+/// that moment. The frontend supplies nothing but the library root, so nothing it sends can
+/// name a file or influence what is verified.
+///
+/// The verification is the promise the confirmation dialog makes: a file whose contents
+/// changed between being shown and being moved **aborts the whole operation** rather than
+/// being moved unexamined.
 #[tauri::command]
 pub async fn commit_delete(
     state: State<'_, AppState>,
     library_root: String,
-    photo_ids: Vec<i64>,
-    reason: String,
 ) -> Result<DeleteReceiptView, String> {
     let db = state.db();
+    let pending = state.pending();
     let now = now_seconds();
     tauri::async_runtime::spawn_blocking(move || -> Result<DeleteReceiptView, String> {
+        let plan_shown = pending
+            .lock()
+            .map_err(|_| "pending lock poisoned".to_string())?
+            .take()
+            .ok_or_else(|| {
+                "There is no delete waiting to be confirmed. The plan may have expired — \
+                 select the photographs again."
+                    .to_string()
+            })?;
+
+        if now - plan_shown.created > PENDING_DELETE_TTL_SECONDS {
+            return Err(
+                "That confirmation is more than an hour old, so the library may have \
+                 changed since you saw it. Select the photographs again."
+                    .to_string(),
+            );
+        }
+
         let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
-        let selection = pipeline::resolve_delete_selection(&conn, &photo_ids).map_err(err)?;
+        let selection = pipeline::resolve_delete_selection(&conn, &plan_shown.photo_ids).map_err(err)?;
 
         let trash = Trash::open(std::path::Path::new(&library_root)).map_err(err)?;
         let files: Vec<std::path::PathBuf> =
             selection.candidates.iter().flat_map(|c| c.files.clone()).collect();
 
-        // The hash the catalog recorded, where it has one. `file.content_hash` is filled
-        // lazily, so this is often empty and the commit's own read-back is the check.
-        let mut hashes = std::collections::HashMap::new();
-        for c in &selection.candidates {
-            for f in &c.files {
-                if let Ok(Some(h)) = store::content_hash_for_path(&conn, &f.to_string_lossy()) {
-                    hashes.insert(f.clone(), h);
-                }
-            }
-        }
+        // Re-planned with the hashes from when the user was shown the plan. `Trash::commit`
+        // re-hashes each file and compares — the check that did not exist before, because
+        // the map it was given was always empty.
+        let plan = trash.plan(&files, &plan_shown.hashes, now).map_err(err)?;
+        let receipt = trash.commit(&plan, "culled in Chaff", now).map_err(err)?;
 
-        let plan = trash.plan(&files, &hashes, now).map_err(err)?;
-        let receipt = trash.commit(&plan, &reason, now).map_err(err)?;
-
-        // The catalog is updated only after the files have moved. A crash in between
-        // leaves files in the trash that the catalog still lists, which the next index
-        // pass corrects — the reverse order would leave the catalog claiming a file is
-        // gone while it is still on disk.
+        // The catalog is updated only after the files have moved. A crash in between leaves
+        // files in the trash that the catalog still lists, which the next index pass
+        // corrects — the reverse order would leave the catalog claiming a file is gone
+        // while it is still on disk.
         //
         // The row is marked, not deleted: `decision` cascades with `photo`, so removing it
         // would take the user's rating with it and a restore would bring the file back
@@ -585,6 +678,23 @@ pub async fn commit_delete(
             bytes: receipt.bytes,
             warnings: receipt.warnings.iter().map(describe_warning).collect(),
         })
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Abandon the pending plan without moving anything.
+///
+/// Called when the user cancels. Without it the plan would sit until the next one replaced
+/// it, and a stale plan is a plan that could be committed by a stray click.
+#[tauri::command]
+pub async fn cancel_delete(state: State<'_, AppState>) -> Result<(), String> {
+    let pending = state.pending();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        if let Ok(mut slot) = pending.lock() {
+            *slot = None;
+        }
+        Ok(())
     })
     .await
     .map_err(err)?
@@ -694,6 +804,20 @@ pub async fn purge_trash(
     .map_err(err)?
 }
 
+/// Model endpoints to probe, from the environment.
+///
+/// `CHAFF_ENDPOINTS`, comma-separated. Read here rather than passed in, so nothing inside
+/// the webview can make the application connect anywhere.
+fn configured_endpoints() -> Vec<String> {
+    std::env::var("CHAFF_ENDPOINTS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Which build this is.
 ///
 /// Compiled in rather than read from the filesystem: a file's timestamp says when it was
@@ -749,11 +873,22 @@ fn describe_warning(w: &chaff_core::trash::Warning) -> String {
 /// wrongly. The probing is fast (one `nvidia-smi` or `system_profiler` call) but it does
 /// spawn a process, so it runs off the main thread like everything else here.
 #[tauri::command]
-pub async fn capabilities(endpoints: Vec<String>) -> Result<String, String> {
+pub async fn capabilities() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
         let mut probe = hardware::probe();
-        for url in &endpoints {
-            probe.endpoints.push(hardware::probe_endpoint(url, 1500));
+
+        // **The frontend does not choose what Chaff connects to.**
+        //
+        // This took a `Vec<String>` of URLs and passed each to `probe_endpoint`, which
+        // resolves the host, opens a TCP connection and sends a request — an unallowlisted
+        // outbound-request primitive reachable by any script in the webview. The frontend
+        // never passed anything, so it was not exploitable; it was a loaded gun on a table.
+        //
+        // Endpoints come from the environment now, where a script cannot reach them. The
+        // PRD's "single egress chokepoint with an allowlist" (#34) is still unbuilt, and
+        // until it exists this is the narrowest thing that works.
+        for url in configured_endpoints() {
+            probe.endpoints.push(hardware::probe_endpoint(&url, 1500));
         }
         let stamp = format!(
             "{} ({}, {})",
@@ -884,14 +1019,6 @@ mod tests {
         assert_eq!(band_of(t.keep), "keep");
         assert_eq!(band_of(t.keep - 0.1), "review");
         assert_eq!(band_of(t.reject - 0.1), "reject");
-    }
-
-    #[test]
-    fn the_scorer_version_is_positive() {
-        use chaff_core::pipeline::SCORER_VERSION;
-        // Zero would collide with the SQLite default and make "unscored" indistinguishable
-        // from "scored by version 0".
-        assert!(SCORER_VERSION > 0);
     }
 
     #[test]

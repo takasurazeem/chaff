@@ -280,7 +280,7 @@ pub fn index_and_score_with_progress(
     //
     // One query for the whole library rather than one per photograph — asking per row is
     // the cost this table exists to avoid.
-    let stored = store::measurements(conn, SCORER_VERSION)?;
+    let stored = store::measurements(conn, library_id, SCORER_VERSION)?;
     let mut reused = 0usize;
 
     for (index, photo) in photos.iter().enumerate() {
@@ -311,11 +311,25 @@ pub fn index_and_score_with_progress(
             });
             if unchanged {
                 reused += 1;
+
+                // **EXIF is re-read, not reused.** It is cheap — a header parse, no decode —
+                // while the measurement is the expensive part and is what gets reused.
+                //
+                // Reusing the stored camera and capture time made a *transient* read
+                // failure permanent: `exif::read(..).ok()` turns an I/O error into `None`,
+                // indistinguishable from a file that genuinely has no EXIF, and the reuse
+                // path then restored that `None` on every subsequent pass. The photograph
+                // would never be grouped into its shoot and would fall back to library-wide
+                // ranking forever, for a file that was fine a second later.
+                let fresh = exif::read(Path::new(&prev.measured_path))
+                    .ok()
+                    .and_then(|r| r.data().cloned());
+
                 measured.push(FrameMeasurement::with_values(
                     photo.id,
                     &photo.dir,
-                    prev.camera.clone(),
-                    prev.captured_at,
+                    fresh.as_ref().and_then(|e| e.camera_key()),
+                    fresh.as_ref().and_then(|e| e.captured_at),
                     prev.values,
                 ));
                 continue;
@@ -964,14 +978,15 @@ mod tests {
         let Some((dir, _)) = build_library(&names) else { return };
 
         let mut conn = open_in_memory().unwrap();
-        index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
+        let report = index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
+        let lib = report.library_id;
 
         // Simulate a version bump by asking for measurements at a version nothing wrote.
-        let stale = store::measurements(&conn, SCORER_VERSION + 1).unwrap();
+        let stale = store::measurements(&conn, lib, SCORER_VERSION + 1).unwrap();
         assert!(stale.is_empty(), "a different version must see no measurements");
 
         // And the current version's measurements are still there, untouched.
-        assert_eq!(store::measurements(&conn, SCORER_VERSION).unwrap().len(), names.len());
+        assert_eq!(store::measurements(&conn, lib, SCORER_VERSION).unwrap().len(), names.len());
     }
 
     #[test]
@@ -981,13 +996,14 @@ mod tests {
 
         let mut conn = open_in_memory().unwrap();
         let report = index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
-        let photos = store::photos(&conn, report.library_id).unwrap();
+        let lib = report.library_id;
+        let photos = store::photos(&conn, lib).unwrap();
         let victim = photos[0].id;
 
-        assert!(store::measurements(&conn, SCORER_VERSION).unwrap().contains_key(&victim));
+        assert!(store::measurements(&conn, lib, SCORER_VERSION).unwrap().contains_key(&victim));
         conn.execute("DELETE FROM photo WHERE id = ?1", rusqlite::params![victim]).unwrap();
         assert!(
-            !store::measurements(&conn, SCORER_VERSION).unwrap().contains_key(&victim),
+            !store::measurements(&conn, lib, SCORER_VERSION).unwrap().contains_key(&victim),
             "the measurement must cascade with the photograph"
         );
     }
@@ -1002,10 +1018,11 @@ mod tests {
 
         let mut conn = open_in_memory().unwrap();
         let report = index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
-        let photos = store::photos(&conn, report.library_id).unwrap();
+        let lib = report.library_id;
+        let photos = store::photos(&conn, lib).unwrap();
         let id = photos[0].id;
 
-        let m = store::measurements(&conn, SCORER_VERSION).unwrap().remove(&id).unwrap();
+        let m = store::measurements(&conn, lib, SCORER_VERSION).unwrap().remove(&id).unwrap();
         assert!(m.measured_size > 0, "the file identity must survive");
         assert!(m.measured_mtime != 0, "including its modification time");
         assert!(!m.measured_path.is_empty());

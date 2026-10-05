@@ -27,7 +27,13 @@ import { Loupe } from "./components/Loupe";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
 import { InfoPanel } from "./components/InfoPanel";
-import { apply as applyFilters, counts as computeCounts, NO_FILTERS, type Filters } from "./filters";
+import {
+  apply as applyFilters,
+  counts as computeCounts,
+  facets as computeFacets,
+  NO_FILTERS,
+  type Filters,
+} from "./filters";
 import { TrashPanel } from "./components/TrashPanel";
 import type { LibraryView, PhotoView } from "./types";
 import { Grid } from "./components/Grid";
@@ -329,6 +335,9 @@ export default function App() {
     return visible[Math.min(cursor.current, Math.max(0, visible.length - 1))]?.id ?? null;
   }, [selected, visible]);
   const filterCounts = useMemo(() => computeCounts(photos, decisions), [photos, decisions]);
+  // Derived from the photographs themselves, so an option cannot offer a count that
+  // disagrees with what selecting it shows.
+  const filterFacets = useMemo(() => computeFacets(photos), [photos]);
 
   useEffect(() => {
     if (restored.current) return;
@@ -644,6 +653,7 @@ export default function App() {
         <FilterBar
           filters={filters}
           counts={filterCounts}
+          facets={filterFacets}
           shown={visible.length}
           total={photos.length}
           onChange={setFilters}

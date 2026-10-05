@@ -42,6 +42,10 @@ export interface PhotoView {
   /** What the user decided. Kept beside the engine's opinion, not instead of it. */
   rating: number;
   rejected: boolean;
+  /** From EXIF, preferring the raw. Absent when a file carries none. */
+  camera: string | null;
+  lens: string | null;
+  year: number | null;
 }
 
 /** A decision, as the Rust side reports it. */

@@ -25,9 +25,22 @@ export interface Filters {
    * reason.
    */
   folder: string | null;
+  /** Exact camera string, as the metadata query produced it. */
+  camera: string | null;
+  lens: string | null;
+  /** Capture year, from the camera's own clock. */
+  year: number | null;
 }
 
-export const NO_FILTERS: Filters = { band: "all", decision: "all", text: "", folder: null };
+export const NO_FILTERS: Filters = {
+  band: "all",
+  decision: "all",
+  text: "",
+  folder: null,
+  camera: null,
+  lens: null,
+  year: null,
+};
 
 export interface Decision {
   rating: number;
@@ -36,7 +49,13 @@ export interface Decision {
 
 export function isFiltering(f: Filters): boolean {
   return (
-    f.band !== "all" || f.decision !== "all" || f.text.trim() !== "" || f.folder !== null
+    f.band !== "all" ||
+    f.decision !== "all" ||
+    f.text.trim() !== "" ||
+    Boolean(f.folder) ||
+    Boolean(f.camera) ||
+    Boolean(f.lens) ||
+    f.year !== null
   );
 }
 
@@ -87,6 +106,12 @@ export function matches(photo: PhotoView, decision: Decision, f: Filters): boole
       break;
   }
 
+  // Truthy, not `!== null`, for the same reason as `folder`: a literal without the field
+  // has `undefined`, and `undefined !== null` is true.
+  if (f.camera && photo.camera !== f.camera) return false;
+  if (f.lens && photo.lens !== f.lens) return false;
+  if (f.year !== null && photo.year !== f.year) return false;
+
   const text = f.text.trim().toLowerCase();
   if (text !== "" && !photo.stem.toLowerCase().includes(text)) return false;
 
@@ -125,4 +150,44 @@ export function counts(photos: PhotoView[], decisions: Map<number, Decision>): C
     if (d.rating === 0 && !d.rejected) decision.unrated += 1;
   }
   return { band, decision };
+}
+
+// ---------------------------------------------------------------------------
+// Facets — the options a filter can offer
+// ---------------------------------------------------------------------------
+/**
+ * The distinct cameras, lenses and years in a library, with counts.
+ *
+ * Derived from the photographs themselves rather than from a second query. Two sources for
+ * one fact is how a filter option ends up offering a count that does not match what
+ * selecting it shows — and an option that yields nothing is a dead end the user has to
+ * discover by trying it.
+ *
+ * Sorted by count, descending: the camera you shot most of the library with is the one you
+ * are most likely to want, and an alphabetical list buries it.
+ */
+export interface Facets {
+  cameras: Array<{ value: string; count: number }>;
+  lenses: Array<{ value: string; count: number }>;
+  years: Array<{ value: number; count: number }>;
+}
+
+function rank<T>(counts: Map<T, number>): Array<{ value: T; count: number }> {
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || String(a.value).localeCompare(String(b.value)));
+}
+
+export function facets(photos: PhotoView[]): Facets {
+  const cameras = new Map<string, number>();
+  const lenses = new Map<string, number>();
+  const years = new Map<number, number>();
+
+  for (const p of photos) {
+    if (p.camera) cameras.set(p.camera, (cameras.get(p.camera) ?? 0) + 1);
+    if (p.lens) lenses.set(p.lens, (lenses.get(p.lens) ?? 0) + 1);
+    if (p.year !== null) years.set(p.year, (years.get(p.year) ?? 0) + 1);
+  }
+
+  return { cameras: rank(cameras), lenses: rank(lenses), years: rank(years) };
 }
