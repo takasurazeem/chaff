@@ -61,7 +61,29 @@ pub const RASTER_EXTS: &[&str] = &[
 ];
 
 /// Metadata extensions that travel with their parent photograph.
-pub const SIDECAR_EXTS: &[&str] = &["aap", "acr", "thm", "xmp"];
+/// Files that belong to a photograph without being one.
+///
+/// These travel with their parent on a move, and go to the trash with it. A sidecar left
+/// behind is an edit stranded from the photograph it describes — recoverable, but only if
+/// the user notices.
+///
+/// The list is deliberately long rather than minimal. Recognising a sidecar costs nothing;
+/// failing to recognise one means a delete silently orphans it, and the user finds out
+/// months later when they reopen an editor and their adjustments are gone.
+///
+/// The last four were added after looking at a real library, which held 353 `.rrdata`
+/// (RapidRAW), 22 `.pp3` (RawTherapee) and 2 `.arp` files that the first list missed.
+pub const SIDECAR_EXTS: &[&str] = &[
+    // Adobe and camera makers
+    "xmp", "aap", "acr", "thm", // Editors
+    "rrdata", // RapidRAW
+    "pp3",    // RawTherapee
+    "arp",    // ON1 / Artstudio
+    "on1",    // ON1 Photo RAW
+    "dop",    // DxO PhotoLab
+    "cos",    // Capture One
+    "dtstyle", // darktable style
+];
 
 /// Video containers. Indexed, never paired with a still.
 pub const VIDEO_EXTS: &[&str] = &["avi", "m4v", "mkv", "mov", "mp4"];
@@ -179,5 +201,59 @@ mod tests {
         // Guards against lowercasing the path, which would break on case-sensitive
         // filesystems whose directory names carry meaning (e.g. a "Raw/" vs "raw/").
         assert_eq!(extension_lower(&PathBuf::from("/Pictures/My Raw/IMG.CR3")).unwrap(), "cr3");
+    }
+}
+
+#[cfg(test)]
+mod sidecar_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn every_sidecar_a_real_library_held_is_recognised() {
+        // Taken from an actual library, which had 353 `.rrdata`, 22 `.pp3` and 2 `.arp`
+        // files that the first list did not know about. Unrecognised means `Other`, which
+        // means skipped — and a skipped sidecar is one orphaned by the next delete.
+        for name in [
+            "IMG_0001.xmp",
+            "IMG_0001.RRDATA",
+            "IMG_0001.pp3",
+            "IMG_0001.arp",
+            "IMG_0001.on1",
+            "IMG_0001.dop",
+            "IMG_0001.cos",
+            "IMG_0001.aap",
+            "IMG_0001.acr",
+            "IMG_0001.thm",
+        ] {
+            assert_eq!(
+                classify(Path::new(name)),
+                FileKind::Sidecar,
+                "{name} must travel with its photograph"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sidecar_is_never_mistaken_for_a_photograph() {
+        // The distinction matters: a photograph is what gets paired, scored and deleted.
+        // A sidecar rides along.
+        for name in ["a.xmp", "a.rrdata", "a.pp3"] {
+            assert_ne!(classify(Path::new(name)), FileKind::Raw);
+            assert_ne!(classify(Path::new(name)), FileKind::Raster);
+        }
+    }
+
+    #[test]
+    fn the_sidecar_list_has_no_duplicates_and_no_dots() {
+        // A duplicate is harmless; an entry written as ".xmp" would never match, because
+        // `classify` compares against the extension without its dot. That is a silent
+        // failure, so it is asserted rather than trusted.
+        let mut seen = std::collections::BTreeSet::new();
+        for ext in SIDECAR_EXTS {
+            assert!(!ext.starts_with('.'), "{ext} must not carry its dot");
+            assert_eq!(ext.to_lowercase(), *ext, "{ext} must be lowercase");
+            assert!(seen.insert(*ext), "{ext} is listed twice");
+        }
     }
 }

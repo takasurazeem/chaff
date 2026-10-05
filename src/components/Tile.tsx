@@ -22,6 +22,8 @@ interface TileProps {
   rating: number;
   rejected: boolean;
   onActivate: (photo: PhotoView, event: React.MouseEvent) => void;
+  /** Double-click opens the loupe — the same gesture every file browser uses. */
+  onOpen?: (photo: PhotoView) => void;
 }
 
 const BAND_STYLE: Record<string, string> = {
@@ -45,6 +47,7 @@ function TileInner({
   rating,
   rejected,
   onActivate,
+  onOpen,
 }: TileProps) {
   // Deferred while scrolling. A fast scroll mounts and unmounts cells faster than a
   // thumbnail can be rendered, so fetching for them is pure waste — and it competes for
@@ -58,6 +61,7 @@ function TileInner({
     <button
       type="button"
       onClick={(e) => onActivate(photo, e)}
+      onDoubleClick={() => onOpen?.(photo)}
       style={{ width, height }}
       className={[
         "group relative overflow-hidden rounded-md bg-zinc-900 text-left",

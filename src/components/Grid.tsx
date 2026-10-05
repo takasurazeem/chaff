@@ -21,6 +21,8 @@ interface GridProps {
    *  keystroke does not rebuild a fifty-thousand-element array. */
   decisions: Map<number, { rating: number; rejected: boolean }>;
   onActivate: (photo: PhotoView, event: React.MouseEvent) => void;
+  /** Double-click opens the loupe. */
+  onOpen?: (photo: PhotoView) => void;
   onScrollingChange?: (scrolling: boolean) => void;
   /** Reported upward so arrow-key navigation can move by a row. */
   onColumnsChange?: (columns: number) => void;
@@ -35,6 +37,7 @@ export function Grid({
   selected,
   decisions,
   onActivate,
+  onOpen,
   onScrollingChange,
   onColumnsChange,
 }: GridProps) {
@@ -139,6 +142,7 @@ export function Grid({
                   rating={decision?.rating ?? photo.rating}
                   rejected={decision?.rejected ?? photo.rejected}
                   onActivate={handleActivate}
+                  onOpen={onOpen}
                 />
               );
             })}

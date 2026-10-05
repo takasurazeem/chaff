@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::catalog::{store, CatalogError};
@@ -47,6 +48,27 @@ pub enum PipelineError {
     Catalog(#[from] CatalogError),
     #[error(transparent)]
     Normalise(#[from] shoot::NormaliseError),
+}
+
+/// How far along a run is.
+///
+/// Reported through a callback rather than returned, because the whole point is to say
+/// something *while* the work is happening. A run over a real library is minutes of
+/// decoding, and a window that cannot tell the user whether it is working or wedged is a
+/// window they will force-quit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "phase", rename_all = "camelCase")]
+pub enum Progress {
+    /// Walking the tree. The total is not known until the walk finishes, so this is a
+    /// running count rather than a fraction — a determinate bar here would be a lie.
+    Scanning { files: usize },
+    /// Measured and indexed; now decoding each photograph to score it. This one *is*
+    /// determinate, because the total is known.
+    Scoring { done: usize, total: usize, current: String },
+    /// Ranking within shoots and writing scores. Fast, but not instant on a large library,
+    /// and it happens after the last photograph is decoded — so without this the bar would
+    /// sit at 100% and appear stuck.
+    Ranking { photographs: usize },
 }
 
 /// What one pipeline run did.
@@ -103,16 +125,39 @@ pub fn index_and_score(
     root: &Path,
     now: i64,
 ) -> Result<PipelineReport, PipelineError> {
+    index_and_score_with_progress(conn, root, now, &mut |_| {})
+}
+
+/// The same run, reporting how far along it is.
+///
+/// The callback is `FnMut` rather than `Fn` so a caller can accumulate into a captured
+/// value without interior mutability, and it is a `&mut dyn` rather than a generic so this
+/// function is not monomorphised once per caller — the engine is compiled once and the
+/// shell supplies a closure that emits an event.
+pub fn index_and_score_with_progress(
+    conn: &mut Connection,
+    root: &Path,
+    now: i64,
+    on_progress: &mut dyn FnMut(Progress),
+) -> Result<PipelineReport, PipelineError> {
     let started = Instant::now();
 
-    let outcome = indexer::index(conn, root, now)?;
+    let outcome = indexer::index_with_progress(conn, root, now, &mut |files| {
+        on_progress(Progress::Scanning { files });
+    })?;
     let library_id = outcome.library_id;
 
     let photos = store::photos(conn, library_id)?;
     let mut measured: Vec<FrameMeasurement> = Vec::with_capacity(photos.len());
     let mut unscoreable = 0usize;
+    let total = photos.len();
 
-    for photo in &photos {
+    for (index, photo) in photos.iter().enumerate() {
+        on_progress(Progress::Scoring {
+            done: index,
+            total,
+            current: photo.stem.clone(),
+        });
         let files = store::files_for_photo(conn, photo.id)?;
 
         // Prefer the raw: its embedded preview is the camera's own rendering, and for a
@@ -150,6 +195,7 @@ pub fn index_and_score(
     }
 
     // Ranking is a property of the set, so it can only happen once everything is measured.
+    on_progress(Progress::Ranking { photographs: measured.len() });
     let normalised = shoot::normalise(&measured, DEFAULT_SHOOT_GAP_SECONDS)?;
 
     let preset = composite::default_preset();
@@ -534,6 +580,100 @@ mod tests {
             scored_photos(&c1, r1.library_id).unwrap(),
             scored_photos(&c2, r2.library_id).unwrap()
         );
+    }
+
+    #[test]
+    fn progress_is_reported_through_the_whole_run() {
+        // A window that cannot tell the user whether it is working or wedged is a window
+        // they will force-quit, so the reporting is worth a test rather than a hope.
+        let names = [
+            "sharp_a",
+            "sharp_b",
+            "blur_defocus_mild",
+            "blur_defocus_heavy",
+            "noise_high_iso",
+            "exp_over",
+            "flat_low_contrast",
+            "bokeh_portrait",
+        ];
+        let Some((dir, _)) = build_library(&names) else { return };
+
+        let mut conn = open_in_memory().unwrap();
+        let mut seen: Vec<Progress> = Vec::new();
+        index_and_score_with_progress(&mut conn, dir.path(), 1_700_000_000, &mut |p| {
+            seen.push(p)
+        })
+        .unwrap();
+
+        // Scanning is reported with a running count, and ends at the real total.
+        let scans: Vec<usize> = seen
+            .iter()
+            .filter_map(|p| match p {
+                Progress::Scanning { files } => Some(*files),
+                _ => None,
+            })
+            .collect();
+        assert!(!scans.is_empty(), "the walk must report as it goes");
+        assert_eq!(
+            *scans.last().unwrap(),
+            names.len(),
+            "the last scan report must be the true total"
+        );
+        assert!(scans.windows(2).all(|w| w[0] <= w[1]), "counts must not go backwards");
+
+        // Scoring is determinate: every photograph reported exactly once, in order, and
+        // the last one is `total - 1` — the run reports *before* doing the work, so the
+        // bar never claims to have finished something it has not.
+        let scores: Vec<(usize, usize)> = seen
+            .iter()
+            .filter_map(|p| match p {
+                Progress::Scoring { done, total, .. } => Some((*done, *total)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(scores.len(), names.len(), "one report per photograph");
+        assert_eq!(scores[0], (0, names.len()));
+        assert_eq!(scores.last().unwrap(), &(names.len() - 1, names.len()));
+        assert!(scores.iter().all(|(d, t)| d < t), "done must never reach total");
+        assert!(scores.windows(2).all(|w| w[0].0 < w[1].0), "must advance");
+
+        // Ranking comes last, and carries the number of photographs ranked.
+        match seen.last().unwrap() {
+            Progress::Ranking { photographs } => assert_eq!(*photographs, names.len()),
+            other => panic!("the last report must be Ranking, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn progress_reports_nothing_dishonest_on_a_large_walk() {
+        // The interval batching must not lose the final count, or a bar would stop short
+        // of 100% on exactly the libraries where it matters most.
+        let Some((dir, _)) = build_library(&["sharp_a", "sharp_b"]) else { return };
+        // Well past the reporting interval, so batching is exercised.
+        for i in 0..200 {
+            std::fs::write(dir.path().join(format!("extra_{i:04}.txt")), b"not an image").unwrap();
+        }
+
+        let report = indexer::scan_with_progress(dir.path(), &mut |_| {});
+        let mut last = 0usize;
+        let _ = indexer::scan_with_progress(dir.path(), &mut |n| last = n);
+        assert_eq!(
+            last,
+            report.files.len(),
+            "the final report must equal the number of files actually found"
+        );
+    }
+
+    #[test]
+    fn the_plain_entry_point_still_works_without_a_callback() {
+        // `index_and_score` is what every other test and the CLI call. The callback version
+        // must not have become the only way in.
+        let Some((dir, _)) = build_library(&["sharp_a", "sharp_b", "blur_defocus_mild"]) else {
+            return
+        };
+        let mut conn = open_in_memory().unwrap();
+        let r = index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
+        assert_eq!(r.scored, 3);
     }
 
     #[test]

@@ -9,6 +9,30 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DecisionView, LibraryView, PhotoView, ThumbnailView, ThumbSize } from "./types";
 
 /**
+ * How far along an index run is.
+ *
+ * Tagged by `phase`, matching the Rust enum. `scanning` carries a running count because
+ * the size of a tree is not known until the walk finishes; `scoring` is determinate.
+ */
+export type IndexProgress =
+  | { phase: "scanning"; files: number }
+  | { phase: "scoring"; done: number; total: number; current: string }
+  | { phase: "ranking"; photographs: number };
+
+/**
+ * Subscribe to index progress.
+ *
+ * Events rather than polling, because `openLibrary` is one blocking call and there is no
+ * state for the frontend to read while it runs. Returns an unsubscribe function.
+ */
+export async function onIndexProgress(
+  handler: (p: IndexProgress) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<IndexProgress>("chaff://index-progress", (e) => handler(e.payload));
+}
+
+/**
  * Index a folder and score it.
  *
  * Long-running — a first index of a large library is minutes — and the Rust side

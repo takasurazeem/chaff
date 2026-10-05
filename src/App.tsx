@@ -10,12 +10,16 @@ import {
   capabilities,
   commitDelete,
   listPhotos,
+  onIndexProgress,
   openLibrary,
   planDelete,
+  type IndexProgress,
   setDecision,
   type DeletePlanView,
 } from "./api";
 import { DeleteDialog } from "./components/DeleteDialog";
+import { ProgressBar } from "./components/ProgressBar";
+import { Loupe } from "./components/Loupe";
 import { TrashPanel } from "./components/TrashPanel";
 import type { LibraryView, PhotoView } from "./types";
 import { Grid } from "./components/Grid";
@@ -74,9 +78,15 @@ export default function App() {
    * this plan back — it sends the photograph ids and the Rust side resolves and re-hashes
    * from scratch, so nothing the webview holds can name a file the engine did not choose.
    */
+  /** Live index progress, from the engine's own events. */
+  const [progress, setProgress] = useState<IndexProgress | null>(null);
+
   const [deletePlan, setDeletePlan] = useState<DeletePlanView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+
+  /** Index into `photos` when the loupe is open, or null when it is closed. */
+  const [loupeAt, setLoupeAt] = useState<number | null>(null);
 
   // Cursor for keyboard navigation: the photograph the arrow keys move from.
   const cursor = useRef<number>(0);
@@ -99,6 +109,7 @@ export default function App() {
     }
     if (typeof picked !== "string") return;
 
+    setProgress(null);
     setStatus({ kind: "indexing", root: picked });
     try {
       const view = await openLibrary(picked);
@@ -203,6 +214,48 @@ export default function App() {
     [photos, selected],
   );
 
+  /** Rate one photograph, wherever the request came from. */
+  const rateOne = useCallback(
+    (photo: PhotoView, rating: number) => {
+      setDecisions((prev) => {
+        const next = new Map(prev);
+        const current = next.get(photo.id) ?? { rating: photo.rating, rejected: photo.rejected };
+        undoStack.current.push({ photoId: photo.id, previous: current });
+        if (undoStack.current.length > UNDO_LIMIT) {
+          undoStack.current.splice(0, undoStack.current.length - UNDO_LIMIT);
+        }
+        setUndoDepth(undoStack.current.length);
+        next.set(photo.id, { ...current, rating });
+        return next;
+      });
+      void setDecision(photo.id, rating, decisions.get(photo.id)?.rejected ?? photo.rejected).catch(
+        (e) => setStatus({ kind: "error", message: String(e) }),
+      );
+    },
+    [decisions],
+  );
+
+  const rejectOne = useCallback(
+    (photo: PhotoView) => {
+      const current = decisions.get(photo.id) ?? { rating: photo.rating, rejected: photo.rejected };
+      const next = { ...current, rejected: !current.rejected };
+      setDecisions((prev) => {
+        const m = new Map(prev);
+        undoStack.current.push({ photoId: photo.id, previous: current });
+        if (undoStack.current.length > UNDO_LIMIT) {
+          undoStack.current.splice(0, undoStack.current.length - UNDO_LIMIT);
+        }
+        setUndoDepth(undoStack.current.length);
+        m.set(photo.id, next);
+        return m;
+      });
+      void setDecision(photo.id, next.rating, next.rejected).catch((e) =>
+        setStatus({ kind: "error", message: String(e) }),
+      );
+    },
+    [decisions],
+  );
+
   const undo = useCallback(async () => {
     const entry = undoStack.current.pop();
     if (!entry) return;
@@ -219,6 +272,20 @@ export default function App() {
     } catch (e) {
       setStatus({ kind: "error", message: String(e) });
     }
+  }, []);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    void onIndexProgress((p) => setProgress(p)).then((off) => {
+      // The component can unmount before the listener resolves.
+      if (cancelled) off();
+      else unsubscribe = off;
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   /** Reload the library from the catalog. Used after a restore changes what is on disk. */
@@ -269,6 +336,13 @@ export default function App() {
       if (photos.length === 0) return;
       const cols = Math.max(1, columns.current);
       let next = cursor.current;
+
+      // Enter or Space opens the loupe on whatever the cursor is on.
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        setLoupeAt(cursor.current);
+        return;
+      }
 
       // Delete opens the confirmation. It does **not** delete anything — nothing in
       // Chaff removes a file without a second, explicit step.
@@ -440,6 +514,18 @@ export default function App() {
         />
       )}
 
+      {loupeAt !== null && photos[loupeAt] && (
+        <Loupe
+          photos={photos}
+          index={loupeAt}
+          decisions={decisions}
+          onNavigate={setLoupeAt}
+          onClose={() => setLoupeAt(null)}
+          onRate={rateOne}
+          onReject={rejectOne}
+        />
+      )}
+
       {trashOpen && library && (
         <TrashPanel
           libraryRoot={library.root}
@@ -463,24 +549,14 @@ export default function App() {
               <kbd className="rounded bg-zinc-800 px-1">X</kbd> reject ·{" "}
               <kbd className="rounded bg-zinc-800 px-1">U</kbd> undo ·{" "}
               <kbd className="rounded bg-zinc-800 px-1">↑↓←→</kbd> move ·{" "}
+              <kbd className="rounded bg-zinc-800 px-1">Enter</kbd> open ·{" "}
               <kbd className="rounded bg-zinc-800 px-1">Delete</kbd> move to trash
             </p>
           </div>
         )}
 
         {status.kind === "indexing" && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="flex h-full flex-col items-center justify-center gap-2"
-          >
-            <p className="text-sm">Indexing and scoring…</p>
-            <p className="max-w-prose truncate text-xs text-zinc-400">{status.root}</p>
-            <p className="text-xs text-zinc-400">
-              A first pass over a large library takes a few minutes. The window stays
-              responsive.
-            </p>
-          </div>
+          <ProgressBar progress={progress} root={status.root} />
         )}
 
         {status.kind === "error" && (
@@ -501,6 +577,10 @@ export default function App() {
             selected={selected}
             decisions={decisions}
             onActivate={activate}
+            onOpen={(photo) => {
+              const i = photos.findIndex((p) => p.id === photo.id);
+              if (i >= 0) setLoupeAt(i);
+            }}
             onColumnsChange={(c) => {
               columns.current = c;
             }}

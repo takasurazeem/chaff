@@ -31,6 +31,16 @@ use crate::ext::{classify, FileKind};
 /// The directory is part of the key. `2024/wedding/IMG_0001.CR3` and
 /// `2025/party/IMG_0001.JPG` are two different photographs that happen to share a
 /// filename, and they must never be grouped.
+///
+/// # The raw/jpeg split, and why this is not the whole story
+///
+/// Plenty of photographers keep raws and JPEGs in **sibling folders** — `shoot/raws/`
+/// beside `shoot/jpegs/`, or `shoot/CR3/` beside `shoot/JPG/`. Keying on the literal
+/// directory alone leaves every one of those unpaired, which means two tiles per
+/// photograph and a delete that takes one half.
+///
+/// So this key is the *first* pass. [`resolve`] runs a second, narrower pass over the
+/// leftovers — see [`PairingScope`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PhotoKey {
     pub dir: PathBuf,
@@ -42,6 +52,37 @@ impl PhotoKey {
     pub fn new(dir: impl Into<PathBuf>, stem_raw: &str) -> Self {
         Self { dir: dir.into(), stem: normalize_stem(stem_raw) }
     }
+}
+
+/// How far to look for a partner when a file has none beside it.
+///
+/// The PRD calls for a policy here and this is it. The default is [`PairingScope::Siblings`]
+/// because the split-folder layout is common enough that failing it by default would be
+/// wrong for a large share of real libraries, and because the narrower rule below keeps the
+/// risk of a wrong pairing small.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PairingScope {
+    /// Only files in the same directory pair. The safest, and the narrowest.
+    Directory,
+    /// **The default.** Also pair across sibling directories — two folders sharing a
+    /// parent — but only when *each* of those folders holds one kind of file.
+    ///
+    /// That single-kind requirement is the safety catch. `shoot/raws/` is all raws and
+    /// `shoot/jpegs/` is all rasters, so they pair. `2020/` and `2024/` holding a mix of
+    /// everything do not, which is what stops two different years of `IMG_0001` from
+    /// merging just because they sit under the same parent.
+    ///
+    /// **The residual risk, stated rather than hidden:** if one year's folder happens to
+    /// hold *only* raws and a sibling year's holds *only* JPEGs, and both contain
+    /// `IMG_0001`, they will pair wrongly. That needs all three conditions at once and the
+    /// failure is visible — the two halves have different capture dates and the pair can be
+    /// inspected — so it is a risk worth taking against the certainty of failing every
+    /// split library.
+    #[default]
+    Siblings,
+    /// Pair by stem anywhere in the library, ignoring directories. Only correct when no two
+    /// cameras or cards ever reset their numbering into the same stem, which is rare.
+    Library,
 }
 
 /// The shape of a resolved group.
@@ -168,6 +209,108 @@ pub fn duplicate_marker_base(stem: &str) -> Option<String> {
     None
 }
 
+/// True when a directory holds only raw files, or only rendered ones.
+///
+/// The safety catch for cross-directory pairing. `shoot/raws/` qualifies and
+/// `shoot/jpegs/` qualifies; `2020/` holding a mix of everything does not, which is what
+/// stops two different years of `IMG_0001` from merging because they share a parent.
+///
+/// A directory with only one file in it also qualifies — a folder holding a single raw is
+/// still a raw folder. Requiring a minimum size would break the small shoots this is
+/// meant to help.
+fn single_kind(group: &PhotoGroup) -> bool {
+    group.raws.is_empty() != group.rasters.is_empty()
+}
+
+/// The directory a group would pair from, if cross-directory pairing is allowed.
+fn sibling_parent(group: &PhotoGroup) -> Option<PathBuf> {
+    if !single_kind(group) {
+        return None;
+    }
+    group.key.dir.parent().map(Path::to_path_buf)
+}
+
+/// Pair leftover raws and rasters that sit in sibling directories.
+///
+/// Only unambiguous matches merge: exactly one raw and exactly one raster, in directories
+/// that share a parent and each hold a single kind of file. Anything else is left alone —
+/// an ambiguous merge is worse than an unpaired half, because the unpaired half is visible
+/// and a wrong pair is not.
+fn merge_sibling_halves(
+    groups: &mut BTreeMap<PhotoKey, PhotoGroup>,
+    scope: PairingScope,
+) {
+    // Index the halves worth considering, by the stem they would pair on.
+    let mut raws: BTreeMap<String, Vec<PhotoKey>> = BTreeMap::new();
+    let mut rasters: BTreeMap<String, Vec<PhotoKey>> = BTreeMap::new();
+
+    for (key, group) in groups.iter() {
+        if group.state != GroupState::RawOnly && group.state != GroupState::RasterOnly {
+            continue;
+        }
+        match scope {
+            PairingScope::Siblings if sibling_parent(group).is_none() => continue,
+            PairingScope::Directory => continue,
+            _ => {}
+        }
+        if !group.raws.is_empty() {
+            raws.entry(key.stem.clone()).or_default().push(key.clone());
+        } else if !group.rasters.is_empty() {
+            rasters.entry(key.stem.clone()).or_default().push(key.clone());
+        }
+    }
+
+    let mut consumed: Vec<PhotoKey> = Vec::new();
+
+    for (stem, raw_keys) in &raws {
+        let Some(raster_keys) = rasters.get(stem) else { continue };
+
+        for raw_key in raw_keys {
+            let Some(raw_group) = groups.get(raw_key) else { continue };
+            let raw_parent = sibling_parent(raw_group);
+
+            // Exactly one raster candidate, or none — anything more is ambiguous.
+            let candidates: Vec<&PhotoKey> = raster_keys
+                .iter()
+                .filter(|rk| {
+                    let Some(rg) = groups.get(*rk) else { return false };
+                    match scope {
+                        PairingScope::Library => true,
+                        // Siblings: share a parent, and each folder holds one kind.
+                        _ => raw_parent.is_some() && sibling_parent(rg) == raw_parent,
+                    }
+                })
+                .collect();
+
+            if candidates.len() != 1 {
+                continue;
+            }
+            let raster_key = candidates[0].clone();
+            if consumed.contains(&raster_key) || consumed.contains(raw_key) {
+                continue;
+            }
+
+            // Move the raster into the raw's group, then drop the emptied group.
+            let raster_group = groups.remove(&raster_key).expect("checked above");
+            if let Some(target) = groups.get_mut(raw_key) {
+                target.rasters.extend(raster_group.rasters);
+                target.sidecars.extend(raster_group.sidecars);
+                target.videos.extend(raster_group.videos);
+                target.raws.sort();
+                target.rasters.sort();
+                target.sidecars.sort();
+                target.videos.sort();
+                target.state = match (target.raws.len(), target.rasters.len()) {
+                    (1, 1) => GroupState::Pair,
+                    (r, _) if r > 1 => GroupState::Ambiguous,
+                    _ => GroupState::Ambiguous,
+                };
+            }
+            consumed.push(raster_key);
+        }
+    }
+}
+
 /// Resolve a flat list of file paths into photographs.
 ///
 /// Takes paths rather than reading a directory so that it is pure, deterministic and
@@ -175,6 +318,15 @@ pub fn duplicate_marker_base(stem: &str) -> Option<String> {
 ///
 /// Non-image files are ignored entirely: they are never paired and never deleted.
 pub fn resolve<I, P>(paths: I) -> Vec<PhotoGroup>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
+    resolve_with_scope(paths, PairingScope::default())
+}
+
+/// The same, with an explicit scope.
+pub fn resolve_with_scope<I, P>(paths: I, scope: PairingScope) -> Vec<PhotoGroup>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
@@ -246,7 +398,16 @@ where
         }
     }
 
-    // Second pass: flag possible duplicate imports. Never merge.
+    // Second pass: give an unpaired half a chance with a sibling directory.
+    //
+    // This is what makes `shoot/raws/` beside `shoot/jpegs/` work. It runs *after* the
+    // first pass so that same-directory pairing is completely unaffected — a library that
+    // already works cannot regress because of it.
+    if scope != PairingScope::Directory {
+        merge_sibling_halves(&mut groups, scope);
+    }
+
+    // Third pass: flag possible duplicate imports. Never merge.
     let present: Vec<PhotoKey> = groups.keys().cloned().collect();
     let present_set: std::collections::BTreeSet<&PhotoKey> = present.iter().collect();
 

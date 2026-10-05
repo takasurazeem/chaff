@@ -35,7 +35,26 @@ pub const TRASH_DIR_NAME: &str = ".cull-trash";
 /// files. `.git` never holds photographs and can contain tens of thousands of tiny
 /// objects that would dominate a scan. Other dot-directories are left alone, because
 /// guessing which ones hold photographs is not this module's business.
-const EXCLUDED_DIRS: &[&str] = &[TRASH_DIR_NAME, ".git"];
+/// Directories the walk never descends into.
+///
+/// `.cull-trash` is ours. `.dtrash` is darktable's, and it holds photographs the user has
+/// already deleted in that application — indexing them would resurrect them as live
+/// pictures, and worse, `Reject` them again in a culling pass over files that are already
+/// on their way out.
+///
+/// `.git` because a repository is not a photo library. `.stfolder` and `.stversions` are
+/// Syncthing's, which would otherwise index every conflict copy as a photograph.
+const EXCLUDED_DIRS: &[&str] = &[
+    TRASH_DIR_NAME,
+    ".dtrash",
+    ".git",
+    ".stfolder",
+    ".stversions",
+    ".thumbnails",
+];
+
+/// How many files to walk between progress reports.
+const PROGRESS_INTERVAL: usize = 64;
 
 #[derive(Debug, Error)]
 pub enum IndexError {
@@ -107,6 +126,15 @@ fn is_excluded_dir(entry: &walkdir::DirEntry) -> bool {
 /// Read-only. Symlinks are not followed. The trash folder is skipped. Unreadable entries
 /// are collected and returned rather than aborting the walk.
 pub fn scan(root: &Path) -> ScanReport {
+    scan_with_progress(root, &mut |_| {})
+}
+
+/// The same walk, reporting a running count.
+///
+/// Reported every [`PROGRESS_INTERVAL`] files rather than on every one: an event per file
+/// over a hundred thousand files is more work than the walk itself, and a progress bar
+/// that updates a hundred thousand times is one the eye cannot read anyway.
+pub fn scan_with_progress(root: &Path, on_files: &mut dyn FnMut(usize)) -> ScanReport {
     let mut report = ScanReport::default();
 
     let walker = WalkDir::new(root).follow_links(false).into_iter();
@@ -144,7 +172,12 @@ pub fn scan(root: &Path) -> ScanReport {
             }),
             Err(err) => report.unreadable.push((path, err.to_string())),
         }
+
+        if report.files.len() % PROGRESS_INTERVAL == 0 {
+            on_files(report.files.len());
+        }
     }
+    on_files(report.files.len());
 
     // Deterministic order regardless of what order the filesystem returned entries in.
     report.files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -161,7 +194,20 @@ pub fn index(
     root: &Path,
     now: i64,
 ) -> Result<IndexOutcome, IndexError> {
-    let report = scan(root);
+    index_with_progress(conn, root, now, &mut |_| {})
+}
+
+/// The same, reporting how many files have been seen so far.
+///
+/// A running count rather than a fraction: the size of a tree is not known until the walk
+/// finishes, and a determinate bar over an unknown total is a bar that lies.
+pub fn index_with_progress(
+    conn: &mut rusqlite::Connection,
+    root: &Path,
+    now: i64,
+    on_files: &mut dyn FnMut(usize),
+) -> Result<IndexOutcome, IndexError> {
+    let report = scan_with_progress(root, on_files);
 
     let meta: HashMap<PathBuf, store::FileMeta> =
         report.files.iter().map(|f| (f.path.clone(), f.meta)).collect();
@@ -594,3 +640,18 @@ mod tests {
         );
     }
 }
+
+    #[test]
+    fn darktables_trash_is_never_walked() {
+        // `.dtrash` holds photographs the user already deleted in darktable. Indexing them
+        // resurrects them as live pictures — and a culling pass would then Reject files
+        // that are already on their way out.
+        assert!(EXCLUDED_DIRS.contains(&".dtrash"));
+        assert!(EXCLUDED_DIRS.contains(&TRASH_DIR_NAME));
+        for name in [".dtrash", ".cull-trash", ".git", ".stfolder", ".stversions"] {
+            assert!(
+                EXCLUDED_DIRS.contains(&name),
+                "{name} must not be walked into"
+            );
+        }
+    }

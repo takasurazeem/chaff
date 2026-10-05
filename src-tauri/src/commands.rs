@@ -125,14 +125,27 @@ pub struct ThumbnailView {
 /// and dispatched onto a blocking thread so the webview stays responsive, which is the
 /// difference between a progress indicator and an application that looks hung.
 #[tauri::command]
-pub async fn open_library(state: State<'_, AppState>, path: String) -> Result<LibraryView, String> {
+pub async fn open_library(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<LibraryView, String> {
     let db = state.db();
     let root = PathBuf::from(&path);
     let now = now_seconds();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<LibraryView, String> {
         let mut conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
-        let report = pipeline::index_and_score(&mut conn, &root, now).map_err(err)?;
+
+        // Progress is emitted as an event rather than polled, because the work is one
+        // blocking call — there is no state for the frontend to read while it runs. The
+        // emit is best-effort: a window that has gone away must not fail an index that is
+        // otherwise fine.
+        use tauri::Emitter;
+        let report = pipeline::index_and_score_with_progress(&mut conn, &root, now, &mut |p| {
+            let _ = app.emit("chaff://index-progress", &p);
+        })
+        .map_err(err)?;
         Ok(LibraryView {
             library_id: report.library_id,
             root: report.root.to_string_lossy().to_string(),
