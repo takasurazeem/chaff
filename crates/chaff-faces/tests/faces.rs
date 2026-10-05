@@ -194,3 +194,92 @@ fn an_embedding_is_not_degenerate() {
     assert!(magnitude > 1.0, "the embedding is near-zero (magnitude {magnitude})");
     assert!(e.iter().any(|v| v.abs() > 0.01), "every component is tiny");
 }
+
+// ---------------------------------------------------------------------------
+// CLIP zero-shot tagging (#53)
+// ---------------------------------------------------------------------------
+
+/// The CLIP encoder, if the model has been fetched.
+fn clip() -> Option<chaff_faces::Clip> {
+    let path = chaff_faces::clip::bundled_model()?;
+    chaff_faces::Clip::from_file(&path).ok()
+}
+
+fn vocabulary() -> Option<chaff_faces::Vocabulary> {
+    chaff_faces::Vocabulary::load(&chaff_faces::clip::bundled()?).ok()
+}
+
+#[test]
+fn clip_tags_a_portrait_as_a_portrait() {
+    // **The end-to-end check for the CPU tier.** No server, no GPU, no network.
+    let (Some(clip), Some(vocab)) = (clip(), vocabulary()) else {
+        eprintln!("SKIP: the CLIP model or vocabulary is absent");
+        return;
+    };
+    let img = image::open(fixture("portrait_mona_lisa.jpg")).unwrap().to_rgb8();
+    let embedding = clip.embed(img.as_raw(), img.width(), img.height()).unwrap();
+    let ranked = vocab.rank(&embedding);
+
+    assert_eq!(ranked.len(), chaff_faces::VOCABULARY.len());
+    assert!(ranked.windows(2).all(|w| w[0].1 >= w[1].1), "must be sorted");
+
+    let top: Vec<&str> = ranked.iter().take(4).map(|(p, _)| p.as_str()).collect();
+    assert!(
+        top.iter().any(|p| p.contains("portrait") || p.contains("person") || p.contains("artwork")),
+        "a painting of a person must rank as one of those; got {top:?}"
+    );
+}
+
+#[test]
+fn clip_does_not_call_a_landscape_a_person() {
+    // **The negative control, and the reason the vocabulary is closed.** CLIP always returns
+    // its nearest phrase; the question is whether the nearest phrase is sane. A landscape
+    // ranking "a person" first would make the fallback worse than nothing.
+    let (Some(clip), Some(vocab)) = (clip(), vocabulary()) else { return };
+    let img = image::open(fixture("landscape.jpg")).unwrap().to_rgb8();
+    let embedding = clip.embed(img.as_raw(), img.width(), img.height()).unwrap();
+    let ranked = vocab.rank(&embedding);
+
+    let top: Vec<&str> = ranked.iter().take(4).map(|(p, _)| p.as_str()).collect();
+    assert!(
+        !top.iter().any(|p| *p == "a person" || *p == "a portrait"),
+        "a landscape ranked a person in the top four: {top:?}"
+    );
+    assert!(
+        top.iter().any(|p| p.contains("landscape") || p.contains("mountain") || p.contains("forest")
+            || p.contains("fog") || p.contains("lake")),
+        "a landscape must rank as scenery; got {top:?}"
+    );
+}
+
+#[test]
+fn clip_embeddings_are_unit_length_and_deterministic() {
+    // Unit length because the comparison is a dot product; deterministic because the catalog
+    // caches tags and a re-run that produced different ones would silently rewrite it.
+    let Some(clip) = clip() else { return };
+    let img = image::open(fixture("portrait_mona_lisa.jpg")).unwrap().to_rgb8();
+
+    let a = clip.embed(img.as_raw(), img.width(), img.height()).unwrap();
+    let b = clip.embed(img.as_raw(), img.width(), img.height()).unwrap();
+    assert_eq!(a.len(), chaff_faces::clip::DIMENSIONS);
+    assert_eq!(a, b);
+
+    let n: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    assert!((n - 1.0).abs() < 1e-4, "not unit length: {n}");
+}
+
+#[test]
+fn clip_separates_two_different_photographs() {
+    // If everything embedded to the same place, the ranking would be identical for every
+    // image and the fallback would be a constant.
+    let (Some(clip), Some(vocab)) = (clip(), vocabulary()) else { return };
+
+    let a = image::open(fixture("portrait_mona_lisa.jpg")).unwrap().to_rgb8();
+    let b = image::open(fixture("landscape.jpg")).unwrap().to_rgb8();
+    let ea = clip.embed(a.as_raw(), a.width(), a.height()).unwrap();
+    let eb = clip.embed(b.as_raw(), b.width(), b.height()).unwrap();
+
+    let top_a = vocab.rank(&ea)[0].0.clone();
+    let top_b = vocab.rank(&eb)[0].0.clone();
+    assert_ne!(top_a, top_b, "two different photographs ranked the same phrase first");
+}

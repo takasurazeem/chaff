@@ -19,6 +19,7 @@
 //! Nothing. Detection runs locally, and embeddings live in the catalog.
 
 pub mod align;
+pub mod clip;
 pub mod cluster;
 pub mod detect;
 pub mod embed;
@@ -28,6 +29,7 @@ pub mod models;
 pub mod pass;
 
 pub use align::{similarity_transform, warp, Affine, ALIGNED};
+pub use clip::{Clip, Vocabulary, VOCABULARY};
 pub use cluster::{cluster, Cluster, ClusteringConfig};
 pub use detect::{Detection, Detector};
 pub use embed::{cosine, EmbedError, Recogniser, DIMENSIONS};

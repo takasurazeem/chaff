@@ -73,6 +73,17 @@ enum Command {
         #[arg(long, env = "CHAFF_VLM_MODEL", default_value = "chaff-vlm")]
         model: String,
     },
+    /// Tag with CLIP, on the CPU, with no server (#53).
+    Clip {
+        root: PathBuf,
+        /// How many phrases to keep per photograph.
+        #[arg(long, default_value_t = 5)]
+        keep: usize,
+        /// The lowest similarity worth recording. CLIP's scores are not calibrated, so this
+        /// is a judgement about how many tags to keep, not a probability.
+        #[arg(long, default_value_t = 0.2)]
+        min_similarity: f32,
+    },
     /// Ask a vision endpoint what actually works.
     Diagnose {
         #[arg(long, env = "CHAFF_VLM")]
@@ -181,6 +192,38 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // A distinct exit-worthy condition: the run did not finish.
                 return Err(format!("stopped early: {reason}").into());
             }
+            Ok(())
+        }
+
+        Command::Clip { root, keep, min_similarity } => {
+            let library_id = library_at(&conn, root)?;
+            let Some(model) = chaff_faces::clip::bundled_model() else {
+                return Err("the CLIP image encoder is not present in this build".into());
+            };
+            let Some(vocab) = chaff_faces::clip::bundled() else {
+                return Err("the CLIP vocabulary file is not present in this build".into());
+            };
+            let now = now_seconds();
+            let report = chaff_faces::pass::run_clip(
+                &mut conn,
+                library_id,
+                &chaff_faces::pass::ClipPaths { model: &model, vocabulary: &vocab },
+                chaff_faces::pass::ClipSettings { keep: *keep, min_similarity: *min_similarity },
+                now,
+                &mut |done, total| {
+                    if done % 200 == 0 && done > 0 {
+                        eprintln!("  {done}/{total}");
+                    }
+                },
+            )?;
+            println!(
+                "{} tagged · {} tags · {} unreadable · {} phrases in {:.1}s",
+                report.tagged,
+                report.tags,
+                report.unreadable,
+                report.vocabulary,
+                report.elapsed_ms as f64 / 1000.0
+            );
             Ok(())
         }
 

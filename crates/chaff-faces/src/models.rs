@@ -51,6 +51,21 @@ pub const SFACE: ModelSpec = ModelSpec {
     description: "Face recognition: a 128-dimension embedding per face, for grouping",
 };
 
+/// CLIP ViT-B/32, the image encoder for the CPU fallback (#53).
+///
+/// **Not committed.** It is 84 MB, and the same reasoning as SFace applies: a file that is
+/// one HTTP request away and never changes does not belong in every clone and every CI
+/// checkout. The *vocabulary* embeddings are committed, because those are this project's own
+/// output and nothing else can reproduce them without the tokenizer and text encoder.
+pub const CLIP_VISION: ModelSpec = ModelSpec {
+    file: "clip_vision_int8.onnx",
+    url: "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model_int8.onnx",
+    blake3: "124aafa8a57cd8f7dbe4714aaed642adf47539a960a65397f036f32207ddb3b7",
+    bytes: 88_600_000,
+    licence: "MIT",
+    description: "CLIP ViT-B/32 image encoder, for tagging without a GPU",
+};
+
 /// InsightFace `buffalo_l` (#44).
 ///
 /// # Why this is not the default, and why the licence is in the type

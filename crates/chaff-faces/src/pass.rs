@@ -265,3 +265,132 @@ fn primary_file_for_photo(conn: &Connection, photo_id: i64) -> Result<Option<Str
 pub fn similarity(a: &[f32], b: &[f32]) -> f32 {
     cosine(a, b)
 }
+
+// ---------------------------------------------------------------------------
+// The CLIP fallback (#53)
+// ---------------------------------------------------------------------------
+/// Tag a library with CLIP, with no server and no GPU.
+///
+/// # When to use this
+///
+/// The VLM pass is better — a 35B vision model writes real descriptions. It also needs a
+/// server running and a GPU. This runs on a CPU in ~26 ms a photograph, and it is the answer
+/// for the tier that has neither.
+///
+/// # What it writes, and how it differs
+///
+/// Tags only, from the **closed vocabulary**, with the model recorded as `clip:<file>` so a
+/// later VLM run does not replace them and the provenance is visible. No description: CLIP
+/// cannot write one, and inventing an empty one would claim it had.
+///
+/// The confidences are CLIP's similarities — **not calibrated**, only comparable to each
+/// other within one photograph. A threshold is applied to pick how many to keep, and the
+/// caller can see every score rather than a boolean.
+pub fn run_clip(
+    conn: &mut chaff_core::rusqlite::Connection,
+    library_id: i64,
+    paths: &ClipPaths<'_>,
+    settings: ClipSettings,
+    now: i64,
+    on_progress: &mut dyn FnMut(usize, usize),
+) -> Result<ClipPassReport, String> {
+    let ClipPaths { model: model_path, vocabulary: vocabulary_path } = *paths;
+    let ClipSettings { keep, min_similarity } = settings;
+    let started = std::time::Instant::now();
+    let model = crate::clip::Clip::from_file(model_path).map_err(|e| e.to_string())?;
+    let vocabulary = crate::clip::Vocabulary::load(vocabulary_path).map_err(|e| e.to_string())?;
+
+    let model_key = format!(
+        "clip:{}",
+        model_path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()
+    );
+
+    let pending = store::photos_needing_tags(conn, library_id, &model_key)
+        .map_err(|e| e.to_string())?;
+    let total = pending.len();
+
+    let mut report = ClipPassReport {
+        tagged: 0,
+        unreadable: 0,
+        tags: 0,
+        elapsed_ms: 0,
+        vocabulary: vocabulary.len(),
+    };
+
+    for (i, (photo_id, path)) in pending.iter().enumerate() {
+        on_progress(i, total);
+
+        let Some(img) = chaff_core::thumb::decode_source(std::path::Path::new(path)).ok() else {
+            report.unreadable += 1;
+            continue;
+        };
+        let rgb = img.to_rgb8();
+        let Ok(embedding) = model.embed(rgb.as_raw(), rgb.width(), rgb.height()) else {
+            report.unreadable += 1;
+            continue;
+        };
+
+        let tags: Vec<(String, f64)> = vocabulary
+            .rank(&embedding)
+            .into_iter()
+            .filter(|(_, score)| *score >= min_similarity)
+            .take(keep)
+            .map(|(phrase, score)| (phrase, score as f64))
+            .collect();
+
+        // A photograph with nothing above the threshold gets **no tags**, not its closest
+        // one. CLIP always has a nearest phrase, and recording it would put a confident tag
+        // on a photograph of something the vocabulary cannot describe.
+        if tags.is_empty() {
+            continue;
+        }
+
+        store::replace_tags(conn, *photo_id, &tags, &model_key, None, now)
+            .map_err(|e| e.to_string())?;
+        report.tagged += 1;
+        report.tags += tags.len();
+    }
+    on_progress(total, total);
+
+    report.elapsed_ms = started.elapsed().as_millis();
+    log::info!(
+        "clip pass: {} tagged, {} unreadable, {} tags in {:.1}s ({} phrases)",
+        report.tagged,
+        report.unreadable,
+        report.tags,
+        report.elapsed_ms as f64 / 1000.0,
+        report.vocabulary
+    );
+    Ok(report)
+}
+
+/// Where the CLIP files are.
+///
+/// A struct rather than two more positional `&Path` arguments, which are the pair most
+/// easily swapped at a call site — and swapping them produces a file-format error rather
+/// than a wrong answer, so it would be caught, but only after someone had read the message.
+#[derive(Debug, Clone, Copy)]
+pub struct ClipPaths<'a> {
+    pub model: &'a std::path::Path,
+    pub vocabulary: &'a std::path::Path,
+}
+
+/// How a CLIP pass should tag.
+#[derive(Debug, Clone, Copy)]
+pub struct ClipSettings {
+    /// Phrases to keep per photograph.
+    pub keep: usize,
+    /// The lowest similarity worth recording. CLIP's scores are not calibrated, so this is a
+    /// judgement about how many tags to keep, not a probability.
+    pub min_similarity: f32,
+}
+
+/// What a CLIP pass did.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClipPassReport {
+    pub tagged: usize,
+    pub unreadable: usize,
+    pub tags: usize,
+    pub elapsed_ms: u128,
+    pub vocabulary: usize,
+}
