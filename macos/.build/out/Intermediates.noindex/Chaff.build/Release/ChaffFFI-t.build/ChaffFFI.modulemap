@@ -1,0 +1,4 @@
+module ChaffFFI {
+umbrella "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI"
+export *
+}

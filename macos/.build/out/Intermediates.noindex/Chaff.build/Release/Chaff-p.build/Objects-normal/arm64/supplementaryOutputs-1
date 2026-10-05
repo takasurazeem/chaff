@@ -1,0 +1,11 @@
+{
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/ChaffApp.swift" : {
+    "abi-baseline-json" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Chaff.abi.json",
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Chaff-primary.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Chaff-primary.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Chaff-primary.dia",
+    "swiftdoc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Chaff.swiftdoc",
+    "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Chaff.swiftmodule",
+    "swiftsourceinfo" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Chaff.swiftsourceinfo"
+  }
+}
