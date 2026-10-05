@@ -30,6 +30,7 @@ import { Loupe } from "./components/Loupe";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
 import { Compare, panesFor } from "./components/Compare";
+import { clickSelection, EMPTY_SELECTION, single, type SelectionState } from "./selection";
 import { InfoPanel } from "./components/InfoPanel";
 import { PeoplePanel } from "./components/PeoplePanel";
 import { TagPanel } from "./components/TagPanel";
@@ -54,7 +55,8 @@ type Status =
 export default function App() {
   const [library, setLibrary] = useState<LibraryView | null>(null);
   const [photos, setPhotos] = useState<PhotoView[]>([]);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selection, setSelection] = useState<SelectionState>(EMPTY_SELECTION);
+  const selected = selection.ids;
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   /**
@@ -172,7 +174,7 @@ export default function App() {
       setDirectories(dirs);
       undoStack.current = [];
       setUndoDepth(0);
-      setSelected(new Set());
+      setSelection(EMPTY_SELECTION);
       cursor.current = 0;
       void setSetting("last_library", root).catch(() => {});
       return { libraryId: view.library_id, directories: dirs };
@@ -205,32 +207,6 @@ export default function App() {
     if (await loadLibrary(picked)) setStatus({ kind: "ready" });
   }, [loadLibrary]);
 
-  const activate = useCallback(
-    (photo: PhotoView, event: React.MouseEvent) => {
-      const index = photos.findIndex((p) => p.id === photo.id);
-      if (index >= 0) cursor.current = index;
-
-      setSelected((prev) => {
-        // Command or control toggles, which is what every file browser does and therefore
-        // what the hands already know.
-        if (event.metaKey || event.ctrlKey) {
-          const next = new Set(prev);
-          if (next.has(photo.id)) next.delete(photo.id);
-          else next.add(photo.id);
-          return next;
-        }
-        if (event.shiftKey && prev.size > 0) {
-          const first = photos.findIndex((p) => prev.has(p.id));
-          if (first >= 0) {
-            const [lo, hi] = first < index ? [first, index] : [index, first];
-            return new Set(photos.slice(lo, hi + 1).map((p) => p.id));
-          }
-        }
-        return new Set([photo.id]);
-      });
-    },
-    [photos],
-  );
 
   /**
    * Apply a decision to the current selection.
@@ -348,10 +324,34 @@ export default function App() {
    * cursor means arrowing through a shoot updates the panel without the user having to
    * click each frame, which is how an inspector is used.
    */
+  /**
+   * A click in the grid.
+   *
+   * The decision itself lives in `selection.ts`, where it is tested. This is only the
+   * adapter: it reads the modifiers off the event and hands over.
+   */
+  const activate = useCallback(
+    (photo: PhotoView, event: React.MouseEvent) => {
+      const index = visible.findIndex((p) => p.id === photo.id);
+      if (index >= 0) cursor.current = index;
+
+      setSelection((prev) =>
+        clickSelection(
+          prev,
+          photo.id,
+          { toggle: event.metaKey || event.ctrlKey, extend: event.shiftKey },
+          // The **visible** order: a Shift range must not include photographs a filter has
+          // hidden, because the user cannot see or clear them.
+          visible.map((p) => p.id),
+        ),
+      );
+    },
+    [visible],
+  );
+
   const inspected = useMemo(() => {
-    if (selected.size === 1) return [...selected][0];
-    return visible[Math.min(cursor.current, Math.max(0, visible.length - 1))]?.id ?? null;
-  }, [selected, visible]);
+    return single(selection) ?? visible[Math.min(cursor.current, Math.max(0, visible.length - 1))]?.id ?? null;
+  }, [selection, visible]);
   const filterCounts = useMemo(() => computeCounts(photos, decisions), [photos, decisions]);
   // Derived from the photographs themselves, so an option cannot offer a count that
   // disagrees with what selecting it shows.
@@ -404,7 +404,7 @@ export default function App() {
     const list = await listPhotos(libraryId);
     setPhotos(list);
     setDecisions(new Map(list.map((p) => [p.id, { rating: p.rating, rejected: p.rejected }])));
-    setSelected(new Set());
+    setSelection(EMPTY_SELECTION);
   }, []);
 
 
@@ -415,12 +415,12 @@ export default function App() {
    * and requiring two would mean a different key for "look closely at this one".
    */
   const startComparing = useCallback(() => {
-    const chosen = selected.size > 0
-      ? visible.filter((p) => selected.has(p.id))
+    const chosen = selection.ids.size > 0
+      ? visible.filter((p) => selection.ids.has(p.id))
       : visible.slice(cursor.current, cursor.current + 1);
     if (chosen.length === 0) return;
     setComparing(panesFor(chosen));
-  }, [selected, visible]);
+  }, [selection, visible]);
 
   const undo = useCallback(async () => {
     const entry = undoStack.current.pop();
@@ -569,7 +569,7 @@ export default function App() {
       next = Math.max(0, Math.min(visible.length - 1, next));
       cursor.current = next;
       const photo = visible[next];
-      setSelected(new Set([photo.id]));
+      setSelection({ ids: new Set([photo.id]), anchor: photo.id });
 
       // Bring it into view. `scrollIntoView` on the tile would be simplest but the tile
       // may not be mounted, which is the nature of a virtualised grid.

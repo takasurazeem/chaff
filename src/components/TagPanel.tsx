@@ -14,13 +14,7 @@
  * different fix, and a port check sends you looking in the wrong place.
  */
 import { useCallback, useEffect, useState } from "react";
-import {
-  diagnoseEndpoint,
-  listTags,
-  runTagPass,
-  type EndpointReport,
-  type TagPassReport,
-} from "../api";
+import { diagnoseEndpoint, listTags, runTagPass, type EndpointReport, type TagOutcome } from "../api";
 
 interface Props {
   libraryId: number;
@@ -32,7 +26,7 @@ interface Props {
 export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Props) {
   const [tags, setTags] = useState<Array<[string, number]>>([]);
   const [busy, setBusy] = useState(false);
-  const [report, setReport] = useState<TagPassReport | null>(null);
+  const [outcome, setOutcome] = useState<TagOutcome | null>(null);
   const [diagnosis, setDiagnosis] = useState<EndpointReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,10 +57,10 @@ export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Pro
   const run = async () => {
     setBusy(true);
     setError(null);
-    setReport(null);
+    setOutcome(null);
     try {
       const r = await runTagPass(libraryId, 200);
-      setReport(r);
+      setOutcome(r);
       await refresh();
       onChanged();
     } catch (e) {
@@ -119,24 +113,40 @@ export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Pro
         </p>
       )}
 
-      {report && (
+      {outcome && (
         <p className="mb-1 text-[10px] leading-tight text-zinc-400">
-          {report.tagged.toLocaleString()} tagged · {report.tags.toLocaleString()} tags ·{" "}
-          {report.completion_tokens.toLocaleString()} tokens
-          {report.failed > 0 && ` · ${report.failed} failed`}
-          {report.remaining > 0 && ` · ${report.remaining.toLocaleString()} to go`}
-          {report.stopped_because && (
+          {/* **Which tagger ran, named.** "Tagged 200 photographs" with no model named is a
+              claim the user cannot check — and with two very different taggers behind one
+              button, it is the first thing they need to know. */}
+          <span
+            className={outcome.kind === "remote" ? "text-emerald-400" : "text-sky-400"}
+            title={
+              outcome.kind === "remote"
+                ? `Tagged by ${outcome.model} over HTTP`
+                : `Tagged by ${outcome.model} on this machine, against ${outcome.vocabulary} phrases. No server needed; no description, because CLIP cannot write one.`
+            }
+          >
+            {outcome.kind === "remote" ? "vision model" : "CLIP, on CPU"}
+          </span>{" "}
+          · {outcome.report.tagged.toLocaleString()} tagged ·{" "}
+          {outcome.report.tags.toLocaleString()} tags
+          {outcome.kind === "remote" && ` · ${outcome.report.completion_tokens.toLocaleString()} tokens`}
+          {outcome.kind === "remote" && outcome.report.failed > 0 && ` · ${outcome.report.failed} failed`}
+          {outcome.kind === "remote" && outcome.report.remaining > 0 &&
+            ` · ${outcome.report.remaining.toLocaleString()} to go`}
+          {outcome.kind === "remote" && outcome.report.stopped_because && (
             // "Stopped" and "finished" are different, and a library that is a third tagged
             // must not read as complete.
-            <span className="text-amber-400"> · stopped: {report.stopped_because}</span>
+            <span className="text-amber-400"> · stopped: {outcome.report.stopped_because}</span>
           )}
         </p>
       )}
 
       {tags.length === 0 && !busy && (
         <p className="text-[11px] leading-tight text-zinc-500">
-          No tags yet. Tagging sends a downscaled copy to your model server; the original and
-          its GPS never leave.
+          No tags yet. With a vision endpoint configured, tagging sends a downscaled copy to
+          it; without one it runs CLIP on this machine. Either way the original and its GPS
+          never leave.
         </p>
       )}
 

@@ -65,11 +65,10 @@ function TileInner({
       style={{ width, height }}
       className={[
         "group relative overflow-hidden rounded-md bg-zinc-900 text-left",
-        "ring-1 ring-inset transition-[box-shadow,transform] duration-75",
-        selected
-          ? "ring-2 ring-sky-400"
-          : "ring-zinc-800 hover:ring-zinc-600 focus-visible:ring-2 focus-visible:ring-sky-400",
-        "focus:outline-none",
+        // The base edge only. Selection is drawn as an **overlay** below — see there for
+        // why a ring on this element is invisible.
+        "ring-1 ring-inset ring-zinc-800 transition-[box-shadow,transform] duration-75",
+        "hover:ring-zinc-600 focus-visible:ring-2 focus-visible:ring-sky-400 focus:outline-none",
       ].join(" ")}
       aria-label={[
         photo.stem,
@@ -96,6 +95,22 @@ function TileInner({
             {thumb.status === "unavailable" ? photo.stem : ""}
           </span>
         </div>
+      )}
+
+      {/* **Selection is an overlay, not a ring on the button.**
+          An inset box-shadow paints *below* child content, and the `<img>` is a child — so
+          `ring-2 ring-sky-400` on the button was drawn and then covered by the photograph.
+          Every layer above was correct: the state was set, the prop was passed, the CSS was
+          generated with `.ring-2` after `.ring-1`. It was correct in every respect except
+          which layer it painted on, which is why reading the code did not find it.
+
+          The rejected state below already did it this way. One state had the pattern and the
+          other did not. */}
+      {selected && (
+        <>
+          <span className="pointer-events-none absolute inset-0 bg-sky-400/10" />
+          <span className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-sky-400" />
+        </>
       )}
 
       {/* Rejected is a state of the photograph, not a tint: the cell dims and takes a

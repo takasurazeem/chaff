@@ -450,23 +450,85 @@ fn vlm_endpoint() -> Option<chaff_core::vlm::Endpoint> {
 /// loses nothing.
 #[tauri::command]
 pub async fn run_tag_pass(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     library_id: i64,
     limit: Option<usize>,
-) -> Result<crate::tagging::TagPassReport, String> {
-    let endpoint = vlm_endpoint().ok_or_else(|| {
-        "No vision endpoint is configured. Set CHAFF_VLM to the address of a model server."
-            .to_string()
-    })?;
+) -> Result<TagOutcome, String> {
     let db = state.db();
     let now = now_seconds();
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("could not resolve the app data directory: {e}"))?;
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<crate::tagging::TagPassReport, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<TagOutcome, String> {
         let mut conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
-        crate::tagging::run(&mut conn, library_id, &endpoint, limit.unwrap_or(200), now, &mut |_, _| {})
+        let limit = limit.unwrap_or(200);
+
+        // **A configured endpoint is an upgrade, not a requirement.**
+        //
+        // This returned "No vision endpoint is configured. Set CHAFF_VLM…" and stopped, while
+        // CLIP — built for exactly this tier — sat unreachable behind a command-line flag.
+        // The feature and its entry point were designed separately and the seam was never
+        // checked.
+        //
+        // So: with an endpoint, use it, because a 35B vision model writes real descriptions.
+        // Without one, use CLIP, and **say so** — "tagged 200 photographs" with no model
+        // named is a claim the user cannot check.
+        if let Some(endpoint) = vlm_endpoint() {
+            let report = crate::tagging::run(&mut conn, library_id, &endpoint, limit, now, &mut |_, _| {})?;
+            return Ok(TagOutcome::Remote { model: endpoint.model, report });
+        }
+
+        let Some(model) = chaff_faces::clip::model_in(&crate::faces::model_store(&app_data)) else {
+            // Neither is available, and the message says how to get each rather than only the
+            // one that was checked first.
+            return Err(
+                "No tagger is available. Either set CHAFF_VLM to a vision model server, or \
+                 fetch the CLIP model (it is downloaded on first use — check your network)."
+                    .to_string(),
+            );
+        };
+        let Some(vocabulary) = chaff_faces::clip::bundled() else {
+            return Err("The CLIP vocabulary file is missing from this build.".to_string());
+        };
+
+        let report = chaff_faces::pass::run_clip(
+            &mut conn,
+            library_id,
+            &chaff_faces::pass::ClipPaths { model: &model, vocabulary: &vocabulary },
+            // Five phrases, and a floor low enough that a photograph of something outside the
+            // vocabulary gets **no tags** rather than its nearest one. CLIP always has a
+            // nearest phrase; recording it would be a confident claim about a photograph it
+            // cannot describe.
+            chaff_faces::pass::ClipSettings { keep: 5, min_similarity: 0.2 },
+            now,
+            &mut |_, _| {},
+        )?;
+
+        Ok(TagOutcome::Local {
+            model: chaff_faces::models::CLIP_VISION.file.to_string(),
+            vocabulary: report.vocabulary,
+            report,
+        })
     })
     .await
     .map_err(err)?
+}
+
+/// What tagged a library, and what it did.
+///
+/// A tagged union rather than one shape with optional fields: **which tagger ran is the
+/// thing the user most needs to know**, and a `model: Option<String>` lets a caller forget to
+/// show it.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TagOutcome {
+    /// A vision model over HTTP. Better tags, and a description.
+    Remote { model: String, report: crate::tagging::TagPassReport },
+    /// CLIP on the CPU. No server, no GPU, and no description — it cannot write one.
+    Local { model: String, vocabulary: usize, report: chaff_faces::pass::ClipPassReport },
 }
 
 /// Exercise the configured endpoint and report what actually works (#52).

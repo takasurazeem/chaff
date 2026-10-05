@@ -224,9 +224,33 @@ export interface EndpointReport {
   verdict: string;
 }
 
-/** Run a tagging pass. `limit` bounds one call, so a library can be done in pieces. */
-export async function runTagPass(libraryId: number, limit?: number): Promise<TagPassReport> {
-  return invoke<TagPassReport>("run_tag_pass", { libraryId, limit });
+/**
+ * What tagged a library, and what it did.
+ *
+ * A tagged union rather than one shape with optional fields: **which tagger ran is the thing
+ * the user most needs to know**, and an optional `model` lets a caller forget to show it.
+ */
+export type TagOutcome =
+  | { kind: "remote"; model: string; report: TagPassReport }
+  | { kind: "local"; model: string; vocabulary: number; report: ClipPassReport };
+
+/** What a CLIP pass did. */
+export interface ClipPassReport {
+  tagged: number;
+  unreadable: number;
+  tags: number;
+  elapsed_ms: number;
+  vocabulary: number;
+}
+
+/**
+ * Run a tagging pass.
+ *
+ * Uses a configured vision endpoint when there is one, and **CLIP on the CPU when there is
+ * not**. `limit` bounds one call, so a library can be done in pieces.
+ */
+export async function runTagPass(libraryId: number, limit?: number): Promise<TagOutcome> {
+  return invoke<TagOutcome>("run_tag_pass", { libraryId, limit });
 }
 
 /** Exercise the configured endpoint and report what actually works. */
