@@ -16,10 +16,17 @@ Windows and Linux keep the web one.
 
 ```bash
 cd macos
-make build     # cargo builds the FFI library, then swift builds the shell
-make run
+make app       # cargo builds the FFI library, swift builds the shell, then bundles a .app
+make run       # builds and opens it
 make test
 ```
+
+`make app` matters: `swift build` produces a **bare executable**, which is a developer artefact —
+no Dock icon, no window activation, nothing to double-click. `bundle.sh` turns it into
+`build/Chaff.app`.
+
+It is **ad-hoc signed**, which is enough for this machine and not enough for Gatekeeper
+anywhere else. That is issue #68.
 
 `make build` does both in order, because `uniffi-bindgen` reads the built library's metadata
 rather than re-parsing the source.

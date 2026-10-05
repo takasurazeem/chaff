@@ -274,14 +274,17 @@ pub fn read_exif(path: &std::path::Path) -> std::io::Result<Option<super::exif::
     // Which box holds what is Canon's business; taking everything and filling gaps is the
     // answer that does not depend on knowing.
     let mut merged: Option<super::exif::ExifData> = None;
-    for (i, block) in blocks.iter().enumerate() {
-        // The first block is a complete TIFF; the rest are bare IFDs and need wrapping.
-        let parsed = if i == 0 {
-            super::exif::parse_tiff_block(block)
-        } else {
-            super::exif::parse_tiff_block(&wrap_as_exif_ifd(block))
-        };
-        let Some(data) = parsed else { continue };
+    for block in blocks.iter() {
+        // **Every block is a complete TIFF.**
+        //
+        // I assumed CMT1 was the document and the rest were bare IFDs, and wrapped them —
+        // which prepends a header *and shifts every value offset*, corrupting a perfectly valid
+        // TIFF. Verified against a real IMG_0133.CR3: both CMT1 and CMT2 begin `II*\0` followed
+        // by an IFD offset.
+        //
+        // So the wrapping is gone. `wrap_as_exif_ifd` is kept below for the case it was written
+        // for — a genuinely bare IFD — and is no longer on this path.
+        let Some(data) = super::exif::parse_tiff_block(block) else { continue };
         merged = Some(match merged {
             None => data,
             Some(acc) => acc.filled_from(data),

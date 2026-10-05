@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>Chaff</string>
+    <key>CFBundleDisplayName</key><string>Chaff</string>
+    <key>CFBundleIdentifier</key><string>com.takasurazeem.chaff.native</string>
+    <key>CFBundleExecutable</key><string>Chaff</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>bf61337</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <!-- A photo tool is a document-less app: no automatic window restoration, and it should
+         not appear in the Dock as a background agent. -->
+    <key>LSApplicationCategoryType</key><string>public.app-category.photography</string>
+    <key>NSHumanReadableCopyright</key><string>Chaff contributors</string>
+</dict>
+</plist>

@@ -12,7 +12,7 @@ LIB := $(TARGET_DIR)/$(CARGO_PROFILE)/libchaff_ffi.a
 C_MODULE := Sources/ChaffFFI
 SWIFT_TARGET := Sources/Chaff
 
-.PHONY: all bindings build run clean test
+.PHONY: all bindings build app run clean test
 
 all: build
 
@@ -45,8 +45,12 @@ bindings:
 build: bindings
 	swift build -c $(if $(filter release,$(CARGO_PROFILE)),release,debug)
 
-run: build
-	swift run -c $(if $(filter release,$(CARGO_PROFILE)),release,debug) Chaff
+## Package it as a `.app`, which is what makes it launchable.
+app: build
+	./bundle.sh $(if $(filter release,$(CARGO_PROFILE)),release,debug)
+
+run: app
+	open build/Chaff.app
 
 test: bindings
 	swift test

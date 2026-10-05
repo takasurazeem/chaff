@@ -163,9 +163,13 @@ impl ExifData {
 ///   3 — Tags matched by number rather than by the context-carrying `Tag` value, which was
 ///       silently dropping **every** tag in an Exif sub-IFD: ISO, shutter, aperture, focal
 ///       length, `LensModel` and `DateTimeOriginal`.
+///   4 — Every CMT block of a CR3 parsed as the complete TIFF it is. I had assumed only the
+///       first was a document and the rest were bare IFDs, and wrapped them — prepending a
+///       header and **shifting every value offset**, which corrupted a valid TIFF. Verified
+///       against a real IMG_0133.CR3: both begin `II*\0`.
 ///
 /// Every row written before 3 is missing its exposure data and must be re-read.
-pub const EXIF_VERSION: i64 = 3;
+pub const EXIF_VERSION: i64 = 4;
 
 /// Read EXIF from a file.
 ///
