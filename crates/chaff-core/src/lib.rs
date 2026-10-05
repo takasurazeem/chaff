@@ -13,6 +13,7 @@ pub mod burst;
 pub use rusqlite;
 
 pub mod catalog;
+pub mod egress;
 pub mod exif;
 pub mod ext;
 pub mod indexer;

@@ -31,6 +31,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::egress::{self, Policy};
+
 /// How to reach the model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Endpoint {
@@ -157,7 +159,12 @@ pub fn tag_prompt(vocabulary: Option<&[String]>, extra: Option<&str>) -> String 
 }
 
 /// Ask the model about one photograph.
-pub fn tag(endpoint: &Endpoint, request: &TagRequest, timeout_secs: u64) -> Result<TagResult, VlmError> {
+pub fn tag(
+    policy: &Policy,
+    endpoint: &Endpoint,
+    request: &TagRequest,
+    timeout_secs: u64,
+) -> Result<TagResult, VlmError> {
     let b64 = base64(&request.image);
     let vocabulary = request.vocabulary.as_deref();
     let prompt = tag_prompt(vocabulary, request.extra_instructions.as_deref());
@@ -194,12 +201,12 @@ pub fn tag(endpoint: &Endpoint, request: &TagRequest, timeout_secs: u64) -> Resu
     };
 
     let url = endpoint.chat_url();
-    let response = match post_json(&url, &body(false), timeout_secs) {
+    let response = match post_json(policy, &url, &body(false), timeout_secs) {
         Ok(r) => r,
         // Not every OpenAI-compatible server knows `chat_template_kwargs`, and one that does
         // not will reject the whole request rather than ignore the field. Retrying without
         // it costs a round trip on those servers and nothing on the others.
-        Err(VlmError::Status { .. }) => post_json(&url, &body(true), timeout_secs)?,
+        Err(VlmError::Status { .. }) => post_json(policy, &url, &body(true), timeout_secs)?,
         Err(e) => return Err(e),
     };
 
@@ -303,9 +310,9 @@ fn truncate(s: &str, n: usize) -> String {
 }
 
 /// Is the endpoint answering?
-pub fn health(endpoint: &Endpoint, timeout_secs: u64) -> Result<(), VlmError> {
+pub fn health(policy: &Policy, endpoint: &Endpoint, timeout_secs: u64) -> Result<(), VlmError> {
     let url = endpoint.health_url();
-    let body = get(&url, timeout_secs)?;
+    let body = get(policy, &url, timeout_secs)?;
     // llama.cpp answers `{"status":"ok"}`; some servers answer 200 with an empty body.
     if body.contains("\"ok\"") || body.trim().is_empty() || body.contains("ok") {
         Ok(())
@@ -318,8 +325,12 @@ pub fn health(endpoint: &Endpoint, timeout_secs: u64) -> Result<(), VlmError> {
 ///
 /// Used by the self-test: a server can be up with the wrong model loaded, and "is the port
 /// open" does not distinguish that from working.
-pub fn list_models(endpoint: &Endpoint, timeout_secs: u64) -> Result<Vec<String>, VlmError> {
-    let body = get(&endpoint.models_url(), timeout_secs)?;
+pub fn list_models(
+    policy: &Policy,
+    endpoint: &Endpoint,
+    timeout_secs: u64,
+) -> Result<Vec<String>, VlmError> {
+    let body = get(policy, &endpoint.models_url(), timeout_secs)?;
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| VlmError::Malformed(format!("{e}")))?;
     Ok(parsed
@@ -334,40 +345,41 @@ pub fn list_models(endpoint: &Endpoint, timeout_secs: u64) -> Result<Vec<String>
 }
 
 // ---------------------------------------------------------------------------
-// HTTP and base64, by hand
+// HTTP, through the chokepoint
 // ---------------------------------------------------------------------------
-// The engine has no HTTP client and adding one for two request shapes would be a dependency
-// for nothing. `ureq` is already in the tree for model downloads; this uses it through a
-// thin wrapper so the VLM client and the model store cannot drift on timeouts and errors.
+// **Not `ureq` directly.** Every request in this module goes through `egress`, so there is
+// one list of what this application will connect to and one place to read it. The PRD
+// claimed that for a long time while three modules called `ureq` on their own.
 
-fn post_json(url: &str, body: &serde_json::Value, timeout_secs: u64) -> Result<serde_json::Value, VlmError> {
+fn post_json(
+    policy: &Policy,
+    url: &str,
+    body: &serde_json::Value,
+    timeout_secs: u64,
+) -> Result<serde_json::Value, VlmError> {
     let text = serde_json::to_string(body).map_err(|e| VlmError::Malformed(e.to_string()))?;
-    let response = ureq::post(url)
-        .config()
-        .timeout_global(Some(std::time::Duration::from_secs(timeout_secs)))
-        .build()
-        .header("Content-Type", "application/json")
-        .send(text.as_str())
-        .map_err(|e| VlmError::Unreachable { url: url.to_string(), reason: e.to_string() })?;
-
-    let body = response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| VlmError::Malformed(e.to_string()))?;
-    serde_json::from_str(&body).map_err(|e| VlmError::Malformed(format!("{e}: {}", truncate(&body, 200))))
+    let body = egress::post(policy, url, &text, timeout_secs).map_err(transport(url))?;
+    serde_json::from_str(&body)
+        .map_err(|e| VlmError::Malformed(format!("{e}: {}", truncate(&body, 200))))
 }
 
-fn get(url: &str, timeout_secs: u64) -> Result<String, VlmError> {
-    let response = ureq::get(url)
-        .config()
-        .timeout_global(Some(std::time::Duration::from_secs(timeout_secs)))
-        .build()
-        .call()
-        .map_err(|e| VlmError::Unreachable { url: url.to_string(), reason: e.to_string() })?;
-    response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| VlmError::Malformed(e.to_string()))
+fn get(policy: &Policy, url: &str, timeout_secs: u64) -> Result<String, VlmError> {
+    egress::fetch(policy, url, timeout_secs).map_err(transport(url))
+}
+
+/// An egress failure, as this module's error.
+///
+/// A blocked host becomes `Unreachable` rather than a category of its own: from the caller's
+/// side the useful fact is that the request did not happen, and the reason is carried in the
+/// message either way.
+fn transport(url: &str) -> impl Fn(egress::EgressError) -> VlmError + '_ {
+    move |e| match e {
+        egress::EgressError::Blocked { host } => VlmError::Unreachable {
+            url: url.to_string(),
+            reason: format!("{host} is not on the egress allowlist"),
+        },
+        other => VlmError::Unreachable { url: url.to_string(), reason: other.to_string() },
+    }
 }
 
 /// Standard base64, which is what a data URL needs.
@@ -475,7 +487,7 @@ mod tests {
     fn an_unreachable_endpoint_is_an_error_not_a_panic() {
         let e = Endpoint { base: "http://127.0.0.1:1".into(), model: "m".into() };
         assert!(matches!(
-            health(&e, 2),
+            health(&Policy::default(), &e, 2),
             Err(VlmError::Unreachable { .. })
         ));
     }

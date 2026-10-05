@@ -25,6 +25,7 @@ use std::path::Path;
 
 use chaff_core::catalog::store;
 use chaff_core::rusqlite::Connection;
+use chaff_core::egress::Policy;
 use chaff_core::{thumb, vlm};
 use serde::Serialize;
 
@@ -67,6 +68,9 @@ pub fn run(
     on_progress: &mut dyn FnMut(usize, usize),
 ) -> Result<TagPassReport, String> {
     let started = std::time::Instant::now();
+    // Every request goes through the chokepoint, so there is one list of what this
+    // application connects to and one place to read it (#34).
+    let policy = Policy::default();
 
     let pending = store::photos_needing_tags(conn, library_id, &endpoint.model)
         .map_err(|e| e.to_string())?;
@@ -93,7 +97,7 @@ pub fn run(
             continue;
         };
 
-        match vlm::tag(endpoint, &vlm::TagRequest {
+        match vlm::tag(&policy, endpoint, &vlm::TagRequest {
             image: jpeg,
             vocabulary: None,
             extra_instructions: None,
@@ -208,11 +212,12 @@ pub fn diagnose(endpoint: &vlm::Endpoint, fixture: Option<&Path>) -> EndpointRep
         verdict: String::new(),
     };
 
-    report.healthy = vlm::health(endpoint, 10).is_ok();
+    let policy = Policy::default();
+    report.healthy = vlm::health(&policy, endpoint, 10).is_ok();
     report.reachable = report.healthy || !report.models.is_empty();
     if !report.healthy {
         // A server with no `/health` may still serve; try the model list before giving up.
-        report.reachable = vlm::list_models(endpoint, 10).is_ok();
+        report.reachable = vlm::list_models(&policy, endpoint, 10).is_ok();
         if !report.reachable {
             report.verdict = format!(
                 "Nothing is answering at {}. Start the model server, or check the address.",
@@ -222,7 +227,7 @@ pub fn diagnose(endpoint: &vlm::Endpoint, fixture: Option<&Path>) -> EndpointRep
         }
     }
 
-    report.models = vlm::list_models(endpoint, 10).unwrap_or_default();
+    report.models = vlm::list_models(&policy, endpoint, 10).unwrap_or_default();
 
     let Some(fixture) = fixture else {
         report.verdict = "The endpoint answers. No photograph was available to test vision with."
@@ -241,6 +246,7 @@ pub fn diagnose(endpoint: &vlm::Endpoint, fixture: Option<&Path>) -> EndpointRep
 
     let started = std::time::Instant::now();
     match vlm::tag(
+        &policy,
         endpoint,
         &vlm::TagRequest {
             image: jpeg,

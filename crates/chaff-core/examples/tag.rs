@@ -1,6 +1,7 @@
 //! Tag one photograph through a live endpoint.
 //!
 //! `cargo run -p chaff-core --example tag -- <image> [base-url] [model]`
+use chaff_core::egress::Policy;
 use chaff_core::vlm::{self, Endpoint, TagRequest};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,7 +11,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let endpoint = Endpoint { base, model };
 
     println!("endpoint: {}", endpoint.chat_url());
-    vlm::health(&endpoint, 10)?;
+    let policy = Policy::default();
+    vlm::health(&policy, &endpoint, 10)?;
     println!("health: ok");
 
     // Downscaled before sending, which is what the client is for.
@@ -22,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("image: {}x{} -> {} KB", img.width(), img.height(), jpeg.len() / 1024);
 
     let started = std::time::Instant::now();
-    let result = vlm::tag(&endpoint, &TagRequest {
+    let result = vlm::tag(&policy, &endpoint, &TagRequest {
         image: jpeg,
         vocabulary: None,
         extra_instructions: None,

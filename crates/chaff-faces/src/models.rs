@@ -19,8 +19,9 @@
 //! Not beside the models in the source tree, which may be read-only or absent in a packaged
 //! build. Not in the library, which is the user's and is not ours to write into.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
+
+use chaff_core::egress::{self, Policy};
 
 /// A model this application knows how to fetch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,7 +117,10 @@ impl ModelStore {
             source,
         })?;
 
-        let bytes = download(spec.url, spec.bytes, &mut on_progress)?;
+        // Through the chokepoint. A model download is the one request this application
+        // makes to the public internet, and it goes through the same allowlist as everything
+        // else rather than reaching for `ureq` on its own.
+        let bytes = download(&Policy::default(), spec.url, spec.bytes, &mut on_progress)?;
 
         let found = blake3::hash(&bytes).to_hex().to_string();
         if found != spec.blake3 {
@@ -153,40 +157,23 @@ fn hash_file(path: &Path) -> Result<String, ModelError> {
 
 /// Fetch a URL into memory, reporting progress.
 ///
+/// **Through the chokepoint, not `ureq` directly.** The first version checked the policy and
+/// then called `ureq` itself, which made the allowlist true and the "single chokepoint"
+/// claim only nearly true — one transport outside the one place that is supposed to own
+/// them all. A claim that is nearly true is the kind this codebase has been burned by.
+///
 /// Into memory rather than streamed to disk, because the hash must be checked *before* the
-/// file is written. A partial file on disk that is verified afterwards leaves a window
-/// where it is present and unverified.
+/// file is written. A partial file on disk that is verified afterwards leaves a window where
+/// it is present and unverified.
 fn download(
+    policy: &Policy,
     url: &str,
     expected_bytes: u64,
     on_progress: &mut impl FnMut(u64, u64),
 ) -> Result<Vec<u8>, ModelError> {
-    let response = ureq::get(url)
-        .call()
-        .map_err(|e| ModelError::Download { url: url.to_string(), reason: e.to_string() })?;
-
-    let total = response
-        .headers()
-        .get("content-length")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(expected_bytes);
-
-    let mut body = Vec::with_capacity(total.min(64 * 1024 * 1024) as usize);
-    let mut reader = response.into_body().into_reader();
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = reader.read(&mut buf).map_err(|e| ModelError::Download {
-            url: url.to_string(),
-            reason: e.to_string(),
-        })?;
-        if n == 0 {
-            break;
-        }
-        body.extend_from_slice(&buf[..n]);
-        on_progress(body.len() as u64, total);
-    }
-    Ok(body)
+    let mut report = |done: u64, total: u64| on_progress(done, if total == 0 { expected_bytes } else { total });
+    egress::download_with_progress(policy, url, 900, &mut report)
+        .map_err(|e| ModelError::Download { url: url.to_string(), reason: e.to_string() })
 }
 
 #[cfg(test)]

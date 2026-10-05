@@ -12,6 +12,7 @@
 //! CI has no GPU. A test that failed there would be turned off, and a test that passed by
 //! not running is worse. So these print why they are skipping and return.
 
+use chaff_core::egress::Policy;
 use chaff_core::vlm::{self, Endpoint, TagRequest};
 
 /// The endpoint to test against, from the environment.
@@ -41,7 +42,7 @@ fn a_live_endpoint_answers_a_health_check() {
         eprintln!("SKIP: set CHAFF_VLM to run the live tests");
         return;
     };
-    match vlm::health(&e, 10) {
+    match vlm::health(&Policy::default(), &e, 10) {
         Ok(()) => {}
         Err(err) => panic!("{err}"),
     }
@@ -55,6 +56,7 @@ fn a_real_model_returns_parseable_tags() {
     };
 
     let result = vlm::tag(
+        &Policy::default(),
         &e,
         &TagRequest { image: fixture_jpeg(), vocabulary: None, extra_instructions: None },
         300,
@@ -103,6 +105,7 @@ fn a_vocabulary_is_actually_honoured() {
         "animal".to_string(),
     ];
     let result = vlm::tag(
+        &Policy::default(),
         &e,
         &TagRequest {
             image: fixture_jpeg(),
@@ -134,8 +137,8 @@ fn tagging_is_deterministic_at_temperature_zero() {
     let image = fixture_jpeg();
     let request = TagRequest { image, vocabulary: None, extra_instructions: None };
 
-    let a = vlm::tag(&e, &request, 300).expect("first");
-    let b = vlm::tag(&e, &request, 300).expect("second");
+    let a = vlm::tag(&Policy::default(), &e, &request, 300).expect("first");
+    let b = vlm::tag(&Policy::default(), &e, &request, 300).expect("second");
 
     let names = |r: &vlm::TagResult| {
         let mut v: Vec<String> = r.tags.iter().map(|t| t.name.to_lowercase()).collect();
@@ -149,12 +152,6 @@ fn tagging_is_deterministic_at_temperature_zero() {
 // The endpoint self-test (#52)
 // ---------------------------------------------------------------------------
 
-/// A photograph to test vision with.
-fn fixture_path() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../chaff-faces/tests/fixtures/portrait_mona_lisa.jpg")
-}
-
 #[test]
 fn the_model_list_is_readable() {
     // The self-test leans on this to tell "no server" from "server, wrong model", so it has
@@ -163,7 +160,7 @@ fn the_model_list_is_readable() {
         eprintln!("SKIP: set CHAFF_VLM to run the live tests");
         return;
     };
-    let models = vlm::list_models(&e, 10).expect("a model list");
+    let models = vlm::list_models(&Policy::default(), &e, 10).expect("a model list");
     assert!(!models.is_empty(), "a running server advertises at least one model");
     assert!(
         models.iter().any(|m| m == &e.model),
@@ -178,7 +175,7 @@ fn an_unreachable_endpoint_says_so_in_words_a_person_can_act_on() {
     // The diagnostic's whole value is the verdict. "Connection refused" sends someone
     // looking at firewalls; this should say what to do.
     let dead = Endpoint { base: "http://127.0.0.1:1".into(), model: "nothing".into() };
-    let models = vlm::list_models(&dead, 2);
+    let models = vlm::list_models(&Policy::default(), &dead, 2);
     assert!(models.is_err(), "port 1 must not answer");
     // And the error names the URL, so the user can see which address was tried.
     let message = format!("{}", models.unwrap_err());
@@ -196,13 +193,14 @@ fn a_real_endpoint_passes_the_full_diagnostic() {
 
     // The same three questions the diagnostic asks, asked directly, because
     // `tagging::diagnose` lives in the shell crate and this is the engine's test.
-    assert!(vlm::health(&e, 10).is_ok(), "health");
+    assert!(vlm::health(&Policy::default(), &e, 10).is_ok(), "health");
 
-    let models = vlm::list_models(&e, 10).expect("models");
+    let models = vlm::list_models(&Policy::default(), &e, 10).expect("models");
     assert!(models.iter().any(|m| m == &e.model), "the configured model must exist");
 
     let vocabulary = vec!["person".to_string(), "landscape".to_string()];
     let result = vlm::tag(
+        &Policy::default(),
         &e,
         &TagRequest {
             image: fixture_jpeg(),
