@@ -256,6 +256,125 @@ pub async fn run_face_pass(
     .map_err(err)?
 }
 
+/// The endpoint to tag with, from the environment.
+///
+/// `CHAFF_VLM` — e.g. `http://192.168.1.150:8080`. Read here rather than passed in from the
+/// webview, for the same reason `capabilities()` reads its endpoints from the environment:
+/// nothing inside the webview chooses what this application connects to (#34).
+fn vlm_endpoint() -> Option<chaff_core::vlm::Endpoint> {
+    let base = std::env::var("CHAFF_VLM").ok().filter(|s| !s.trim().is_empty())?;
+    Some(chaff_core::vlm::Endpoint {
+        base,
+        model: std::env::var("CHAFF_VLM_MODEL").unwrap_or_else(|_| "chaff-vlm".into()),
+    })
+}
+
+/// Run a tagging pass.
+///
+/// `limit` bounds one call, so a library can be done in pieces with feedback between them
+/// rather than as one silent hour. Resumable: the work list is the catalog, so stopping
+/// loses nothing.
+#[tauri::command]
+pub async fn run_tag_pass(
+    state: State<'_, AppState>,
+    library_id: i64,
+    limit: Option<usize>,
+) -> Result<crate::tagging::TagPassReport, String> {
+    let endpoint = vlm_endpoint().ok_or_else(|| {
+        "No vision endpoint is configured. Set CHAFF_VLM to the address of a model server."
+            .to_string()
+    })?;
+    let db = state.db();
+    let now = now_seconds();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<crate::tagging::TagPassReport, String> {
+        let mut conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        crate::tagging::run(&mut conn, library_id, &endpoint, limit.unwrap_or(200), now, &mut |_, _| {})
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Exercise the configured endpoint and report what actually works (#52).
+#[tauri::command]
+pub async fn diagnose_endpoint() -> Result<crate::tagging::EndpointReport, String> {
+    let endpoint = vlm_endpoint().ok_or_else(|| {
+        "No vision endpoint is configured. Set CHAFF_VLM to the address of a model server."
+            .to_string()
+    })?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<crate::tagging::EndpointReport, String> {
+        // A committed fixture, not the user's library: the self-test must work before any
+        // library is open, and reading their photographs to check a URL is not a trade worth
+        // making.
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../crates/chaff-faces/tests/fixtures/portrait_mona_lisa.jpg");
+        Ok(crate::tagging::diagnose(&endpoint, fixture.is_file().then_some(fixture.as_path())))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Every tag in a library, with counts.
+#[tauri::command]
+pub async fn list_tags(
+    state: State<'_, AppState>,
+    library_id: i64,
+    model: Option<String>,
+) -> Result<Vec<(String, usize)>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<(String, usize)>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::tag_counts(&conn, library_id, model.as_deref()).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The tags on one photograph.
+#[tauri::command]
+pub async fn photo_tags(
+    state: State<'_, AppState>,
+    photo_id: i64,
+) -> Result<Vec<PhotoTagView>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<PhotoTagView>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let rows = store::tags_for_photo(&conn, photo_id).map_err(err)?;
+        Ok(rows
+            .into_iter()
+            .map(|t| PhotoTagView { name: t.name, confidence: t.confidence, model: t.model })
+            .collect())
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The photographs carrying a tag.
+#[tauri::command]
+pub async fn photos_with_tag(
+    state: State<'_, AppState>,
+    library_id: i64,
+    tag: String,
+    model: Option<String>,
+) -> Result<Vec<i64>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<i64>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::photos_with_tag(&conn, library_id, &tag, model.as_deref()).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// One tag on a photograph.
+#[derive(Debug, Serialize)]
+pub struct PhotoTagView {
+    pub name: String,
+    pub confidence: f64,
+    /// Which model claimed it. Shown, because two models disagree and a re-tag mixes them.
+    pub model: String,
+}
+
 /// A suggested person: a group of faces that might be one individual.
 #[derive(Debug, Serialize)]
 pub struct PersonView {

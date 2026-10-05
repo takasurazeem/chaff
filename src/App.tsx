@@ -15,6 +15,7 @@ import {
   getSettings,
   listDirectories,
   personPhotos,
+  photosWithTag,
   restoreTrash,
   setSetting,
   planDelete,
@@ -30,6 +31,7 @@ import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
 import { InfoPanel } from "./components/InfoPanel";
 import { PeoplePanel } from "./components/PeoplePanel";
+import { TagPanel } from "./components/TagPanel";
 import {
   apply as applyFilters,
   counts as computeCounts,
@@ -133,6 +135,9 @@ export default function App() {
    */
   const [personPhotos_, setPersonPhotos] = useState<Set<number> | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<number | null>(null);
+  /** The tag being filtered on, and the photographs carrying it. */
+  const [tagPhotos, setTagPhotos] = useState<Set<number> | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   /**
    * The list the loupe is navigating, captured when it opened.
@@ -328,9 +333,10 @@ export default function App() {
   const visible = useMemo(() => {
     // The person filter first: it is the narrowest, and running it first means the count
     // badges in the filter bar describe what is actually reachable.
-    const base = personPhotos_ ? photos.filter((p) => personPhotos_.has(p.id)) : photos;
+    let base = personPhotos_ ? photos.filter((p) => personPhotos_.has(p.id)) : photos;
+    if (tagPhotos) base = base.filter((p) => tagPhotos.has(p.id));
     return applyFilters(base, decisions, filters);
-  }, [photos, decisions, filters, personPhotos_]);
+  }, [photos, decisions, filters, personPhotos_, tagPhotos]);
 
   /**
    * Which photograph the info panel describes.
@@ -735,6 +741,27 @@ export default function App() {
             }}
             />
             {library && (
+              // Two panels, one condition: both need a library and neither is meaningful
+              // without one. A fragment rather than a second guard, so they cannot drift
+              // apart and leave one rendering while the other does not.
+              <>
+              <TagPanel
+                libraryId={library.library_id}
+                selectedTag={selectedTag}
+                onChanged={() => {
+                  /* tag counts feed the filter badges; a refresh happens on the next open */
+                }}
+                onSelectTag={(name) => {
+                  setSelectedTag(name);
+                  if (name === null) {
+                    setTagPhotos(null);
+                    return;
+                  }
+                  void photosWithTag(library.library_id, name)
+                    .then((ids) => setTagPhotos(new Set(ids)))
+                    .catch((e) => setStatus({ kind: "error", message: String(e) }));
+                }}
+              />
               <PeoplePanel
                 libraryId={library.library_id}
                 selectedPerson={selectedPerson}
@@ -752,6 +779,7 @@ export default function App() {
                     .catch((e) => setStatus({ kind: "error", message: String(e) }));
                 }}
               />
+              </>
             )}
           </div>
         )}

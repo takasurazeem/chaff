@@ -314,6 +314,25 @@ pub fn health(endpoint: &Endpoint, timeout_secs: u64) -> Result<(), VlmError> {
     }
 }
 
+/// The model ids an endpoint advertises.
+///
+/// Used by the self-test: a server can be up with the wrong model loaded, and "is the port
+/// open" does not distinguish that from working.
+pub fn list_models(endpoint: &Endpoint, timeout_secs: u64) -> Result<Vec<String>, VlmError> {
+    let body = get(&endpoint.models_url(), timeout_secs)?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| VlmError::Malformed(format!("{e}")))?;
+    Ok(parsed
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 // ---------------------------------------------------------------------------
 // HTTP and base64, by hand
 // ---------------------------------------------------------------------------

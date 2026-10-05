@@ -404,6 +404,7 @@ dependencies = [
  "chaff-core",
  "chaff-faces",
  "env_logger",
+ "image",
  "log",
  "serde",
  "serde_json",

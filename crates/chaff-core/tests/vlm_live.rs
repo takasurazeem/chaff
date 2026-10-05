@@ -144,3 +144,79 @@ fn tagging_is_deterministic_at_temperature_zero() {
     };
     assert_eq!(names(&a), names(&b), "the same photograph tagged twice must give the same tags");
 }
+
+// ---------------------------------------------------------------------------
+// The endpoint self-test (#52)
+// ---------------------------------------------------------------------------
+
+/// A photograph to test vision with.
+fn fixture_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../chaff-faces/tests/fixtures/portrait_mona_lisa.jpg")
+}
+
+#[test]
+fn the_model_list_is_readable() {
+    // The self-test leans on this to tell "no server" from "server, wrong model", so it has
+    // to actually parse.
+    let Some(e) = endpoint() else {
+        eprintln!("SKIP: set CHAFF_VLM to run the live tests");
+        return;
+    };
+    let models = vlm::list_models(&e, 10).expect("a model list");
+    assert!(!models.is_empty(), "a running server advertises at least one model");
+    assert!(
+        models.iter().any(|m| m == &e.model),
+        "the configured model {:?} is not among {:?} — tagging would 404",
+        e.model,
+        models
+    );
+}
+
+#[test]
+fn an_unreachable_endpoint_says_so_in_words_a_person_can_act_on() {
+    // The diagnostic's whole value is the verdict. "Connection refused" sends someone
+    // looking at firewalls; this should say what to do.
+    let dead = Endpoint { base: "http://127.0.0.1:1".into(), model: "nothing".into() };
+    let models = vlm::list_models(&dead, 2);
+    assert!(models.is_err(), "port 1 must not answer");
+    // And the error names the URL, so the user can see which address was tried.
+    let message = format!("{}", models.unwrap_err());
+    assert!(message.contains("127.0.0.1:1"), "got: {message}");
+}
+
+#[test]
+fn a_real_endpoint_passes_the_full_diagnostic() {
+    // **The end-to-end check for #52.** A server that is merely up is not enough: this
+    // asserts it has a vision model that returns tags *and* honours the schema.
+    let Some(e) = endpoint() else {
+        eprintln!("SKIP: set CHAFF_VLM to run the live tests");
+        return;
+    };
+
+    // The same three questions the diagnostic asks, asked directly, because
+    // `tagging::diagnose` lives in the shell crate and this is the engine's test.
+    assert!(vlm::health(&e, 10).is_ok(), "health");
+
+    let models = vlm::list_models(&e, 10).expect("models");
+    assert!(models.iter().any(|m| m == &e.model), "the configured model must exist");
+
+    let vocabulary = vec!["person".to_string(), "landscape".to_string()];
+    let result = vlm::tag(
+        &e,
+        &TagRequest {
+            image: fixture_jpeg(),
+            vocabulary: Some(vocabulary.clone()),
+            extra_instructions: None,
+        },
+        300,
+    )
+    .expect("a tag result");
+
+    assert!(!result.tags.is_empty(), "vision must actually work");
+    assert!(
+        result.tags.iter().all(|t| vocabulary.contains(&t.name)),
+        "the schema must be enforced: {:?}",
+        result.tags
+    );
+}

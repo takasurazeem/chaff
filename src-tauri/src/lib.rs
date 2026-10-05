@@ -8,6 +8,7 @@
 
 pub mod commands;
 pub mod faces;
+pub mod tagging;
 
 use tauri::Manager;
 
@@ -68,6 +69,11 @@ pub fn run() {
             commands::list_photos,
             commands::list_directories,
             commands::run_face_pass,
+            commands::run_tag_pass,
+            commands::diagnose_endpoint,
+            commands::list_tags,
+            commands::photo_tags,
+            commands::photos_with_tag,
             commands::list_people,
             commands::name_person,
             commands::merge_people,

@@ -143,6 +143,79 @@ export async function faceCounts(libraryId: number): Promise<Record<string, numb
   return invoke<Record<string, number>>("face_counts", { libraryId });
 }
 
+/** One tag on a photograph. */
+export interface PhotoTagView {
+  name: string;
+  confidence: number;
+  /** Which model claimed it. Shown, because two models disagree. */
+  model: string;
+}
+
+/** What a tagging pass did. */
+export interface TagPassReport {
+  tagged: number;
+  remaining: number;
+  unreadable: number;
+  failed: number;
+  tags: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  elapsed_ms: number;
+  /** Set when the endpoint stopped answering, so the UI can say "stopped", not "finished". */
+  stopped_because: string | null;
+}
+
+/**
+ * What an endpoint says about itself.
+ *
+ * `vision_works` and `schema_enforced` are the fields that matter: a server can be up with
+ * a text-only model, or up with a vision model that ignores the schema, and "the port is
+ * open" does not distinguish either from working.
+ */
+export interface EndpointReport {
+  reachable: boolean;
+  healthy: boolean;
+  models: string[];
+  vision_works: boolean;
+  schema_enforced: boolean;
+  reasoning_tokens_wasted: number;
+  seconds_per_photo: number;
+  /** One line the user can act on. */
+  verdict: string;
+}
+
+/** Run a tagging pass. `limit` bounds one call, so a library can be done in pieces. */
+export async function runTagPass(libraryId: number, limit?: number): Promise<TagPassReport> {
+  return invoke<TagPassReport>("run_tag_pass", { libraryId, limit });
+}
+
+/** Exercise the configured endpoint and report what actually works. */
+export async function diagnoseEndpoint(): Promise<EndpointReport> {
+  return invoke<EndpointReport>("diagnose_endpoint");
+}
+
+/** Every tag in a library, with counts, ranked by how many photographs carry it. */
+export async function listTags(
+  libraryId: number,
+  model?: string,
+): Promise<Array<[string, number]>> {
+  return invoke<Array<[string, number]>>("list_tags", { libraryId, model });
+}
+
+/** The tags on one photograph. */
+export async function photoTags(photoId: number): Promise<PhotoTagView[]> {
+  return invoke<PhotoTagView[]>("photo_tags", { photoId });
+}
+
+/** The photographs carrying a tag. */
+export async function photosWithTag(
+  libraryId: number,
+  tag: string,
+  model?: string,
+): Promise<number[]> {
+  return invoke<number[]>("photos_with_tag", { libraryId, tag, model });
+}
+
 /** One file belonging to a photograph. */
 export interface FileDetail {
   path: string;

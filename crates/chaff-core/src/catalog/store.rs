@@ -991,6 +991,131 @@ mod tests {
         v
     }
 
+    /// A library with one photograph, for the tag tests.
+    fn tag_lib() -> (Connection, i64, i64) {
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let id = photos(&conn, lib).unwrap()[0].id;
+        (conn, lib, id)
+    }
+
+    #[test]
+    fn tags_are_normalised_to_one_vocabulary() {
+        // "Beach", "beach" and "BEACH" are one tag. A vocabulary that treats them as three
+        // is one nobody can filter, and the model does emit all three.
+        let (conn, lib, id) = tag_lib();
+        replace_tags(&conn, id, &[
+            ("Beach".into(), 0.9),
+            ("  beach  ".into(), 0.8),
+            ("BEACH".into(), 0.7),
+        ], "m", None, 100).unwrap();
+
+        let tags = tags_for_photo(&conn, id).unwrap();
+        assert_eq!(tags.len(), 1, "got {tags:?}");
+        assert_eq!(tags[0].name, "beach");
+        let counts = tag_counts(&conn, lib, None).unwrap();
+        assert_eq!(counts, vec![("beach".to_string(), 1)]);
+    }
+
+    #[test]
+    fn a_second_model_does_not_replace_the_first() {
+        // **Two models are two opinions, and the user asked for both.** Replacing would make
+        // "compare two models" impossible and would silently delete work.
+        let (conn, lib, id) = tag_lib();
+        replace_tags(&conn, id, &[("beach".into(), 0.9)], "model-a", Some("a shore"), 100).unwrap();
+        replace_tags(&conn, id, &[("mountain".into(), 0.8)], "model-b", Some("a peak"), 200).unwrap();
+
+        let tags = tags_for_photo(&conn, id).unwrap();
+        assert_eq!(tags.len(), 2, "both models' tags must survive: {tags:?}");
+
+        // And each can be filtered to on its own, which is the point of provenance.
+        assert_eq!(tag_counts(&conn, lib, Some("model-a")).unwrap().len(), 1);
+        assert_eq!(photos_with_tag(&conn, lib, "beach", Some("model-a")).unwrap(), vec![id]);
+        assert!(photos_with_tag(&conn, lib, "beach", Some("model-b")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn re_tagging_with_the_same_model_replaces() {
+        // A re-run is a complete answer for that model, not an addition to the last one.
+        let (conn, _lib, id) = tag_lib();
+        replace_tags(&conn, id, &[("beach".into(), 0.9), ("sunset".into(), 0.5)], "m", None, 100)
+            .unwrap();
+        replace_tags(&conn, id, &[("beach".into(), 0.95)], "m", None, 200).unwrap();
+
+        let tags = tags_for_photo(&conn, id).unwrap();
+        assert_eq!(tags.len(), 1, "sunset must be gone: {tags:?}");
+        assert!((tags[0].confidence - 0.95).abs() < 1e-9, "and the new confidence used");
+    }
+
+    #[test]
+    fn an_empty_tag_name_is_not_a_tag() {
+        let (conn, _lib, id) = tag_lib();
+        replace_tags(&conn, id, &[("".into(), 0.9), ("   ".into(), 0.8), ("real".into(), 0.7)], "m", None, 100)
+            .unwrap();
+        let tags = tags_for_photo(&conn, id).unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].name, "real");
+    }
+
+    #[test]
+    fn tags_are_ranked_by_how_many_photographs_carry_them() {
+        // The vocabulary a library actually has is more useful than an alphabetical list of
+        // everything, most of which occurs once.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3", "/lib/b.CR3", "/lib/c.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let ids: Vec<i64> = photos(&conn, lib).unwrap().iter().map(|p| p.id).collect();
+
+        replace_tags(&conn, ids[0], &[("sky".into(), 0.9)], "m", None, 100).unwrap();
+        replace_tags(&conn, ids[1], &[("sky".into(), 0.9), ("rare".into(), 0.9)], "m", None, 100).unwrap();
+        replace_tags(&conn, ids[2], &[("sky".into(), 0.9)], "m", None, 100).unwrap();
+
+        let counts = tag_counts(&conn, lib, None).unwrap();
+        assert_eq!(counts[0], ("sky".to_string(), 3));
+        assert_eq!(counts[1], ("rare".to_string(), 1));
+    }
+
+    #[test]
+    fn tags_cascade_with_the_photograph() {
+        let (conn, _lib, id) = tag_lib();
+        replace_tags(&conn, id, &[("beach".into(), 0.9)], "m", Some("a shore"), 100).unwrap();
+        conn.execute("DELETE FROM photo WHERE id = ?1", params![id]).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM tag", [], |r| r.get(0)).unwrap();
+        let c: i64 = conn.query_row("SELECT COUNT(*) FROM photo_caption", [], |r| r.get(0)).unwrap();
+        assert_eq!((n, c), (0, 0), "tags and captions must not outlive the photograph");
+    }
+
+    #[test]
+    fn the_caption_is_read_back_per_model() {
+        let (conn, _lib, id) = tag_lib();
+        replace_tags(&conn, id, &[("beach".into(), 0.9)], "m", Some("  a shoreline  "), 100).unwrap();
+        assert_eq!(caption_for_photo(&conn, id, "m").unwrap().as_deref(), Some("a shoreline"));
+        assert_eq!(caption_for_photo(&conn, id, "other").unwrap(), None);
+    }
+
+    #[test]
+    fn trashed_photographs_are_not_offered_for_tagging() {
+        // Tagging something the user has already rejected is wasted GPU time, and a run over
+        // a large library is minutes per hundred photographs.
+        let (conn, lib, id) = tag_lib();
+        assert_eq!(photos_needing_tags(&conn, lib, "m").unwrap().len(), 1);
+        mark_photo_trashed(&conn, id, 200).unwrap();
+        assert!(photos_needing_tags(&conn, lib, "m").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_tagged_photograph_drops_out_of_the_work_list() {
+        let (conn, lib, id) = tag_lib();
+        assert_eq!(photos_needing_tags(&conn, lib, "m").unwrap().len(), 1);
+        replace_tags(&conn, id, &[("beach".into(), 0.9)], "m", Some("x"), 100).unwrap();
+        assert!(photos_needing_tags(&conn, lib, "m").unwrap().is_empty());
+        // But a different model still has work to do.
+        assert_eq!(photos_needing_tags(&conn, lib, "other").unwrap().len(), 1);
+    }
+
     #[test]
     fn naming_a_person_confirms_the_group() {
         // Naming **is** the confirmation. A group a human put a name to is a decision, and
@@ -2847,4 +2972,164 @@ fn cosine_f32(a: &[f32], b: &[f32]) -> f32 {
     }
     let d = na.sqrt() * nb.sqrt();
     if d <= f32::EPSILON { 0.0 } else { dot / d }
+}
+
+// ---------------------------------------------------------------------------
+// Tags
+// ---------------------------------------------------------------------------
+/// One tag, as stored.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TagRow {
+    pub name: String,
+    pub confidence: f64,
+    pub model: String,
+}
+
+/// Replace the tags a model produced for a photograph.
+///
+/// **Scoped to the model.** A second model's tags are kept alongside rather than replaced,
+/// because they are a different opinion and the user chose to ask for both. Replacing them
+/// would make "compare two models" impossible and would silently delete work.
+pub fn replace_tags(
+    conn: &Connection,
+    photo_id: i64,
+    tags: &[(String, f64)],
+    model: &str,
+    description: Option<&str>,
+    now: i64,
+) -> Result<(), CatalogError> {
+    let tx = conn.unchecked_transaction()?;
+
+    tx.execute("DELETE FROM tag WHERE photo_id = ?1 AND model = ?2", params![photo_id, model])?;
+
+    for (name, confidence) in tags {
+        // Normalised on write. "Beach", "beach" and "BEACH" are one tag, and a vocabulary
+        // that treats them as three is one nobody can filter.
+        let name = name.trim().to_lowercase();
+        if name.is_empty() {
+            continue;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO tag (photo_id, name, confidence, model, description, tagged_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![photo_id, name, confidence, model, description, now],
+        )?;
+    }
+
+    if let Some(d) = description.filter(|d| !d.trim().is_empty()) {
+        tx.execute(
+            "INSERT OR REPLACE INTO photo_caption (photo_id, model, description, tagged_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![photo_id, model, d.trim(), now],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Every tag in a library, with how many photographs carry it.
+///
+/// Ranked by count: the vocabulary a library actually has is more useful than an
+/// alphabetical list of everything, most of which occurs once.
+pub fn tag_counts(
+    conn: &Connection,
+    library_id: i64,
+    model: Option<&str>,
+) -> Result<Vec<(String, usize)>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT tag.name, COUNT(DISTINCT tag.photo_id)
+           FROM tag
+           JOIN photo p ON p.id = tag.photo_id
+          WHERE p.library_id = ?1 AND p.trashed_at IS NULL
+            AND (?2 IS NULL OR tag.model = ?2)
+          GROUP BY tag.name
+          ORDER BY COUNT(DISTINCT tag.photo_id) DESC, tag.name",
+    )?;
+    let rows = stmt.query_map(params![library_id, model], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize))
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// The tags on one photograph.
+pub fn tags_for_photo(conn: &Connection, photo_id: i64) -> Result<Vec<TagRow>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT name, confidence, model FROM tag
+          WHERE photo_id = ?1
+          ORDER BY confidence DESC, name",
+    )?;
+    let rows = stmt.query_map(params![photo_id], |r| {
+        Ok(TagRow { name: r.get(0)?, confidence: r.get(1)?, model: r.get(2)? })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// The caption a model wrote for a photograph.
+pub fn caption_for_photo(
+    conn: &Connection,
+    photo_id: i64,
+    model: &str,
+) -> Result<Option<String>, CatalogError> {
+    let mut stmt =
+        conn.prepare("SELECT description FROM photo_caption WHERE photo_id = ?1 AND model = ?2")?;
+    let mut rows = stmt.query(params![photo_id, model])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(r.get(0)?)),
+        None => Ok(None),
+    }
+}
+
+/// Photographs carrying a tag.
+pub fn photos_with_tag(
+    conn: &Connection,
+    library_id: i64,
+    tag: &str,
+    model: Option<&str>,
+) -> Result<Vec<i64>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT tag.photo_id
+           FROM tag
+           JOIN photo p ON p.id = tag.photo_id
+          WHERE p.library_id = ?1 AND p.trashed_at IS NULL AND tag.name = ?2
+            AND (?3 IS NULL OR tag.model = ?3)
+          ORDER BY tag.photo_id",
+    )?;
+    let rows = stmt.query_map(params![library_id, tag.trim().to_lowercase(), model], |r| {
+        r.get::<_, i64>(0)
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// Photographs that have no tag from this model yet.
+///
+/// The batch runner's work list. Excludes trashed photographs, because tagging something
+/// the user has already rejected is wasted GPU time.
+pub fn photos_needing_tags(
+    conn: &Connection,
+    library_id: i64,
+    model: &str,
+) -> Result<Vec<(i64, String)>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT p.id, f.path
+           FROM photo p
+           JOIN file f ON f.photo_id = p.id
+          WHERE p.library_id = ?1
+            AND p.trashed_at IS NULL
+            AND f.role IN ('raw', 'raster')
+            AND NOT EXISTS (
+                SELECT 1 FROM photo_caption c WHERE c.photo_id = p.id AND c.model = ?2
+            )
+            AND f.id = (
+                SELECT f2.id FROM file f2
+                 WHERE f2.photo_id = p.id AND f2.role IN ('raw', 'raster')
+                 ORDER BY CASE f2.role WHEN 'raw' THEN 0 ELSE 1 END, f2.id
+                 LIMIT 1
+            )
+          ORDER BY p.id",
+    )?;
+    let rows = stmt.query_map(params![library_id, model], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
