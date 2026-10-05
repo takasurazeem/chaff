@@ -19,6 +19,49 @@ import chaff_ffiFFI
 ///
 /// Decode on the main actor. `NSImage(contentsOfFile:)` in `body` is the mistake that turns a
 /// smooth grid into a stuttering one, and Swift has no `content-visibility` to hide it behind.
+/// What VoiceOver reads for one tile.
+///
+/// Free and testable, rather than inline in `body` — the same reasoning as the formatting
+/// helpers, and this one is easy to get subtly wrong: a rating of zero is *unrated*, not "0
+/// stars", and a rejected photograph keeps the stars it had.
+func accessibilityValue(isSelected: Bool) -> String {
+    accessibilityValue(
+        score: nil, rating: 0, rejected: false, isSelected: isSelected
+    )
+}
+
+/// The full value, given what is known about the photograph.
+func accessibilityValue(
+    score: Int32?,
+    rating: UInt8,
+    rejected: Bool,
+    isSelected: Bool
+) -> String {
+    var parts: [String] = []
+
+    if let score {
+        parts.append("score \(score)")
+    } else {
+        // **Said, not skipped.** A photograph with no score is one that produced no measurement
+        // — a raw this build cannot decode — and silence there reads as "fine".
+        parts.append("not scored")
+    }
+
+    if rejected {
+        parts.append("rejected")
+    }
+    // Zero is *unrated*, not "zero stars". Reading "0 stars" for every unrated frame in a
+    // library of 3,000 would be noise in exactly the place a user is listening for signal.
+    if rating > 0 {
+        parts.append("\(rating) star\(rating == 1 ? "" : "s")")
+    }
+
+    if isSelected {
+        parts.append("selected")
+    }
+    return parts.joined(separator: ", ")
+}
+
 struct PhotoGrid: View {
     let photos: [Photo]
     @Binding var selection: Set<Int64>

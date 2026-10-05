@@ -56,7 +56,16 @@ struct Navigator: View {
             // gets keyboard navigation and VoiceOver for free.
             Picker("Navigator", selection: $mode) {
                 ForEach(Mode.allCases) { m in
-                    Image(systemName: m.symbol).help(m.help).tag(m)
+                    // **A label, not only `.help()`.**
+                    //
+                    // `.help()` is a tooltip — it appears on hover and is not read by VoiceOver
+                    // as the control's name. An icon-only segment with no
+                    // `accessibilityLabel` announces as "button", so a screen reader user hears
+                    // three identical buttons and cannot tell folders from people.
+                    Image(systemName: m.symbol)
+                        .help(m.help)
+                        .accessibilityLabel(m.help)
+                        .tag(m)
                 }
             }
             .pickerStyle(.segmented)

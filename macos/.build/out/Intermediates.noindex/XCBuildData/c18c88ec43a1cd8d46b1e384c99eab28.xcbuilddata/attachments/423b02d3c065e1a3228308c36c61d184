@@ -156,6 +156,16 @@
     "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PeopleList.swiftdeps",
     "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PeopleList~partial.swiftmodule"
   },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Navigator/PersonActions.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions.dia",
+    "index-unit-output-path" : "/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions.swiftdeps",
+    "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/PersonActions~partial.swiftmodule"
+  },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Navigator/TagList.swift" : {
     "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/TagList.swiftconstvalues",
     "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/TagList.d",
