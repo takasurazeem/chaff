@@ -24,6 +24,10 @@ ort = "2.0.0-rc.13"
 # The tensor type `ort` speaks. Building an NCHW input by hand into a `Vec<f32>` and hoping
 # the shape is right is how an off-by-one in the channel order produces plausible nonsense.
 ndarray = "0.16"
+# Model downloads are verified before use. blake3 rather than sha2: it is already a
+# dependency of the engine, and it is faster on the 38 MB SFace pack.
+blake3 = "1"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 tempfile = "3"
