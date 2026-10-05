@@ -8,7 +8,7 @@
     <key>CFBundleExecutable</key><string>Chaff</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>983e18a</string>
+    <key>CFBundleVersion</key><string>1238a01</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <!-- A photo tool is a document-less app: no automatic window restoration, and it should

@@ -89,7 +89,12 @@ struct PhotoGrid: View {
             }
             .padding(8)
         }
-        .background(.background)
+        // The same mistake as the navigator's: `.background` is opaque, so this flattened the
+        // editor pane against a colour instead of letting it sit on the window's material.
+        //
+        // A grid of photographs is content and gets **no glass** — that rule stands. What it does
+        // not need is an opaque plate painted underneath it either; the window already has a
+        // background and the tiles draw on top of it.
     }
 }
 
