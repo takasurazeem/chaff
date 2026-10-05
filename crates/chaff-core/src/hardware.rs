@@ -637,20 +637,20 @@ mod tests {
         // Strictly more capable, and it costs this machine nothing.
         let mut p = with_gpu(24);
         p.endpoints.push(EndpointHealth {
-            url: "http://192.168.1.150:8080".into(),
+            url: "http://192.0.2.10:8080".into(),
             healthy: true,
             detail: "HTTP/1.1 200 OK".into(),
         });
         let (tier, reason) = choose_tier(&p);
         assert_eq!(tier, Tier::Remote);
-        assert!(reason.contains("192.168.1.150"), "the reason must name the endpoint");
+        assert!(reason.contains("192.0.2.10"), "the reason must name the endpoint");
     }
 
     #[test]
     fn an_unhealthy_endpoint_does_not_select_the_remote_tier() {
         let mut p = with_gpu(8);
         p.endpoints.push(EndpointHealth {
-            url: "http://192.168.1.150:8080".into(),
+            url: "http://192.0.2.10:8080".into(),
             healthy: false,
             detail: "no connection".into(),
         });
@@ -745,7 +745,7 @@ mod tests {
     // ---------------------------------------------------------------------
     #[test]
     fn parses_real_nvidia_smi_output() {
-        // Captured from the machine at 192.168.1.150.
+        // Captured from a real machine running an RTX 3090.
         let out = "NVIDIA GeForce RTX 3090, 24576, 595.104.02\n";
         let gpus = parse_nvidia_smi(out);
         assert_eq!(gpus.len(), 1);
@@ -891,13 +891,13 @@ Graphics/Displays:
     fn an_unreachable_endpoint_is_reported_as_unreachable() {
         let mut p = empty_probe();
         p.endpoints.push(EndpointHealth {
-            url: "http://192.168.1.150:8080".into(),
+            url: "http://192.0.2.10:8080".into(),
             healthy: false,
             detail: "no connection".into(),
         });
         let text = render(&p);
         assert!(text.contains("unreachable"));
-        assert!(text.contains("192.168.1.150"));
+        assert!(text.contains("192.0.2.10"));
     }
 
     // ---------------------------------------------------------------------

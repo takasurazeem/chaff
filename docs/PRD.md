@@ -497,7 +497,7 @@ Probed at startup, re-evaluated on endpoint health change, GPU OOM, or thermal e
 
 | Tier | Condition | Face engine | Vision tagging | Notes |
 |---|---|---|---|---|
-| **0 — Remote GPU** | A configured LAN endpoint answers healthy | Local ONNX | Remote, largest model | 9930-class box, e.g. `192.168.1.150`. Queue-on-outage. |
+| **0 — Remote GPU** | A configured LAN endpoint answers healthy | Local ONNX | Remote, largest model | A workstation on the LAN, e.g. `192.0.2.10`. Queue-on-outage. |
 | **1 — Local large** | ≥ 20 GB VRAM | Local ONNX (GPU EP) | 27B-class dense VLM, Q4_K_M | ~17 GB at Q4; RTX 3090/4090 class handles 27–32B comfortably |
 | **2 — Local mid** | 12–19 GB VRAM | Local ONNX (GPU EP) | 7–8B VLM, Q4 | |
 | **3 — Local small** | 6–11 GB VRAM | Local ONNX (GPU EP) | 4B-class VLM, int4, or 2.2B edge model | |
@@ -654,7 +654,7 @@ packaging and signing for all three OSes, accessibility audit.
 - **None for Phase 1.** Phase 1 deliberately requires no GPU, no network, and no model
   downloads, which is what makes it buildable and testable immediately.
 - Phase 3 requires a reachable model server on the user's LAN. As of this writing
-  `192.168.1.150:8080/health` does not answer, so Phase 3 development proceeds against a
+  the reference endpoint does not answer, so Phase 3 development proceeds against a
   stub endpoint and is validated by the user once their server is running.
 
 ---
@@ -737,7 +737,7 @@ cheap to answer and which are load-bearing.
 | 4 | **Sidecar writing** — write XMP from Phase 1, or leave the library untouched? | Whether Phase 1 can write inside your library at all | **Load-bearing.** Changes the Phase 1 scope and the refusal rules |
 | 5 | **Trash location** — `.cull-trash/` in the library, or app-data? | **Reverses ADR-0004's core decision.** In-library is atomic; app-data is cross-volume and non-atomic for libraries on other drives | **Load-bearing.** Changes the safety guarantees |
 | 6 | **Face engine licensing** — personal use only, or might you share this? | **Flips the default in ADR-0002** between Apache-2.0 OpenCV models and the more accurate non-commercial InsightFace pack | **Load-bearing for accuracy.** Changes the K3 target's feasibility |
-| 7 | **Model server** — when `192.168.1.150:8080` returns, which one is it? | Which API shape and catalogue entries Phase 3 targets | Cheap — the abstraction absorbs it, but it blocks Phase 3 validation |
+| 7 | **Model server** — when the reference endpoint returns, which one is it? | Which API shape and catalogue entries Phase 3 targets | Cheap — the abstraction absorbs it, but it blocks Phase 3 validation |
 
 **Recommendation**: answer 4, 5 and 6 before Phase 1 starts. Answers 1, 2, 3, 7 can wait
 until they come up.

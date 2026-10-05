@@ -7,7 +7,7 @@
 ## Context
 
 The user wants a "small LLM with vision capability" to categorise photographs, and runs an
-RTX 3090 box at `192.168.1.150`. They also asked — unprompted, and this is the important
+RTX 3090 box on their LAN. They also asked — unprompted, and this is the important
 part — that the app *"check what resources the system has and then pick the model based on
 that."*
 

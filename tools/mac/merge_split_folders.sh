@@ -104,8 +104,8 @@ while IFS= read -r -d '' dir; do
   # **Only merge a folder that has a sibling holding the other kind.**
   #
   # Without this, any single-kind folder looks like a bucket. The first dry run proposed
-  # scattering `Screenshots/` (2 JPEGs, no raws) and `MEGA downloads/` (1 JPEG) up into
-  # their parents, and `darktable_exported/` into the raw folder above it — none of which
+  # scattering a `Screenshots/` folder (2 JPEGs, no raws) and a download folder (1 JPEG)
+  # up into their parents, and an export folder into the raw folder above it — none of which
   # are raw/JPEG buckets. They are ordinary folders that happen to hold one kind of file.
   #
   # A real bucket has a partner: `raws/` sits beside `jpegs/`, `CR3/` beside `JPG/`. That

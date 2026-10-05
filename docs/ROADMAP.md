@@ -163,7 +163,7 @@ At the end of this wave, **Phase 1 is done** and the product does what it was bu
 [#40](https://github.com/takasurazeem/chaff/issues/40) is blocked on four things I cannot
 guess:
 
-1. SSH **username** for `192.168.1.150` (the host entry exists; I have a key; no user)
+1. SSH **username** for the build host (the host entry exists; I have a key; no user)
 2. Linux **distro and version**, and **CPU architecture** (`uname -m`)
 3. Permission to install Tauri's Linux build dependencies on that server
    (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`,
