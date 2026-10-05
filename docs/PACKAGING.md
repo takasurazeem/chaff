@@ -150,3 +150,73 @@ distrobox enter chaff-build -- sudo dnf install -y webkit2gtk4.1-devel gcc-c++ c
 
 Each of these three was found by a **build that failed**, in that order, and each one reads
 as a different kind of problem than it is.
+
+
+---
+
+# The native macOS app
+
+Two shells, two packaging stories. The Tauri one is above; this is the SwiftUI one.
+
+## Building
+
+```bash
+cd macos
+make app        # cargo builds the FFI library, swift builds the shell, bundle.sh packages it
+```
+
+Produces `macos/build/Chaff.app`, ~6 MB, signed as well as this machine can sign it.
+
+## Signing: three tiers, and exactly where this stops
+
+| tier | what it gets you | available here |
+|---|---|---|
+| **Ad-hoc** (`--sign -`) | Runs on this machine. Gatekeeper refuses it elsewhere, and reports it as *"damaged"* rather than *"unidentified developer"* — a worse message for the same problem. | yes |
+| **Apple Development** | Identifies the developer; runs on machines in the same team. **Not distributable.** | **yes — this is what the build uses** |
+| **Developer ID Application + notarization** | The only thing that ships. | **no — needs a paid Apple Developer Program membership** |
+
+The build signs with **Apple Development: Takasur Azeem (5SSRYGQ62H)**, with hardened runtime
+enabled so a later notarization does not also require changing the signing. Verified, not
+assumed:
+
+```
+$ codesign -dv --verbose=2 macos/build/Chaff.app
+Authority=Apple Development: Takasur Azeem (5SSRYGQ62H)
+Authority=Apple Worldwide Developer Relations Certification Authority
+```
+
+**What is missing is a certificate only the account holder can create.** It cannot be generated
+by a build script, a CI job, or an agent.
+
+## To ship it
+
+1. Join the Apple Developer Program ($99/year) at developer.apple.com.
+2. In **Certificates, Identifiers & Profiles**, create a **Developer ID Application**
+   certificate. Download and install it in the login keychain.
+3. Store notarization credentials once:
+
+   ```bash
+   xcrun notarytool store-credentials chaff \
+       --apple-id <your-apple-id> --team-id <TEAMID> --password <app-specific-password>
+   ```
+
+4. Then:
+
+   ```bash
+   cd macos && make app                    # picks up the Developer ID automatically
+   xcrun notarytool submit build/Chaff.app.zip --keychain-profile chaff --wait
+   xcrun stapler staple build/Chaff.app    # so it validates offline
+   ```
+
+`bundle.sh` prefers a Developer ID when one is present, so step 4 needs no code change — the
+priority order is in the script and the reason is in the comment beside it.
+
+## What was wrong the first time
+
+The identity lookup piped `security find-identity` through `grep | head -1`. **`head` closes the
+pipe, `grep` takes SIGPIPE, and `pipefail` turns that into a failing command substitution** — so
+the assignment silently produced nothing and the build fell back to ad-hoc, while the same grep
+worked perfectly by hand.
+
+The signature is now **verified** after signing rather than assumed. A signature that silently
+did not apply is worse than none, because the next step believes it happened.
