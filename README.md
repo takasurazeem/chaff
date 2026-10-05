@@ -20,12 +20,56 @@ requirements and architecture decisions only.
 |---|---|
 | [docs/PRD.md](docs/PRD.md) | The full product requirements: user stories, scoring model, safety model, hardware tiers, KPIs, risks |
 | [docs/adr/0001-cross-platform-ui-stack.md](docs/adr/0001-cross-platform-ui-stack.md) | **The UI library decision**: Tauri v2 + React 19, with measured evidence and the rejected alternatives |
+| [docs/adr/0001-two-user-interfaces.md](docs/adr/0001-two-user-interfaces.md) | **Why there are two shells**, with the measurements, and four conditions that would collapse them back to one |
 | [docs/adr/0002-rust-onnx-over-python-sidecar.md](docs/adr/0002-rust-onnx-over-python-sidecar.md) | Rust + ONNX Runtime in-process instead of a Python ML sidecar |
 | [docs/adr/0003-remote-vlm-over-lan-with-tier-ladder.md](docs/adr/0003-remote-vlm-over-lan-with-tier-ladder.md) | How the app talks to a GPU box and picks a model based on the hardware it finds |
 | [docs/adr/0004-two-phase-trash-for-paired-delete.md](docs/adr/0004-two-phase-trash-for-paired-delete.md) | Why deletion is reversible, hash-verified and manifest-backed |
 | [docs/SKILLS.md](docs/SKILLS.md) | Which skills to load for this stack, mapped to subsystem and phase |
 
 ---
+
+## Two shells, one engine
+
+| | Tauri (web UI) | Native SwiftUI |
+|---|---|---|
+| Platforms | macOS, Windows, Linux | macOS |
+| Binary | 33 MB | 5 MB |
+| Resident | 1,388 MB | 100 MB |
+| Webview | WebKit, always | none |
+| Source | `src/` + `src-tauri/` | `macos/` |
+
+**The engine is GUI-free** — `chaff-core` and `chaff-faces` have no webview dependency and no FFI
+annotation, verified three ways, and `chaff-cli` runs the whole thing headless. The shells are
+replaceable; the engine is shared. That is the only reason a second shell is a week of work rather
+than a rewrite, and [the ADR](docs/adr/0001-two-user-interfaces.md) records the numbers and what
+would change the decision.
+
+```bash
+# The web app, on any platform
+pnpm install && pnpm tauri dev
+
+# The native app, macOS only
+cd macos && make app && open build/Chaff.app
+
+# Everything that has to be green
+cargo test --workspace && cargo clippy --workspace --all-targets
+pnpm test && pnpm lint && (cd macos && swift test)
+```
+
+### The Cull menu
+
+Every culling action is in the menu bar, because **culling is a keyboard activity and a shortcut
+nobody can find is one nobody uses.**
+
+| | |
+|---|---|
+| `1`–`5` | rate |
+| `X` | reject |
+| `⌫` | move to trash — always through the confirmation |
+| `⌘Z` | undo |
+| `⇧⌘F` | find people |
+| `⇧⌘T` | tag photographs |
+| `⇧⌥⌘T` | the trash |
 
 ## The decisions in one paragraph
 
