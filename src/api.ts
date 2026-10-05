@@ -42,6 +42,46 @@ export async function openLibrary(path: string): Promise<LibraryView> {
   return invoke<LibraryView>("open_library", { path });
 }
 
+/** One file belonging to a photograph. */
+export interface FileDetail {
+  path: string;
+  name: string;
+  role: string;
+  size_bytes: number;
+}
+
+/** Everything known about one photograph. */
+export interface PhotoDetail {
+  photo_id: number;
+  stem: string;
+  dir: string;
+  state: string;
+  needs_review: boolean;
+  files: FileDetail[];
+  camera: string | null;
+  lens: string | null;
+  iso: number | null;
+  f_number: number | null;
+  exposure_time: number | null;
+  focal_length: number | null;
+  captured_at: number | null;
+  composite: number | null;
+  band: string | null;
+  terms: Array<[string, number]>;
+  rating: number;
+  rejected: boolean;
+}
+
+/**
+ * Everything known about one photograph.
+ *
+ * One call, not several: a panel that fetches its EXIF, then its files, then its scores
+ * arrives in three visible stages and the middle one looks like a bug.
+ */
+export async function photoDetail(photoId: number): Promise<PhotoDetail> {
+  return invoke<PhotoDetail>("photo_detail", { photoId });
+}
+
 /** Every remembered value. */
 export async function getSettings(): Promise<Record<string, string>> {
   return invoke<Record<string, string>>("get_settings");

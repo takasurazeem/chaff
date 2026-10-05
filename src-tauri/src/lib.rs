@@ -67,6 +67,7 @@ pub fn run() {
             commands::open_library,
             commands::list_photos,
             commands::list_directories,
+            commands::photo_detail,
             commands::get_settings,
             commands::set_setting,
             commands::photo_thumbnail,

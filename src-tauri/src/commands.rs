@@ -180,6 +180,21 @@ pub struct DirectoryView {
     pub recursive: usize,
 }
 
+/// Everything known about one photograph, for an inspector panel.
+#[tauri::command]
+pub async fn photo_detail(
+    state: State<'_, AppState>,
+    photo_id: i64,
+) -> Result<pipeline::PhotoDetail, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<pipeline::PhotoDetail, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        pipeline::photo_detail(&conn, photo_id).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
 /// Every remembered value.
 ///
 /// Returned as a map so the frontend reads what it needs in one call rather than one round

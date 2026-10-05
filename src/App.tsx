@@ -26,6 +26,7 @@ import { ProgressBar } from "./components/ProgressBar";
 import { Loupe } from "./components/Loupe";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
+import { InfoPanel } from "./components/InfoPanel";
 import { apply as applyFilters, counts as computeCounts, NO_FILTERS, type Filters } from "./filters";
 import { TrashPanel } from "./components/TrashPanel";
 import type { LibraryView, PhotoView } from "./types";
@@ -315,6 +316,18 @@ export default function App() {
     () => applyFilters(photos, decisions, filters),
     [photos, decisions, filters],
   );
+
+  /**
+   * Which photograph the info panel describes.
+   *
+   * The selection if there is one, otherwise whatever the cursor is on. Following the
+   * cursor means arrowing through a shoot updates the panel without the user having to
+   * click each frame, which is how an inspector is used.
+   */
+  const inspected = useMemo(() => {
+    if (selected.size === 1) return [...selected][0];
+    return visible[Math.min(cursor.current, Math.max(0, visible.length - 1))]?.id ?? null;
+  }, [selected, visible]);
   const filterCounts = useMemo(() => computeCounts(photos, decisions), [photos, decisions]);
 
   useEffect(() => {
@@ -724,6 +737,8 @@ export default function App() {
           />
         )}
         </main>
+
+        {status.kind === "ready" && photos.length > 0 && <InfoPanel photoId={inspected} />}
       </div>
     </div>
   );

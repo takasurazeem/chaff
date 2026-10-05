@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -1497,6 +1497,70 @@ mod delete_tests {
     }
 
     #[test]
+    fn the_detail_panel_finds_everything_it_promises() {
+        // A panel that silently shows nothing is worse than no panel: the user concludes
+        // the photograph has no metadata rather than that the query is wrong.
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        let id = photos.iter().find(|p| p.stem == "img_0001").unwrap().id;
+
+        let d = photo_detail(&conn, id).unwrap();
+
+        assert_eq!(d.stem, "img_0001");
+        assert_eq!(d.state, "pair");
+        assert_eq!(d.files.len(), 2, "both halves must be listed");
+        assert!(
+            d.files.iter().any(|f| f.role == "raw") && d.files.iter().any(|f| f.role == "raster"),
+            "and their roles distinguished, or the panel cannot say which is which"
+        );
+        assert!(d.files.iter().all(|f| f.size_bytes > 0), "sizes must be real");
+        assert!(d.composite.is_some(), "the score must be there");
+        assert!(d.band.is_some());
+        assert!(!d.terms.is_empty(), "and the terms behind it");
+        assert_eq!(d.rating, 0, "an undecided photograph reads as unrated");
+    }
+
+    #[test]
+    fn the_detail_panel_survives_a_photograph_with_nothing_known() {
+        // A JPEG with no EXIF and no score. Every field is optional and the panel must
+        // render rather than panic or claim data it does not have.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bare.jpg"), b"not really an image").unwrap();
+        let mut conn = open_in_memory().unwrap();
+        let report = index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
+        let photos = store::photos(&conn, report.library_id).unwrap();
+        assert_eq!(photos.len(), 1);
+
+        let d = photo_detail(&conn, photos[0].id).unwrap();
+        assert!(d.camera.is_none());
+        assert!(d.composite.is_none(), "unscoreable means no score, not a zero");
+        assert_eq!(d.rating, 0);
+        assert_eq!(d.files.len(), 1);
+    }
+
+    #[test]
+    fn the_camera_string_does_not_repeat_itself() {
+        // "Canon" and "Canon EOS R5" are one fact, and a panel showing both on separate
+        // lines looks like it is padding.
+        let Some((_dir, conn, lib)) = library() else { return };
+        let photos = store::photos(&conn, lib).unwrap();
+        for p in &photos {
+            if let Ok(d) = photo_detail(&conn, p.id) {
+                if let Some(c) = &d.camera {
+                    let mut words = c.split_whitespace();
+                    if let (Some(first), Some(second)) = (words.next(), words.next()) {
+                        assert_ne!(
+                            first.to_lowercase(),
+                            second.to_lowercase(),
+                            "the camera string repeats its make: {c}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn resolving_an_empty_selection_is_empty() {
         let Some((_dir, conn, _lib)) = library() else { return };
         let sel = resolve_delete_selection(&conn, &[]).unwrap();
@@ -1504,4 +1568,158 @@ mod delete_tests {
         assert_eq!(sel.file_count(), 0);
         assert_eq!(sel.total_bytes(), 0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// One photograph, in full
+// ---------------------------------------------------------------------------
+/// Everything known about a photograph, for an inspector panel.
+///
+/// Assembled in one call rather than several: a panel that fetches its EXIF, then its
+/// files, then its scores arrives in three visible stages, and the middle one looks like a
+/// bug.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhotoDetail {
+    pub photo_id: i64,
+    pub stem: String,
+    pub dir: String,
+    pub state: String,
+    pub needs_review: bool,
+
+    /// Every file that belongs to it, with its size.
+    pub files: Vec<FileDetail>,
+
+    pub camera: Option<String>,
+    pub lens: Option<String>,
+    pub iso: Option<u32>,
+    pub f_number: Option<f64>,
+    pub exposure_time: Option<f64>,
+    pub focal_length: Option<f64>,
+    /// Local wall-clock as recorded by the camera. See `exif.rs` — differences between
+    /// photographs are meaningful, the absolute instant is not.
+    pub captured_at: Option<i64>,
+
+    /// What the engine thinks, and why.
+    pub composite: Option<f64>,
+    pub band: Option<String>,
+    /// Per-term percentiles, as `(label, percentile)`.
+    pub terms: Vec<(String, f64)>,
+
+    /// What the user decided.
+    pub rating: u8,
+    pub rejected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileDetail {
+    pub path: String,
+    pub name: String,
+    pub role: String,
+    pub size_bytes: i64,
+}
+
+/// Assemble the detail for one photograph.
+pub fn photo_detail(conn: &Connection, photo_id: i64) -> Result<PhotoDetail, CatalogError> {
+    let row = conn.query_row(
+        "SELECT stem, dir, state, needs_review FROM photo WHERE id = ?1",
+        rusqlite::params![photo_id],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)? != 0,
+            ))
+        },
+    )?;
+
+    let files = store::files_for_photo(conn, photo_id)?
+        .into_iter()
+        .map(|f| FileDetail {
+            name: Path::new(&f.path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            path: f.path,
+            role: f.role,
+            size_bytes: f.size_bytes,
+        })
+        .collect();
+
+    // EXIF lives on a file, not a photograph, and a pair has two of them. Prefer the raw's:
+    // it is the file the camera wrote, and a JPEG exported from it can have had its
+    // metadata rewritten or stripped.
+    let exif_row = conn
+        .query_row(
+            "SELECT e.make, e.model, e.lens, e.iso, e.f_number, e.exposure_time,
+                    e.focal_length, e.captured_at
+               FROM exif e JOIN file f ON f.id = e.file_id
+              WHERE f.photo_id = ?1
+              ORDER BY CASE f.role WHEN 'raw' THEN 0 ELSE 1 END
+              LIMIT 1",
+            rusqlite::params![photo_id],
+            |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<i64>>(3)?.map(|v| v as u32),
+                    r.get::<_, Option<f64>>(4)?,
+                    r.get::<_, Option<f64>>(5)?,
+                    r.get::<_, Option<f64>>(6)?,
+                    r.get::<_, Option<i64>>(7)?,
+                ))
+            },
+        )
+        .optional()?;
+
+    let scores = store::scores_for_photo(conn, photo_id, SCORER_VERSION)?;
+    let composite = scores.iter().find(|r| r.metric == "composite").map(|r| r.value);
+    let band = scores.iter().find(|r| r.metric == "band").map(|r| match r.value as i64 {
+        2 => "keep".to_string(),
+        1 => "review".to_string(),
+        _ => "reject".to_string(),
+    });
+    let terms = scores
+        .iter()
+        .filter(|r| r.metric.starts_with("term:"))
+        .map(|r| (r.metric.trim_start_matches("term:").replace('_', " "), r.value))
+        .collect();
+
+    let decision = store::decision_for_photo(conn, photo_id)?.unwrap_or_default();
+
+    let (make, model, lens, iso, f_number, exposure_time, focal_length, captured_at) =
+        exif_row.unwrap_or((None, None, None, None, None, None, None, None));
+
+    // One "camera" string rather than two fields: a panel that shows "Canon" and "Canon EOS
+    // R5" on separate lines is showing the same fact twice, and the make is usually inside
+    // the model already.
+    let camera = match (make, model) {
+        (Some(m), Some(d)) if d.to_lowercase().starts_with(&m.to_lowercase()) => Some(d),
+        (Some(m), Some(d)) => Some(format!("{m} {d}")),
+        (None, Some(d)) => Some(d),
+        (Some(m), None) => Some(m),
+        (None, None) => None,
+    };
+
+    Ok(PhotoDetail {
+        photo_id,
+        stem: row.0,
+        dir: row.1,
+        state: row.2,
+        needs_review: row.3,
+        files,
+        camera,
+        lens,
+        iso,
+        f_number,
+        exposure_time,
+        focal_length,
+        captured_at,
+        composite,
+        band,
+        terms,
+        rating: decision.rating.get(),
+        rejected: decision.rejected,
+    })
 }
