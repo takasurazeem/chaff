@@ -44,7 +44,12 @@ pub const TRASH_DIR_NAME: &str = ".cull-trash";
 ///
 /// `.git` because a repository is not a photo library. `.stfolder` and `.stversions` are
 /// Syncthing's, which would otherwise index every conflict copy as a photograph.
-const EXCLUDED_DIRS: &[&str] = &[
+/// Directories the indexer never descends into.
+///
+/// Public because the file watcher (#6) must ignore exactly the same set. Two lists would
+/// drift, and the one that drifted would be the watcher's — re-indexing `.cull-trash`, which
+/// is the opposite of what the user asked for.
+pub const EXCLUDED_DIRS: &[&str] = &[
     TRASH_DIR_NAME,
     ".dtrash",
     ".git",

@@ -29,6 +29,7 @@ tauri-plugin-dialog = "2.8.1"
 env_logger = "0.11.11"
 log = "0.4.34"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+notify = "8.2.0"
 
 [features]
 # **Required for a release build.** Without it the binary serves `devUrl`

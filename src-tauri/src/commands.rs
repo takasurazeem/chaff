@@ -62,6 +62,8 @@ pub struct AppState {
     thumbs: ThumbnailCache,
     /// The plan most recently shown, if it has not been confirmed, cancelled or expired.
     pending_delete: Arc<Mutex<Option<PendingDelete>>>,
+    /// The library watcher, when one is running.
+    watch: Arc<Mutex<Option<crate::watcher::Watch>>>,
 }
 
 impl AppState {
@@ -70,6 +72,7 @@ impl AppState {
             db: Arc::new(Mutex::new(db)),
             thumbs,
             pending_delete: Arc::new(Mutex::new(None)),
+            watch: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -254,6 +257,97 @@ pub async fn run_face_pass(
     })
     .await
     .map_err(err)?
+}
+
+/// Whether the library watcher is running.
+#[derive(Debug, Serialize)]
+pub struct WatchView {
+    pub running: bool,
+    /// Paths seen since the last re-index, so the UI can say "3 changes seen".
+    pub seen: usize,
+    pub busy: bool,
+}
+
+/// Start watching a library for external changes (#6).
+///
+/// Idempotent: starting a watcher that is already running for the same root does nothing,
+/// because two watchers would re-index twice for every change.
+#[tauri::command]
+pub async fn start_watching(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    library_root: String,
+) -> Result<WatchView, String> {
+    let existing = state.watch.lock().map_err(|_| "watch lock poisoned".to_string())?;
+    if let Some(w) = existing.as_ref() {
+        return Ok(WatchView { running: true, seen: w.seen(), busy: w.is_busy() });
+    }
+    drop(existing);
+
+    let db = state.db();
+    let root = std::path::PathBuf::from(&library_root);
+    let handle = app.clone();
+
+    // The library this root belongs to, resolved once. The re-index needs it and looking it
+    // up inside the callback would need the lock the callback is about to take.
+    let library_id = {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::library_id_for_root(&conn, &library_root)
+            .map_err(err)?
+            .ok_or_else(|| format!("{library_root} is not an open library"))?
+    };
+
+    let watch = crate::watcher::Watch::start(root, move |_changed| {
+        // The re-index runs on a blocking thread rather than in the watcher's callback: it
+        // takes seconds, and the OS event queue is finite.
+        let db = Arc::clone(&db);
+        let handle = handle.clone();
+        std::thread::spawn(move || {
+            let now = now_seconds();
+            let Ok(mut conn) = db.lock() else { return };
+            // The root comes from the catalog, not from the caller: the watcher was started
+            // for one library, and re-indexing a different one would be a surprise.
+            let Ok(Some(root)) = store::library_root(&conn, library_id) else { return };
+            match chaff_core::pipeline::index_and_score_with_progress(
+                &mut conn,
+                std::path::Path::new(&root),
+                now,
+                &mut |_| {},
+            ) {
+                Ok(report) => log::info!(
+                    "watcher re-index: {} photographs, {} reused measurements",
+                    report.photos,
+                    report.reused
+                ),
+                Err(e) => log::warn!("watcher re-index failed: {e}"),
+            }
+            let _ = handle;
+        });
+    })
+    .map_err(|e| format!("could not watch {library_root}: {e}"))?;
+
+    let view = WatchView { running: true, seen: 0, busy: false };
+    *state.watch.lock().map_err(|_| "watch lock poisoned".to_string())? = Some(watch);
+    Ok(view)
+}
+
+/// Stop watching.
+#[tauri::command]
+pub async fn stop_watching(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(w) = state.watch.lock().map_err(|_| "watch lock poisoned".to_string())?.take() {
+        w.stop();
+    }
+    Ok(())
+}
+
+/// Whether the watcher is running.
+#[tauri::command]
+pub async fn watch_status(state: State<'_, AppState>) -> Result<WatchView, String> {
+    let guard = state.watch.lock().map_err(|_| "watch lock poisoned".to_string())?;
+    Ok(match guard.as_ref() {
+        Some(w) => WatchView { running: true, seen: w.seen(), busy: w.is_busy() },
+        None => WatchView { running: false, seen: 0, busy: false },
+    })
 }
 
 /// The endpoint to tag with, from the environment.

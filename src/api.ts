@@ -143,6 +143,29 @@ export async function faceCounts(libraryId: number): Promise<Record<string, numb
   return invoke<Record<string, number>>("face_counts", { libraryId });
 }
 
+/** Whether the library watcher is running. */
+export interface WatchView {
+  running: boolean;
+  /** Paths seen since the last re-index. */
+  seen: number;
+  busy: boolean;
+}
+
+/** Start watching a library for external changes. Idempotent. */
+export async function startWatching(libraryRoot: string): Promise<WatchView> {
+  return invoke<WatchView>("start_watching", { libraryRoot });
+}
+
+/** Stop watching. */
+export async function stopWatching(): Promise<void> {
+  return invoke<void>("stop_watching");
+}
+
+/** Whether the watcher is running. */
+export async function watchStatus(): Promise<WatchView> {
+  return invoke<WatchView>("watch_status");
+}
+
 /** One tag on a photograph. */
 export interface PhotoTagView {
   name: string;

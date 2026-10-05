@@ -9,6 +9,7 @@
 pub mod commands;
 pub mod faces;
 pub mod tagging;
+pub mod watcher;
 
 use tauri::Manager;
 
@@ -69,6 +70,9 @@ pub fn run() {
             commands::list_photos,
             commands::list_directories,
             commands::run_face_pass,
+            commands::start_watching,
+            commands::stop_watching,
+            commands::watch_status,
             commands::run_tag_pass,
             commands::diagnose_endpoint,
             commands::list_tags,

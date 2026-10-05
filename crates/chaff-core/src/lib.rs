@@ -26,3 +26,4 @@ pub mod scoring;
 pub mod thumb;
 pub mod trash;
 pub mod vlm;
+pub mod watch;

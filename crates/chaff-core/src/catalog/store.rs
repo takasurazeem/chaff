@@ -138,6 +138,19 @@ pub fn upsert_library(conn: &Connection, root: &Path, now: i64) -> Result<i64, C
     Ok(id)
 }
 
+/// The id of the library at a root, if it is open.
+///
+/// The inverse of [`library_root`]. The watcher resolves one from the other so a re-index
+/// cannot be pointed at a library the user did not start watching.
+pub fn library_id_for_root(conn: &Connection, root: &str) -> Result<Option<i64>, CatalogError> {
+    let mut stmt = conn.prepare("SELECT id FROM library WHERE root = ?1")?;
+    let mut rows = stmt.query(params![root])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
+    }
+}
+
 pub fn library_root(conn: &Connection, library_id: i64) -> Result<Option<String>, CatalogError> {
     let mut stmt = conn.prepare("SELECT root FROM library WHERE id = ?1")?;
     let mut rows = stmt.query(params![library_id])?;

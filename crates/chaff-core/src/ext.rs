@@ -96,6 +96,18 @@ pub fn extension_lower(path: &Path) -> Option<String> {
 }
 
 /// Classify a path by extension.
+/// Would the catalog index a file with this extension?
+///
+/// The watcher asks this before caring about an event: a `.txt` appearing in a library is
+/// not a reason to re-index anything.
+pub fn is_indexable_extension(ext: &str) -> bool {
+    let e = ext.trim_start_matches('.').to_ascii_lowercase();
+    RAW_EXTS.contains(&e.as_str())
+        || RASTER_EXTS.contains(&e.as_str())
+        || SIDECAR_EXTS.contains(&e.as_str())
+        || VIDEO_EXTS.contains(&e.as_str())
+}
+
 pub fn classify(path: &Path) -> FileKind {
     match extension_lower(path).as_deref() {
         None => FileKind::Other,
