@@ -137,7 +137,7 @@ impl Letterbox {
     }
 
     /// Model coordinates back to image coordinates.
-    fn to_source(&self, x: f32, y: f32) -> (f32, f32) {
+    fn to_source(self, x: f32, y: f32) -> (f32, f32) {
         ((x - self.pad_x) / self.scale, (y - self.pad_y) / self.scale)
     }
 }
@@ -157,7 +157,7 @@ impl Detector for YuNet {
         }
 
         let lb = Letterbox::fit(width, height);
-        let input = letterbox_tensor(pixels, width, height, &lb);
+        let input = letterbox_tensor(pixels, width, height, lb);
 
         let tensor = ort::value::Tensor::from_array(([1usize, 3, INPUT, INPUT], input))
             .map_err(|e| DetectError::Input(e.to_string()))?;
@@ -245,7 +245,7 @@ fn extract(outputs: &ort::session::SessionOutputs<'_>, name: &str) -> Result<Vec
 ///
 /// Nearest-neighbour on purpose: this is a detector input, not a deliverable. A smoother
 /// filter costs time and changes nothing the model cares about.
-fn letterbox_tensor(pixels: &[u8], width: u32, height: u32, lb: &Letterbox) -> Vec<f32> {
+fn letterbox_tensor(pixels: &[u8], width: u32, height: u32, lb: Letterbox) -> Vec<f32> {
     let mut out = vec![0f32; 3 * INPUT * INPUT];
     let plane = INPUT * INPUT;
 

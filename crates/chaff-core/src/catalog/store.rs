@@ -949,6 +949,74 @@ mod tests {
     }
 
     #[test]
+    fn faces_replace_rather_than_accumulate() {
+        // A detection pass is a complete answer for the file it ran on. Merging would keep
+        // a face the detector no longer finds — a ghost no later pass could remove.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let fid = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+
+        let two = vec![
+            FaceRow { file_id: fid, x: 1.0, y: 2.0, width: 3.0, height: 4.0, confidence: 0.9 },
+            FaceRow { file_id: fid, x: 5.0, y: 6.0, width: 7.0, height: 8.0, confidence: 0.8 },
+        ];
+        replace_faces(&conn, fid, &two, &[vec![0; 40], vec![0; 40]], 1, 1, "test", 100).unwrap();
+        assert_eq!(faces_for_photo(&conn, photos(&conn, lib).unwrap()[0].id).unwrap().len(), 2);
+
+        // A second pass that finds one face must leave one, not three.
+        replace_faces(&conn, fid, &two[..1], &[vec![0; 40]], 1, 1, "test", 200).unwrap();
+        assert_eq!(faces_for_photo(&conn, photos(&conn, lib).unwrap()[0].id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn faces_cascade_with_their_file() {
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let fid = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+        let one = vec![FaceRow {
+            file_id: fid,
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            confidence: 1.0,
+        }];
+        replace_faces(&conn, fid, &one, &[vec![0; 40]], 1, 1, "test", 100).unwrap();
+
+        conn.execute("DELETE FROM file WHERE id = ?1", params![fid]).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM face", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0, "faces must not outlive the file they were found in");
+    }
+
+    #[test]
+    fn only_stale_or_missing_files_are_offered_for_detection() {
+        // The same rule the measurement cache uses, and for the same reason: it detects a
+        // change without reading the file. A file whose size or mtime moved is detected
+        // again; one that has not is left alone.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3", "/lib/b.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let raws = files_by_role(&conn, lib, "raw").unwrap();
+
+        assert_eq!(files_needing_faces(&conn, lib, "yunet").unwrap().len(), 2);
+
+        let one = vec![FaceRow { file_id: raws[0].id, x: 0.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 }];
+        replace_faces(&conn, raws[0].id, &one, &[vec![0; 40]], raws[0].size_bytes, raws[0].mtime_ns, "yunet", 100).unwrap();
+
+        let pending = files_needing_faces(&conn, lib, "yunet").unwrap();
+        assert_eq!(pending.len(), 1, "the detected file must drop out");
+        assert_eq!(pending[0].id, raws[1].id);
+
+        // A different detector's results do not count for this one.
+        assert_eq!(files_needing_faces(&conn, lib, "other").unwrap().len(), 2);
+    }
+
+    #[test]
     fn a_photograph_that_comes_back_becomes_visible_again() {
         // **Finding 2 from the review.** A photograph dragged out of `.cull-trash` in
         // Finder, or restored by a backup or sync, kept its trashed marker and stayed
@@ -1828,4 +1896,131 @@ fn year_of(epoch: i64) -> Option<i32> {
 fn chaff_civil_year(epoch: i64) -> Option<i32> {
     let date = crate::trash::civil_date(epoch);
     date.get(..4)?.parse().ok()
+}
+
+// ---------------------------------------------------------------------------
+// Faces
+// ---------------------------------------------------------------------------
+/// One detected face, as stored.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FaceRow {
+    pub file_id: i64,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub confidence: f64,
+}
+
+/// Replace the faces recorded for a file.
+///
+/// Replaced wholesale rather than merged: a detection pass is a complete answer for the
+/// file it ran on, and merging would keep a face that the detector no longer finds — a
+/// ghost that no later pass could remove.
+pub fn replace_faces(
+    conn: &Connection,
+    file_id: i64,
+    faces: &[FaceRow],
+    landmarks: &[Vec<u8>],
+    size: i64,
+    mtime: i64,
+    detector: &str,
+    now: i64,
+) -> Result<(), CatalogError> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM face WHERE file_id = ?1", params![file_id])?;
+    for (f, lm) in faces.iter().zip(landmarks) {
+        tx.execute(
+            "INSERT INTO face (file_id, x, y, width, height, confidence, landmarks,
+                               detected_size, detected_mtime, detector, detected_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                file_id, f.x, f.y, f.width, f.height, f.confidence, lm, size, mtime, detector, now
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// How many faces were found in each photograph of a library.
+///
+/// One query, and the count is what the "has people" filter needs. Returning the boxes for
+/// a whole library would be tens of thousands of rows to draw one badge.
+pub fn face_counts(
+    conn: &Connection,
+    library_id: i64,
+) -> Result<std::collections::HashMap<i64, usize>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT f.photo_id, COUNT(face.id)
+           FROM face
+           JOIN file f ON f.id = face.file_id
+           JOIN photo p ON p.id = f.photo_id
+          WHERE p.library_id = ?1 AND p.trashed_at IS NULL AND f.photo_id IS NOT NULL
+          GROUP BY f.photo_id",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as usize))
+    })?;
+    Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)
+}
+
+/// Every face in one photograph, with the file it was found in.
+pub fn faces_for_photo(conn: &Connection, photo_id: i64) -> Result<Vec<FaceRow>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT face.file_id, face.x, face.y, face.width, face.height, face.confidence
+           FROM face JOIN file f ON f.id = face.file_id
+          WHERE f.photo_id = ?1
+          ORDER BY face.confidence DESC",
+    )?;
+    let rows = stmt.query_map(params![photo_id], |r| {
+        Ok(FaceRow {
+            file_id: r.get(0)?,
+            x: r.get(1)?,
+            y: r.get(2)?,
+            width: r.get(3)?,
+            height: r.get(4)?,
+            confidence: r.get(5)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// The files whose faces are missing or stale, for a detection pass to work through.
+///
+/// A file is stale when its size or modification time differs from what it had when
+/// detection last ran — the same rule the measurement cache uses, and for the same reason:
+/// it detects a change without reading the file.
+pub fn files_needing_faces(
+    conn: &Connection,
+    library_id: i64,
+    detector: &str,
+) -> Result<Vec<FileRow>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT f.id, f.path, f.role, f.size_bytes, f.mtime_ns, f.content_hash
+           FROM file f
+           JOIN photo p ON p.id = f.photo_id
+          WHERE p.library_id = ?1
+            AND p.trashed_at IS NULL
+            AND f.role IN ('raw', 'raster')
+            AND NOT EXISTS (
+                SELECT 1 FROM face
+                 WHERE face.file_id = f.id
+                   AND face.detector = ?2
+                   AND face.detected_size = f.size_bytes
+                   AND face.detected_mtime = f.mtime_ns
+            )
+          ORDER BY f.id",
+    )?;
+    let rows = stmt.query_map(params![library_id, detector], |r| {
+        Ok(FileRow {
+            id: r.get(0)?,
+            path: r.get(1)?,
+            role: r.get(2)?,
+            size_bytes: r.get(3)?,
+            mtime_ns: r.get(4)?,
+            content_hash: r.get(5)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
