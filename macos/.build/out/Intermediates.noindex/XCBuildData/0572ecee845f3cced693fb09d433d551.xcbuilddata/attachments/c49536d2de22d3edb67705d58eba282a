@@ -1,0 +1,4 @@
+module Chaff {
+header "Chaff-Swift.h"
+export *
+}

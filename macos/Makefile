@@ -55,5 +55,12 @@ run: app
 test: bindings
 	swift test
 
+## Everything that has to be green before this is worth shipping.
+##
+## The engine's tests are not run here — they belong to cargo, and `cargo test --workspace` at
+## the repository root covers them. This is the shell.
+check: test
+	swift build -c release
+
 clean:
 	rm -rf .build $(SWIFT_TARGET)/chaff_ffi.swift $(C_MODULE)/chaff_ffiFFI.h $(C_MODULE)/module.modulemap

@@ -94,7 +94,9 @@ struct Tile: View {
             // mistake is available here and this is the shape that avoids it.
             .overlay {
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 3)
+                    // `.tint` rather than `Color.accentColor`: the latter is deprecated, and
+                    // `.tint` is what a user's chosen accent actually resolves to.
+                    .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 3)
             }
 
             HStack(spacing: 4) {

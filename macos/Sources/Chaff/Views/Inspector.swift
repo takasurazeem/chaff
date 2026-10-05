@@ -206,7 +206,10 @@ struct Inspector: View {
 func formatShutter(_ seconds: Double?) -> String? {
     guard let seconds, seconds > 0 else { return nil }
     if seconds >= 1 { return String(format: "%.1f s", seconds) }
-    return "1/\(Int((1 / seconds).rounded()))"
+    // **The unit belongs on both branches.** The first version put ` s` only on the seconds
+    // branch, so a shutter read `1/500` while a long exposure read `2.0 s` — two formats for
+    // one quantity, and the web app's version says `1/500 s`. A test caught it.
+    return "1/\(Int((1 / seconds).rounded())) s"
 }
 
 func formatAperture(_ f: Double?) -> String? {

@@ -5,11 +5,11 @@
       "name" : "Chaff",
       "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos",
       "projects" : [
-        "c221b2537cf4194f36266fe1f359610f32fa7c0011db4cdaef6dc29aacfd57b1",
-        "4045d8b2aa98d8ba76f93dc167a1adfa551d94e8456825047d185b545e02f126"
+        "a59ad052c305a90540a2555e8a56a035d2c57dfaef7f2a0ca495ab5dc8215612",
+        "51e5ba38bf15d609dfb6e07602501b48767980e1b26340b6311decf9d4f63b93"
       ]
     },
-    "signature" : "08355b214385d65c84048e45d7368cf5ad2bd6378a3ee00354e06630ea9082f9",
+    "signature" : "881a5d1dae0c6e4692ab558958a9332e5df104fee58a00a58eb2315252ab2fea",
     "type" : "workspace"
   },
   {
@@ -201,95 +201,23 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_0",
-                "name" : "ChaffApp.swift",
-                "path" : "ChaffApp.swift",
+                "name" : "CullingTests.swift",
+                "path" : "CullingTests.swift",
                 "sourceTree" : "<group>",
                 "type" : "file"
               },
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_1",
-                "name" : "Compatibility.swift",
-                "path" : "Compatibility.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_2",
-                "name" : "Culling.swift",
-                "path" : "Culling.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_3",
-                "name" : "EngineModel.swift",
-                "path" : "EngineModel.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_4",
-                "name" : "ThumbnailLoader.swift",
-                "path" : "ThumbnailLoader.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_5",
-                "name" : "Views/DeleteConfirmation.swift",
-                "path" : "Views/DeleteConfirmation.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_6",
-                "name" : "Views/Inspector.swift",
-                "path" : "Views/Inspector.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_7",
-                "name" : "Views/LibraryView.swift",
-                "path" : "Views/LibraryView.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_8",
-                "name" : "Views/Navigator.swift",
-                "path" : "Views/Navigator.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_9",
-                "name" : "Views/PhotoGrid.swift",
-                "path" : "Views/PhotoGrid.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_10",
-                "name" : "chaff_ffi.swift",
-                "path" : "chaff_ffi.swift",
+                "name" : "FormattingTests.swift",
+                "path" : "FormattingTests.swift",
                 "sourceTree" : "<group>",
                 "type" : "file"
               }
             ],
             "guid" : "PACKAGE:macos::MAINGROUP::REF_2",
-            "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff",
-            "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff",
+            "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Tests/ChaffTests",
+            "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Tests/ChaffTests",
             "sourceTree" : "<absolute>",
             "type" : "group"
           },
@@ -393,33 +321,97 @@
           {
             "children" : [
               {
-                "fileType" : "sourcecode.c.c",
+                "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_0",
-                "name" : "shim.c",
-                "path" : "shim.c",
+                "name" : "ChaffApp.swift",
+                "path" : "ChaffApp.swift",
                 "sourceTree" : "<group>",
                 "type" : "file"
               },
               {
-                "fileType" : "file",
+                "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_1",
-                "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/chaff_ffiFFI.h",
-                "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/chaff_ffiFFI.h",
-                "sourceTree" : "<absolute>",
+                "name" : "Compatibility.swift",
+                "path" : "Compatibility.swift",
+                "sourceTree" : "<group>",
                 "type" : "file"
               },
               {
-                "fileType" : "file",
+                "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_2",
-                "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/include.h",
-                "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/include.h",
-                "sourceTree" : "<absolute>",
+                "name" : "Culling.swift",
+                "path" : "Culling.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_3",
+                "name" : "EngineModel.swift",
+                "path" : "EngineModel.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_4",
+                "name" : "ThumbnailLoader.swift",
+                "path" : "ThumbnailLoader.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_5",
+                "name" : "Views/DeleteConfirmation.swift",
+                "path" : "Views/DeleteConfirmation.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_6",
+                "name" : "Views/Inspector.swift",
+                "path" : "Views/Inspector.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_7",
+                "name" : "Views/LibraryView.swift",
+                "path" : "Views/LibraryView.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_8",
+                "name" : "Views/Navigator.swift",
+                "path" : "Views/Navigator.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_9",
+                "name" : "Views/PhotoGrid.swift",
+                "path" : "Views/PhotoGrid.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_4::REF_10",
+                "name" : "chaff_ffi.swift",
+                "path" : "chaff_ffi.swift",
+                "sourceTree" : "<group>",
                 "type" : "file"
               }
             ],
             "guid" : "PACKAGE:macos::MAINGROUP::REF_4",
-            "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI",
-            "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI",
+            "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff",
+            "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff",
             "sourceTree" : "<absolute>",
             "type" : "group"
           },
@@ -455,6 +447,39 @@
             "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI",
             "sourceTree" : "<absolute>",
             "type" : "group"
+          },
+          {
+            "children" : [
+              {
+                "fileType" : "sourcecode.c.c",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_6::REF_0",
+                "name" : "shim.c",
+                "path" : "shim.c",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "file",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_6::REF_1",
+                "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/chaff_ffiFFI.h",
+                "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/chaff_ffiFFI.h",
+                "sourceTree" : "<absolute>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "file",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_6::REF_2",
+                "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/include.h",
+                "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI/include.h",
+                "sourceTree" : "<absolute>",
+                "type" : "file"
+              }
+            ],
+            "guid" : "PACKAGE:macos::MAINGROUP::REF_6",
+            "name" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI",
+            "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/ChaffFFI",
+            "sourceTree" : "<absolute>",
+            "type" : "group"
           }
         ],
         "guid" : "PACKAGE:macos::MAINGROUP",
@@ -469,15 +494,389 @@
       "projectIsPackage" : "true",
       "projectName" : "Chaff",
       "targets" : [
-        "b52733578a8f6be6662f9924b1553f4076aa923274151f8279df5ae3bab1bc5c",
-        "191cb4569d870f01405608c1b317056936b8fe1e3f8c99a1950aa863d0a4dc59",
-        "22b53f876b14e3e26ae733b498c2e2bb678a48bd71d55b4523f7b3cada849afe",
-        "b1fd9d4465d978e33ff1bcb9c4027d8c95718bbdd35ab0ff723c51480506ac80",
-        "c7eb4550484eeac0528e1466ef5d51607293eea5ba185cfb0734d040eb3ac51e"
+        "94b800cd3099be35c612eca0dac5db9d8b8add84477e2262f03256fdb5c6cd94",
+        "8c18a3e288b6925168aa7ff86dda90f08d69331900dac6bb16c10ea3a4ec5276",
+        "c7b7d1fef9cec7156b961a6c79d8f804fbced17e3a83406a67a9bc81c84b3ec5",
+        "42389ab7db4aa525e51f14c98133d03a68aca02307dcbdb757d6a2f0b59a309f",
+        "215b1bc4d9678096d9451bfe0f399c742b2a234f8432d1850adb71d48b8a1b13",
+        "540d888693036dacbdc54ba99c435cbced789ebac771edeb3d51d52114f64688",
+        "03ab9cc50f15f518594c629af4ad424dead698bebfe9c9a80b15236ae36f30c2"
       ]
     },
-    "signature" : "c221b2537cf4194f36266fe1f359610f32fa7c0011db4cdaef6dc29aacfd57b1",
+    "signature" : "a59ad052c305a90540a2555e8a56a035d2c57dfaef7f2a0ca495ab5dc8215612",
     "type" : "project"
+  },
+  {
+    "contents" : {
+      "approvedByUser" : "true",
+      "buildConfigurations" : [
+        {
+          "buildSettings" : {
+            "APPLE_TEST_BUNDLE_RPATH" : "$(APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_$(SHALLOW_BUNDLE:default=NO))",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_NO" : "@loader_path/../../..",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_YES" : "@loader_path/../..",
+            "BUILD_SERVER_PROTOCOL_TARGET_TAGS" : [
+              "$(inherited)",
+              "test"
+            ],
+            "DOCC_EXTRACT_PROJECT_HEADERS_DOCUMENTATION" : "YES",
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "GENERATE_EMBED_IN_CODE_ACCESSORS" : "NO",
+            "GENERATE_INFOPLIST_FILE" : "YES",
+            "GENERATE_RESOURCE_ACCESSORS" : "YES",
+            "INDEX_ENABLE_DATA_STORE" : "YES",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "17.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "17.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(RPATH_ORIGIN)/Frameworks",
+              "$(RPATH_ORIGIN)/../Frameworks",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=driverkit]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios-maccatalyst]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios;ios-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=macos]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=tvos;tvos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=watchos;watchos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=xros;xros-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "macos.ChaffTests",
+            "PRODUCT_MODULE_NAME" : "ChaffTests",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS" : [
+              "$(inherited)"
+            ],
+            "SWIFT_DISABLE_PARSE_AS_LIBRARY" : "NO",
+            "SWIFT_ENABLE_BARE_SLASH_REGEX" : "NO",
+            "SWIFT_LIBRARIES_ONLY" : "YES",
+            "SWIFT_PACKAGE_NAME" : "macos",
+            "SWIFT_VERSION" : "6",
+            "SYMBOL_GRAPH_EXTRACTOR_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/ChaffTests.symbolgraphs",
+            "TAPI_EXTRACT_API_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/ChaffTests.symbolgraphs",
+            "TARGET_NAME" : "ChaffTests",
+            "TARGET_TEMP_DIR_SUFFIX" : "-p",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDCONFIG_0",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Debug"
+        },
+        {
+          "buildSettings" : {
+            "APPLE_TEST_BUNDLE_RPATH" : "$(APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_$(SHALLOW_BUNDLE:default=NO))",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_NO" : "@loader_path/../../..",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_YES" : "@loader_path/../..",
+            "BUILD_SERVER_PROTOCOL_TARGET_TAGS" : [
+              "$(inherited)",
+              "test"
+            ],
+            "DOCC_EXTRACT_PROJECT_HEADERS_DOCUMENTATION" : "YES",
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "GENERATE_EMBED_IN_CODE_ACCESSORS" : "NO",
+            "GENERATE_INFOPLIST_FILE" : "YES",
+            "GENERATE_RESOURCE_ACCESSORS" : "YES",
+            "INDEX_ENABLE_DATA_STORE" : "YES",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "17.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "17.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(RPATH_ORIGIN)/Frameworks",
+              "$(RPATH_ORIGIN)/../Frameworks",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=driverkit]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios-maccatalyst]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios;ios-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=macos]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=tvos;tvos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=watchos;watchos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=xros;xros-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "macos.ChaffTests",
+            "PRODUCT_MODULE_NAME" : "ChaffTests",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS" : [
+              "$(inherited)"
+            ],
+            "SWIFT_DISABLE_PARSE_AS_LIBRARY" : "NO",
+            "SWIFT_ENABLE_BARE_SLASH_REGEX" : "NO",
+            "SWIFT_LIBRARIES_ONLY" : "YES",
+            "SWIFT_PACKAGE_NAME" : "macos",
+            "SWIFT_VERSION" : "6",
+            "SYMBOL_GRAPH_EXTRACTOR_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/ChaffTests.symbolgraphs",
+            "TAPI_EXTRACT_API_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/ChaffTests.symbolgraphs",
+            "TARGET_NAME" : "ChaffTests",
+            "TARGET_TEMP_DIR_SUFFIX" : "-p",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDCONFIG_1",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Release"
+        }
+      ],
+      "buildPhases" : [
+        {
+          "buildFiles" : [
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_0",
+              "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_0::0",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
+            },
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_1",
+              "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_0::1",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
+            }
+          ],
+          "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_0",
+          "type" : "com.apple.buildphase.sources"
+        },
+        {
+          "buildFiles" : [
+            {
+              "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_1::0",
+              "platformFilters" : [
+
+              ],
+              "targetReference" : "PACKAGE-TARGET:chaff_ffiFFI"
+            },
+            {
+              "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_1::1",
+              "platformFilters" : [
+
+              ],
+              "targetReference" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable"
+            }
+          ],
+          "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_1",
+          "type" : "com.apple.buildphase.frameworks"
+        }
+      ],
+      "buildRules" : [
+
+      ],
+      "customTasks" : [
+
+      ],
+      "dependencies" : [
+        {
+          "guid" : "PACKAGE-TARGET:chaff_ffiFFI",
+          "platformFilters" : [
+
+          ]
+        },
+        {
+          "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff",
+          "platformFilters" : [
+
+          ]
+        },
+        {
+          "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable",
+          "platformFilters" : [
+
+          ]
+        }
+      ],
+      "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests",
+      "name" : "ChaffTests-product",
+      "productReference" : {
+        "guid" : "PRODUCTREF-PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests",
+        "name" : "$(EXECUTABLE_NAME)",
+        "type" : "file"
+      },
+      "productTypeIdentifier" : "com.apple.product-type.bundle.unit-test",
+      "type" : "standard"
+    },
+    "signature" : "94b800cd3099be35c612eca0dac5db9d8b8add84477e2262f03256fdb5c6cd94",
+    "type" : "target"
+  },
+  {
+    "contents" : {
+      "approvedByUser" : "true",
+      "buildConfigurations" : [
+        {
+          "buildSettings" : {
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "17.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "17.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(inherited)",
+              "$(RPATH_ORIGIN)"
+            ],
+            "LINKER_DRIVER" : "swiftc",
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "macos.ChaffTests-test-runner",
+            "PRODUCT_MODULE_NAME" : "ChaffTests_test_runner",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_VERSION" : "5.0",
+            "TARGET_NAME" : "ChaffTests-test-runner",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-TARGET:ChaffTests_test_runner::BUILDCONFIG_0",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Debug"
+        },
+        {
+          "buildSettings" : {
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "17.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "17.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(inherited)",
+              "$(RPATH_ORIGIN)"
+            ],
+            "LINKER_DRIVER" : "swiftc",
+            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "macos.ChaffTests-test-runner",
+            "PRODUCT_MODULE_NAME" : "ChaffTests_test_runner",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_VERSION" : "5.0",
+            "TARGET_NAME" : "ChaffTests-test-runner",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-TARGET:ChaffTests_test_runner::BUILDCONFIG_1",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Release"
+        }
+      ],
+      "buildPhases" : [
+        {
+          "buildFiles" : [
+
+          ],
+          "guid" : "PACKAGE-TARGET:ChaffTests_test_runner::BUILDPHASE_0",
+          "type" : "com.apple.buildphase.sources"
+        },
+        {
+          "buildFiles" : [
+            {
+              "guid" : "PACKAGE-TARGET:ChaffTests_test_runner::BUILDPHASE_1::0",
+              "platformFilters" : [
+
+              ],
+              "targetReference" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests"
+            }
+          ],
+          "guid" : "PACKAGE-TARGET:ChaffTests_test_runner::BUILDPHASE_1",
+          "type" : "com.apple.buildphase.frameworks"
+        }
+      ],
+      "buildRules" : [
+
+      ],
+      "customTasks" : [
+
+      ],
+      "dependencies" : [
+        {
+          "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests",
+          "platformFilters" : [
+
+          ]
+        }
+      ],
+      "guid" : "PACKAGE-TARGET:ChaffTests_test_runner",
+      "name" : "ChaffTests-test-runner",
+      "productReference" : {
+        "guid" : "PRODUCTREF-PACKAGE-TARGET:ChaffTests_test_runner",
+        "name" : "ChaffTests-test-runner",
+        "type" : "file"
+      },
+      "productTypeIdentifier" : "com.apple.product-type.tool.swiftpm-test-runner",
+      "type" : "standard"
+    },
+    "signature" : "8c18a3e288b6925168aa7ff86dda90f08d69331900dac6bb16c10ea3a4ec5276",
+    "type" : "target"
   },
   {
     "contents" : {
@@ -583,7 +982,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_0",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_0",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -592,7 +991,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_1",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_1",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::1",
               "platformFilters" : [
 
@@ -601,7 +1000,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_2",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_2",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::2",
               "platformFilters" : [
 
@@ -610,7 +1009,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_3",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_3",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::3",
               "platformFilters" : [
 
@@ -619,7 +1018,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_4",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_4",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::4",
               "platformFilters" : [
 
@@ -628,7 +1027,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_5",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_5",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::5",
               "platformFilters" : [
 
@@ -637,7 +1036,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_6",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_6",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::6",
               "platformFilters" : [
 
@@ -646,7 +1045,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_7",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_7",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::7",
               "platformFilters" : [
 
@@ -655,7 +1054,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_8",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_8",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::8",
               "platformFilters" : [
 
@@ -664,7 +1063,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_9",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_9",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::9",
               "platformFilters" : [
 
@@ -673,7 +1072,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_10",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_10",
               "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff::BUILDPHASE_0::10",
               "platformFilters" : [
 
@@ -722,7 +1121,7 @@
       "productTypeIdentifier" : "com.apple.product-type.tool",
       "type" : "standard"
     },
-    "signature" : "b52733578a8f6be6662f9924b1553f4076aa923274151f8279df5ae3bab1bc5c",
+    "signature" : "c7b7d1fef9cec7156b961a6c79d8f804fbced17e3a83406a67a9bc81c84b3ec5",
     "type" : "target"
   },
   {
@@ -860,7 +1259,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_0",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_0",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -869,7 +1268,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_1",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_1",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::1",
               "platformFilters" : [
 
@@ -878,7 +1277,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_2",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_2",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::2",
               "platformFilters" : [
 
@@ -887,7 +1286,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_3",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_3",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::3",
               "platformFilters" : [
 
@@ -896,7 +1295,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_4",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_4",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::4",
               "platformFilters" : [
 
@@ -905,7 +1304,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_5",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_5",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::5",
               "platformFilters" : [
 
@@ -914,7 +1313,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_6",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_6",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::6",
               "platformFilters" : [
 
@@ -923,7 +1322,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_7",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_7",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::7",
               "platformFilters" : [
 
@@ -932,7 +1331,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_8",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_8",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::8",
               "platformFilters" : [
 
@@ -941,7 +1340,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_9",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_9",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::9",
               "platformFilters" : [
 
@@ -950,7 +1349,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_3::REF_10",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_10",
               "guid" : "PACKAGE-TARGET:Chaff-B6DD571627D-testable::BUILDPHASE_0::10",
               "platformFilters" : [
 
@@ -986,7 +1385,7 @@
       "productTypeIdentifier" : "org.swift.product-type.common.object",
       "type" : "standard"
     },
-    "signature" : "191cb4569d870f01405608c1b317056936b8fe1e3f8c99a1950aa863d0a4dc59",
+    "signature" : "42389ab7db4aa525e51f14c98133d03a68aca02307dcbdb757d6a2f0b59a309f",
     "type" : "target"
   },
   {
@@ -1134,7 +1533,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_0",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_5::REF_0",
               "guid" : "PACKAGE-TARGET:chaff_ffiFFI::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -1149,7 +1548,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_1",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_5::REF_1",
               "guid" : "PACKAGE-TARGET:chaff_ffiFFI::BUILDPHASE_1::0",
               "platformFilters" : [
 
@@ -1158,7 +1557,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_4::REF_2",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_5::REF_2",
               "guid" : "PACKAGE-TARGET:chaff_ffiFFI::BUILDPHASE_1::1",
               "platformFilters" : [
 
@@ -1190,7 +1589,7 @@
       "productTypeIdentifier" : "org.swift.product-type.library.static",
       "type" : "standard"
     },
-    "signature" : "22b53f876b14e3e26ae733b498c2e2bb678a48bd71d55b4523f7b3cada849afe",
+    "signature" : "215b1bc4d9678096d9451bfe0f399c742b2a234f8432d1850adb71d48b8a1b13",
     "type" : "target"
   },
   {
@@ -1231,13 +1630,24 @@
 
       ],
       "dependencies" : [
+        {
+          "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests",
+          "platformFilters" : [
 
+          ]
+        },
+        {
+          "guid" : "PACKAGE-TARGET:ChaffTests_test_runner",
+          "platformFilters" : [
+
+          ]
+        }
       ],
       "guid" : "PACKAGE-PRODUCT:macos-ChaffPackageTests.ChaffPackageTests",
       "name" : "ChaffPackageTests-product",
       "type" : "aggregate"
     },
-    "signature" : "c7eb4550484eeac0528e1466ef5d51607293eea5ba185cfb0734d040eb3ac51e",
+    "signature" : "03ab9cc50f15f518594c629af4ad424dead698bebfe9c9a80b15236ae36f30c2",
     "type" : "target"
   },
   {
@@ -1383,7 +1793,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_5::REF_0",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_6::REF_0",
               "guid" : "PACKAGE-TARGET:chaff_ffiFFI--73064EEB964E0A93-dynamic::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -1398,7 +1808,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_5::REF_1",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_6::REF_1",
               "guid" : "PACKAGE-TARGET:chaff_ffiFFI--73064EEB964E0A93-dynamic::BUILDPHASE_1::0",
               "platformFilters" : [
 
@@ -1407,7 +1817,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_5::REF_2",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_6::REF_2",
               "guid" : "PACKAGE-TARGET:chaff_ffiFFI--73064EEB964E0A93-dynamic::BUILDPHASE_1::1",
               "platformFilters" : [
 
@@ -1438,7 +1848,7 @@
       "productTypeIdentifier" : "com.apple.product-type.library.dynamic",
       "type" : "standard"
     },
-    "signature" : "b1fd9d4465d978e33ff1bcb9c4027d8c95718bbdd35ab0ff723c51480506ac80",
+    "signature" : "540d888693036dacbdc54ba99c435cbced789ebac771edeb3d51d52114f64688",
     "type" : "target"
   },
   {
@@ -1499,11 +1909,11 @@
       "projectIsPackage" : "true",
       "projectName" : "Aggregate",
       "targets" : [
-        "5c0f25a2c508c729fe58ad2c9b465a6e77808a63f66a70e04e271ae9cae7f75a",
+        "033be614d08f0de3b1e3245893b216254d9ae3269492d72e6173d83261c252db",
         "0ddc09184a09161a8c0a63a5a73df640ce9f55d873879a7b6631c527ab041c32"
       ]
     },
-    "signature" : "4045d8b2aa98d8ba76f93dc167a1adfa551d94e8456825047d185b545e02f126",
+    "signature" : "51e5ba38bf15d609dfb6e07602501b48767980e1b26340b6311decf9d4f63b93",
     "type" : "project"
   },
   {
@@ -1545,6 +1955,18 @@
       ],
       "dependencies" : [
         {
+          "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests",
+          "platformFilters" : [
+
+          ]
+        },
+        {
+          "guid" : "PACKAGE-TARGET:ChaffTests_test_runner",
+          "platformFilters" : [
+
+          ]
+        },
+        {
           "guid" : "PACKAGE-PRODUCT:macos_Chaff.Chaff",
           "platformFilters" : [
 
@@ -1561,7 +1983,7 @@
       "name" : "AllIncludingTests",
       "type" : "aggregate"
     },
-    "signature" : "5c0f25a2c508c729fe58ad2c9b465a6e77808a63f66a70e04e271ae9cae7f75a",
+    "signature" : "033be614d08f0de3b1e3245893b216254d9ae3269492d72e6173d83261c252db",
     "type" : "target"
   },
   {

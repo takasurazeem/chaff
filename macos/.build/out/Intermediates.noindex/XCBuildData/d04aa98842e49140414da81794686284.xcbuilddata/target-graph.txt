@@ -1,7 +1,0 @@
-Target dependency graph (3 targets)
-Target 'AllExcludingTests' in project 'Aggregate'
-➜ Explicit dependency on target 'Chaff-product' in project 'Chaff'
-➜ Explicit dependency on target 'chaff_ffiFFI' in project 'Chaff'
-Target 'Chaff-product' in project 'Chaff'
-➜ Explicit dependency on target 'chaff_ffiFFI' in project 'Chaff'
-Target 'chaff_ffiFFI' in project 'Chaff' (no dependencies)
