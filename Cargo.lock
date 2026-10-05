@@ -571,6 +571,7 @@ dependencies = [
  "chaff-faces",
  "clap",
  "env_logger",
+ "libc",
  "log",
 ]
 

@@ -245,7 +245,7 @@ typedef void (*UniffiForeignFutureCompleteVoid)(uint64_t, UniffiForeignFutureRes
 #endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_PROGRESS_METHOD0
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_PROGRESS_METHOD0
-typedef void (*UniffiCallbackInterfaceProgressMethod0)(uint64_t, uint32_t, uint32_t, RustBuffer, RustBuffer, void* _Nonnull, 
+typedef void (*UniffiCallbackInterfaceProgressMethod0)(uint64_t, uint32_t, uint32_t, RustBuffer, RustBuffer, int8_t* _Nonnull, 
         RustCallStatus *_Nonnull uniffiCallStatus
     );
 
@@ -331,12 +331,12 @@ uint32_t uniffi_chaff_ffi_fn_method_engine_restore_trash(uint64_t ptr, RustBuffe
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_FACE_PASS
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_FACE_PASS
-RustBuffer uniffi_chaff_ffi_fn_method_engine_run_face_pass(uint64_t ptr, RustBuffer app_data, int64_t library_id, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_chaff_ffi_fn_method_engine_run_face_pass(uint64_t ptr, RustBuffer app_data, int64_t library_id, uint64_t progress, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_TAG_PASS
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_TAG_PASS
-RustBuffer uniffi_chaff_ffi_fn_method_engine_run_tag_pass(uint64_t ptr, RustBuffer app_data, int64_t library_id, RustBuffer endpoint, RustBuffer model, uint32_t limit, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_chaff_ffi_fn_method_engine_run_tag_pass(uint64_t ptr, RustBuffer app_data, int64_t library_id, RustBuffer endpoint, RustBuffer model, uint32_t limit, uint64_t progress, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SET_DECISION

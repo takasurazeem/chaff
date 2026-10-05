@@ -37,6 +37,9 @@ pub struct FacePassReport {
     /// The model's licence, so the UI can show it where the feature is switched on.
     pub licence: String,
     pub elapsed_ms: u128,
+    /// The user stopped it. **Distinct from finished** — a library that is a third grouped must
+    /// not read as complete, and the work already done is kept.
+    pub cancelled: bool,
 }
 
 /// Where downloaded models live.
@@ -53,7 +56,11 @@ pub fn run(
     app_data: &Path,
     library_id: i64,
     now: i64,
-    on_progress: &mut dyn FnMut(usize, usize),
+    // **Returns whether to keep going.** A callback that can only be listened to cannot stop
+    // anything, and a face pass over a large library is tens of minutes. Both passes commit each
+    // file as they go, so stopping loses nothing — the work list is the catalog, and the next
+    // pass resumes.
+    on_progress: &mut dyn FnMut(usize, usize) -> bool,
 ) -> Result<FacePassReport, String> {
     let started = std::time::Instant::now();
 
@@ -76,6 +83,7 @@ pub fn run(
         people: 0,
         licence: SFACE.licence.to_string(),
         elapsed_ms: 0,
+        cancelled: false,
     };
 
     // --- Detection -----------------------------------------------------------
@@ -84,7 +92,10 @@ pub fn run(
     let total = pending.len();
 
     for (i, file) in pending.iter().enumerate() {
-        on_progress(i, total);
+        if !on_progress(i, total) {
+            report.cancelled = true;
+            break;
+        }
 
         let Ok(img) = thumb::decode_source(Path::new(&file.path)) else {
             report.unreadable += 1;
@@ -139,7 +150,9 @@ pub fn run(
         report.detected_files += 1;
         report.faces_found += found.len();
     }
-    on_progress(total, total);
+    if !report.cancelled {
+        on_progress(total, total);
+    }
 
     // --- Embeddings ----------------------------------------------------------
     let needing = store::faces_needing_embeddings(conn, library_id, recogniser_model())
@@ -292,7 +305,7 @@ pub fn run_clip(
     paths: &ClipPaths<'_>,
     settings: ClipSettings,
     now: i64,
-    on_progress: &mut dyn FnMut(usize, usize),
+    on_progress: &mut dyn FnMut(usize, usize) -> bool,
 ) -> Result<ClipPassReport, String> {
     let ClipPaths { model: model_path, vocabulary: vocabulary_path } = *paths;
     let ClipSettings { keep, min_similarity } = settings;
@@ -315,10 +328,14 @@ pub fn run_clip(
         tags: 0,
         elapsed_ms: 0,
         vocabulary: vocabulary.len(),
+        cancelled: false,
     };
 
     for (i, (photo_id, path)) in pending.iter().enumerate() {
-        on_progress(i, total);
+        if !on_progress(i, total) {
+            report.cancelled = true;
+            break;
+        }
 
         let Some(img) = chaff_core::thumb::decode_source(std::path::Path::new(path)).ok() else {
             report.unreadable += 1;
@@ -350,7 +367,9 @@ pub fn run_clip(
         report.tagged += 1;
         report.tags += tags.len();
     }
-    on_progress(total, total);
+    if !report.cancelled {
+        on_progress(total, total);
+    }
 
     report.elapsed_ms = started.elapsed().as_millis();
     log::info!(
@@ -393,4 +412,6 @@ pub struct ClipPassReport {
     pub tags: usize,
     pub elapsed_ms: u128,
     pub vocabulary: usize,
+    /// The user stopped it. See `FacePassReport::cancelled`.
+    pub cancelled: bool,
 }

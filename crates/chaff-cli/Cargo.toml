@@ -12,6 +12,8 @@ chaff-faces = { path = "../chaff-faces" }
 clap = { version = "4", features = ["derive", "env"] }
 env_logger = "0.11"
 log = "0.4"
+# One signal, one flag. A dependency for four lines would be worse than the four lines.
+libc = "0.2"
 
 [[bin]]
 name = "chaff"

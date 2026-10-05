@@ -246,6 +246,9 @@ pub async fn run_face_pass(
                 log::info!("face pass: {done} files");
                 last = done;
             }
+            // The shell has no cancel control for this yet — see #76. `true` keeps going, which
+            // is the honest state rather than a fake cancel that does nothing.
+            true
         })
     })
     .await
@@ -486,7 +489,7 @@ pub async fn run_tag_pass(
         // Without one, use CLIP, and **say so** — "tagged 200 photographs" with no model
         // named is a claim the user cannot check.
         if let Some(endpoint) = vlm_endpoint() {
-            let report = crate::tagging::run(&mut conn, library_id, &endpoint, limit, now, &mut |_, _| {})?;
+            let report = crate::tagging::run(&mut conn, library_id, &endpoint, limit, now, &mut |_, _| true)?;
             return Ok(TagOutcome::Remote { model: endpoint.model, report });
         }
 
@@ -513,7 +516,7 @@ pub async fn run_tag_pass(
             // cannot describe.
             chaff_faces::pass::ClipSettings { keep: 5, min_similarity: 0.2 },
             now,
-            &mut |_, _| {},
+            &mut |_, _| true,
         )?;
 
         Ok(TagOutcome::Local {

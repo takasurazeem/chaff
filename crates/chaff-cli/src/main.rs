@@ -105,6 +105,8 @@ fn main() -> std::process::ExitCode {
         _ => "debug",
     };
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(level)).init();
+    // So a long pass can be stopped without killing the process mid-write.
+    install_signal_handler();
 
     match run(&cli) {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -153,6 +155,9 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("  {done}/{total} files");
                     last = done;
                 }
+                // Ctrl-C stops it. Both passes commit each file as they go, so nothing is lost
+                // and the next run resumes from the catalog.
+                !interrupted()
             })?;
             println!(
                 "{} files · {} faces · {} embedded · {} unreadable · {} groups in {:.1}s",
@@ -178,7 +183,7 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 &chaff_core::vlm::Endpoint { base, model: model.clone() },
                 *limit,
                 now,
-                &mut |_, _| {},
+                &mut |_, _| true,
             )?;
             println!(
                 "{} tagged · {} tags · {} tokens · {} to go in {:.1}s",
@@ -214,6 +219,7 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                     if done % 200 == 0 && done > 0 {
                         eprintln!("  {done}/{total}");
                     }
+                    !interrupted()
                 },
             )?;
             println!(
@@ -314,6 +320,32 @@ fn data_dir() -> PathBuf {
     std::env::var("CHAFF_DATA")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Has the user pressed Ctrl-C?
+///
+/// A flag set by a signal handler rather than the default behaviour: the default kills the
+/// process mid-write, and these passes are writing to a catalog. Setting a flag lets the pass
+/// finish the photograph it is on and stop cleanly.
+static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn interrupted() -> bool {
+    INTERRUPTED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Ask the handler to be installed.
+///
+/// `libc::signal` rather than a dependency: one signal, one flag, and the alternative is a
+/// crate for four lines.
+fn install_signal_handler() {
+    extern "C" fn on_sigint(_: std::os::raw::c_int) {
+        INTERRUPTED.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    // SAFETY: the handler only stores to an atomic, which is async-signal-safe. It allocates
+    // nothing, takes no lock, and calls nothing that could re-enter.
+    unsafe {
+        libc::signal(libc::SIGINT, on_sigint as libc::sighandler_t);
+    }
 }
 
 fn now_seconds() -> i64 {

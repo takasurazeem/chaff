@@ -167,7 +167,12 @@ pub trait Progress: Send + Sync {
     /// finishes, and a determinate bar over an unknown total is a bar that lies.
     ///
     /// `current` is the file being worked on, or empty for stages that have no single file.
-    fn on_progress(&self, done: u32, total: u32, stage: String, current: String);
+    ///
+    /// **Returns whether to keep going.** A callback that can only be listened to cannot stop
+    /// anything, and a face pass over a large library is tens of minutes. Both passes commit
+    /// each file as they go, so stopping loses nothing — the work list is the catalog, and the
+    /// next pass resumes from where this one stopped.
+    fn on_progress(&self, done: u32, total: u32, stage: String, current: String) -> bool;
 }
 
 /// The catalog, open for a shell to use.
@@ -543,6 +548,9 @@ pub struct FacePassReport {
     /// The model's licence, so the UI can show it where the feature is switched on.
     pub licence: String,
     pub elapsed_ms: u64,
+    /// The user stopped it. **Distinct from finished** — a library that is a third grouped must
+    /// not read as complete, and the work already done is kept.
+    pub cancelled: bool,
 }
 
 /// What a tagging pass did.
@@ -829,7 +837,12 @@ impl Engine {
     /// Long-running: the first pass downloads a 38 MB model and then runs a network over every
     /// photograph. Resumable — each file is committed as it is processed, so stopping loses
     /// nothing and the work list is the catalog.
-    pub fn run_face_pass(&self, app_data: String, library_id: i64) -> Result<FacePassReport> {
+    pub fn run_face_pass(
+        &self,
+        app_data: String,
+        library_id: i64,
+        progress: Box<dyn Progress>,
+    ) -> Result<FacePassReport> {
         let mut conn = self.lock()?;
         let now = now_seconds();
         let report = chaff_faces::pass::run(
@@ -837,7 +850,7 @@ impl Engine {
             std::path::Path::new(&app_data),
             library_id,
             now,
-            &mut |_, _| {},
+            &mut |done, total| progress.on_progress(done as u32, total as u32, "faces".into(), String::new()),
         )
         .map_err(|e| ChaffError::engine("faces", e))?;
 
@@ -849,6 +862,7 @@ impl Engine {
             people: report.people as u32,
             licence: report.licence,
             elapsed_ms: report.elapsed_ms as u64,
+            cancelled: report.cancelled,
         })
     }
 
@@ -867,6 +881,7 @@ impl Engine {
         endpoint: Option<String>,
         model: String,
         limit: u32,
+        progress: Box<dyn Progress>,
     ) -> Result<TagPassReport> {
         let mut conn = self.lock()?;
         let now = now_seconds();
@@ -876,8 +891,15 @@ impl Engine {
             // Cloned, because `model` is named in the report below as well — the caller needs
             // to know which tagger ran, and that is the whole point of the field.
             let e = chaff_core::vlm::Endpoint { base, model: model.clone() };
-            let report = chaff_core::tagging::run(&mut conn, library_id, &e, limit, now, &mut |_, _| {})
-                .map_err(|e| ChaffError::engine("tags", e))?;
+            let report = chaff_core::tagging::run(
+                &mut conn,
+                library_id,
+                &e,
+                limit,
+                now,
+                &mut |done, total| progress.on_progress(done as u32, total as u32, "tagging".into(), String::new()),
+            )
+            .map_err(|e| ChaffError::engine("tags", e))?;
             return Ok(TagPassReport {
                 tagged: report.tagged as u32,
                 remaining: report.remaining as u32,
@@ -917,7 +939,7 @@ impl Engine {
             &chaff_faces::pass::ClipPaths { model: &clip, vocabulary: &vocabulary },
             chaff_faces::pass::ClipSettings { keep: 5, min_similarity: 0.2 },
             now,
-            &mut |_, _| {},
+            &mut |done, total| progress.on_progress(done as u32, total as u32, "tagging".into(), String::new()),
         )
         .map_err(|e| ChaffError::engine("tags", e))?;
 
@@ -1000,7 +1022,9 @@ mod tests {
     /// A progress sink that does nothing, for tests that are not about progress.
     struct Silent;
     impl Progress for Silent {
-        fn on_progress(&self, _done: u32, _total: u32, _stage: String, _current: String) {}
+        fn on_progress(&self, _done: u32, _total: u32, _stage: String, _current: String) -> bool {
+            true
+        }
     }
 
     /// A progress sink that records, for the tests that are.
@@ -1010,13 +1034,14 @@ mod tests {
         currents: Mutex<Vec<String>>,
     }
     impl Progress for Recording {
-        fn on_progress(&self, done: u32, total: u32, stage: String, current: String) {
+        fn on_progress(&self, done: u32, total: u32, stage: String, current: String) -> bool {
             if let Ok(mut v) = self.seen.lock() {
                 v.push((done, total, stage));
             }
             if let Ok(mut v) = self.currents.lock() {
                 v.push(current);
             }
+            true
         }
     }
 
@@ -1050,8 +1075,8 @@ mod tests {
         // A sink that forwards to the recording one, because the trait object is moved.
         struct Forward(Arc<Recording>);
         impl Progress for Forward {
-            fn on_progress(&self, done: u32, total: u32, stage: String, current: String) {
-                self.0.on_progress(done, total, stage, current);
+            fn on_progress(&self, done: u32, total: u32, stage: String, current: String) -> bool {
+                self.0.on_progress(done, total, stage, current)
             }
         }
 

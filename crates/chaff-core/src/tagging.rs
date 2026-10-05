@@ -65,7 +65,7 @@ pub fn run(
     endpoint: &vlm::Endpoint,
     limit: usize,
     now: i64,
-    on_progress: &mut dyn FnMut(usize, usize),
+    on_progress: &mut dyn FnMut(usize, usize) -> bool,
 ) -> Result<TagPassReport, String> {
     let started = std::time::Instant::now();
     // Every request goes through the chokepoint, so there is one list of what this
@@ -90,7 +90,10 @@ pub fn run(
     };
 
     for (i, (photo_id, path)) in batch.iter().enumerate() {
-        on_progress(i, batch.len());
+        if !on_progress(i, batch.len()) {
+            report.stopped_because = Some("cancelled".to_string());
+            break;
+        }
 
         let Some(jpeg) = prepare(Path::new(path)) else {
             report.unreadable += 1;
@@ -139,7 +142,9 @@ pub fn run(
             }
         }
     }
-    on_progress(batch.len(), batch.len());
+    if report.stopped_because.is_none() {
+        on_progress(batch.len(), batch.len());
+    }
 
     report.elapsed_ms = started.elapsed().as_millis();
     log::info!(

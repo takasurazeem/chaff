@@ -130,6 +130,10 @@ final class EngineModel {
                             Task { @MainActor in
                                 self.record(done: done, total: total, stage: stage, current: current)
                             }
+                            // The index pass reports through this sink and is stopped by
+                            // `cancelIndexing`, which the pass checks itself. This is not the
+                            // control for it, so it always says keep going.
+                            return true
                         }
                     )
                     continuation.resume(returning: report)
@@ -205,15 +209,33 @@ final class EngineModel {
 
         let engine = self.engine
         let data = Self.dataRoot().path
+        let sink = passSink(stage: "finding faces")
         do {
             let report = try await Task.detached(priority: .userInitiated) {
-                try engine.runFacePass(appData: data, libraryId: library.id)
+                try engine.runFacePass(appData: data, libraryId: library.id, progress: sink)
             }.value
             faceReport = report
             people = try engine.people(libraryId: library.id)
             progressLabel = ""
         } catch {
             errorMessage = describe(error)
+        }
+    }
+
+    /// A progress sink the pass can also stop through.
+    ///
+    /// The callback returns whether to keep going, and it reads the same `cancelRequested` flag
+    /// the index pass uses — one way to stop any pass, rather than a different control per
+    /// operation.
+    private func passSink(stage: String) -> ProgressSink {
+        ProgressSink { done, total, _, _ in
+            Task { @MainActor in
+                self.record(done: done, total: total, stage: stage, current: "")
+            }
+            // Read on the pass's thread, which is why `cancelRequested` is set from the main
+            // actor and read here without a lock: a `Bool` write is atomic enough for a flag
+            // whose worst case is one more photograph being processed.
+            return !self.cancelRequested
         }
     }
 
@@ -234,11 +256,12 @@ final class EngineModel {
         let endpoint = ProcessInfo.processInfo.environment["CHAFF_VLM"]
         let model = ProcessInfo.processInfo.environment["CHAFF_VLM_MODEL"] ?? "chaff-vlm"
 
+        let sink = passSink(stage: "tagging")
         do {
             let report = try await Task.detached(priority: .userInitiated) {
                 try engine.runTagPass(
                     appData: data, libraryId: library.id,
-                    endpoint: endpoint, model: model, limit: limit
+                    endpoint: endpoint, model: model, limit: limit, progress: sink
                 )
             }.value
             tagReport = report
@@ -340,13 +363,15 @@ final class EngineModel {
 /// `Progress` is a UniFFI callback interface, so Swift has to supply a class. A struct with a
 /// closure would be nicer and cannot conform to an `AnyObject` protocol.
 private final class ProgressSink: Progress, @unchecked Sendable {
-    private let handler: (UInt32, UInt32, String, String) -> Void
+    // **Returns whether to keep going.** A sink that can only be listened to cannot stop
+    // anything, and a face pass over a large library is tens of minutes.
+    private let handler: (UInt32, UInt32, String, String) -> Bool
 
-    init(_ handler: @escaping (UInt32, UInt32, String, String) -> Void) {
+    init(_ handler: @escaping (UInt32, UInt32, String, String) -> Bool) {
         self.handler = handler
     }
 
-    func onProgress(done: UInt32, total: UInt32, stage: String, current: String) {
+    func onProgress(done: UInt32, total: UInt32, stage: String, current: String) -> Bool {
         handler(done, total, stage, current)
     }
 }

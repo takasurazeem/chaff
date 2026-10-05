@@ -790,7 +790,7 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * photograph. Resumable — each file is committed as it is processed, so stopping loses
      * nothing and the work list is the catalog.
      */
-    func runFacePass(appData: String, libraryId: Int64) throws  -> FacePassReport
+    func runFacePass(appData: String, libraryId: Int64, progress: Progress) throws  -> FacePassReport
     
     /**
      * Tag photographs.
@@ -802,7 +802,7 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * `limit` bounds one call, so a library can be done in pieces with feedback between them
      * rather than as one silent hour.
      */
-    func runTagPass(appData: String, libraryId: Int64, endpoint: String?, model: String, limit: UInt32) throws  -> TagPassReport
+    func runTagPass(appData: String, libraryId: Int64, endpoint: String?, model: String, limit: UInt32, progress: Progress) throws  -> TagPassReport
     
     /**
      * Set a photograph's rating and reject flag.
@@ -1129,13 +1129,14 @@ open func restoreTrash(root: String, opId: String)throws  -> UInt32  {
      * photograph. Resumable — each file is committed as it is processed, so stopping loses
      * nothing and the work list is the catalog.
      */
-open func runFacePass(appData: String, libraryId: Int64)throws  -> FacePassReport  {
+open func runFacePass(appData: String, libraryId: Int64, progress: Progress)throws  -> FacePassReport  {
     return try  FfiConverterTypeFacePassReport_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
         uniffiCallStatus in
     uniffi_chaff_ffi_fn_method_engine_run_face_pass(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(appData),
-        FfiConverterInt64.lower(libraryId),uniffiCallStatus
+        FfiConverterInt64.lower(libraryId),
+        FfiConverterCallbackInterfaceProgress_lower(progress),uniffiCallStatus
     )
 })
 }
@@ -1150,7 +1151,7 @@ open func runFacePass(appData: String, libraryId: Int64)throws  -> FacePassRepor
      * `limit` bounds one call, so a library can be done in pieces with feedback between them
      * rather than as one silent hour.
      */
-open func runTagPass(appData: String, libraryId: Int64, endpoint: String?, model: String, limit: UInt32)throws  -> TagPassReport  {
+open func runTagPass(appData: String, libraryId: Int64, endpoint: String?, model: String, limit: UInt32, progress: Progress)throws  -> TagPassReport  {
     return try  FfiConverterTypeTagPassReport_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
         uniffiCallStatus in
     uniffi_chaff_ffi_fn_method_engine_run_tag_pass(
@@ -1159,7 +1160,8 @@ open func runTagPass(appData: String, libraryId: Int64, endpoint: String?, model
         FfiConverterInt64.lower(libraryId),
         FfiConverterOptionString.lower(endpoint),
         FfiConverterString.lower(model),
-        FfiConverterUInt32.lower(limit),uniffiCallStatus
+        FfiConverterUInt32.lower(limit),
+        FfiConverterCallbackInterfaceProgress_lower(progress),uniffiCallStatus
     )
 })
 }
@@ -1433,6 +1435,11 @@ public struct FacePassReport: Equatable, Hashable {
      */
     public var licence: String
     public var elapsedMs: UInt64
+    /**
+     * The user stopped it. **Distinct from finished** — a library that is a third grouped must
+     * not read as complete, and the work already done is kept.
+     */
+    public var cancelled: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1442,7 +1449,11 @@ public struct FacePassReport: Equatable, Hashable {
          */unreadable: UInt32, people: UInt32, 
         /**
          * The model's licence, so the UI can show it where the feature is switched on.
-         */licence: String, elapsedMs: UInt64) {
+         */licence: String, elapsedMs: UInt64, 
+        /**
+         * The user stopped it. **Distinct from finished** — a library that is a third grouped must
+         * not read as complete, and the work already done is kept.
+         */cancelled: Bool) {
         self.detectedFiles = detectedFiles
         self.facesFound = facesFound
         self.embedded = embedded
@@ -1450,6 +1461,7 @@ public struct FacePassReport: Equatable, Hashable {
         self.people = people
         self.licence = licence
         self.elapsedMs = elapsedMs
+        self.cancelled = cancelled
     }
 
     
@@ -1474,7 +1486,8 @@ public struct FfiConverterTypeFacePassReport: FfiConverterRustBuffer {
                 unreadable: FfiConverterUInt32.read(from: &buf), 
                 people: FfiConverterUInt32.read(from: &buf), 
                 licence: FfiConverterString.read(from: &buf), 
-                elapsedMs: FfiConverterUInt64.read(from: &buf)
+                elapsedMs: FfiConverterUInt64.read(from: &buf), 
+                cancelled: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -1486,6 +1499,7 @@ public struct FfiConverterTypeFacePassReport: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.people, into: &buf)
         FfiConverterString.write(value.licence, into: &buf)
         FfiConverterUInt64.write(value.elapsedMs, into: &buf)
+        FfiConverterBool.write(value.cancelled, into: &buf)
     }
 }
 
@@ -2586,8 +2600,13 @@ public protocol Progress: AnyObject, Sendable {
      * finishes, and a determinate bar over an unknown total is a bar that lies.
      *
      * `current` is the file being worked on, or empty for stages that have no single file.
+     *
+     * **Returns whether to keep going.** A callback that can only be listened to cannot stop
+     * anything, and a face pass over a large library is tens of minutes. Both passes commit
+     * each file as they go, so stopping loses nothing — the work list is the catalog, and the
+     * next pass resumes from where this one stopped.
      */
-    func onProgress(done: UInt32, total: UInt32, stage: String, current: String) 
+    func onProgress(done: UInt32, total: UInt32, stage: String, current: String)  -> Bool
     
 }
 
@@ -2620,11 +2639,11 @@ fileprivate struct UniffiCallbackInterfaceProgress {
             total: UInt32,
             stage: RustBuffer,
             current: RustBuffer,
-            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiOutReturn: UnsafeMutablePointer<Int8>,
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
         ) in
             let makeCall = {
-                () throws -> () in
+                () throws -> Bool in
                 guard let uniffiObj = try? FfiConverterCallbackInterfaceProgress.handleMap.get(handle: uniffiHandle) else {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
@@ -2637,7 +2656,7 @@ fileprivate struct UniffiCallbackInterfaceProgress {
             }
 
             
-            let writeReturn = { () }
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterBool.lower($0) }
             uniffiTraitInterfaceCall(
                 callStatus: uniffiCallStatus,
                 makeCall: makeCall,
@@ -3107,10 +3126,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_restore_trash() != 23357) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_chaff_ffi_checksum_method_engine_run_face_pass() != 60707) {
+    if (uniffi_chaff_ffi_checksum_method_engine_run_face_pass() != 55999) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_chaff_ffi_checksum_method_engine_run_tag_pass() != 56987) {
+    if (uniffi_chaff_ffi_checksum_method_engine_run_tag_pass() != 51656) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_set_decision() != 38375) {
@@ -3125,7 +3144,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_constructor_engine_new() != 43103) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_chaff_ffi_checksum_method_progress_on_progress() != 59696) {
+    if (uniffi_chaff_ffi_checksum_method_progress_on_progress() != 16629) {
         return InitializationResult.apiChecksumMismatch
     }
 
