@@ -124,14 +124,6 @@ struct LibraryView: View {
     /// user clicked is the answer they meant — so choosing a tag clears the folder rather than
     /// intersecting with it, and vice versa. Intersecting would show an empty grid with no
     /// explanation of why.
-    private func matchesNarrowing(_ photo: Photo) -> Bool {
-        switch narrowedTo {
-        case nil: true
-        case let .tag(name): model.tagsByPhoto[photo.id]?.contains(name) ?? false
-        case let .person(id, _): model.peopleByPhoto[photo.id]?.contains(id) ?? false
-        }
-    }
-
     /// The photographs in the chosen folder, or all of them.
     ///
     /// Recursive, matching the sidebar's counts: a folder that says "2,071" and then shows 250
@@ -146,7 +138,13 @@ struct LibraryView: View {
         // The failure mode is the bad kind: an empty grid, no error, and a folder that says 2,071
         // photographs.
         if let narrowedTo {
-            return model.photos.filter(matchesNarrowing)
+            return model.photos.filter {
+                narrowedTo.matches(
+                    photoId: $0.id,
+                    tagsByPhoto: model.tagsByPhoto,
+                    peopleByPhoto: model.peopleByPhoto
+                )
+            }
         }
         guard let folder = chosenFolder, let root = model.library?.root else {
             return model.photos

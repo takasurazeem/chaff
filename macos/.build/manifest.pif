@@ -5,11 +5,11 @@
       "name" : "Chaff",
       "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos",
       "projects" : [
-        "888cd4c9b895fcd0c46cb83fce4bcd205afde35c7e204d5f0d6af5835aefc419",
+        "bed482cf61c75535a7eee88ff8f7fdf5d8529b65409f2215f189e74d4a4d86da",
         "51e5ba38bf15d609dfb6e07602501b48767980e1b26340b6311decf9d4f63b93"
       ]
     },
-    "signature" : "8475287739ecab968d4bc9bf8385c6fa41da2e9455e1a295202a95a4a134b151",
+    "signature" : "6124dfefa6e582f5b0692a622f223453eaae5b4a7552510dc2185a4f24a77b4f",
     "type" : "workspace"
   },
   {
@@ -219,6 +219,14 @@
                 "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_2",
                 "name" : "FormattingTests.swift",
                 "path" : "FormattingTests.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:macos::MAINGROUP::REF_2::REF_3",
+                "name" : "NarrowingTests.swift",
+                "path" : "NarrowingTests.swift",
                 "sourceTree" : "<group>",
                 "type" : "file"
               }
@@ -646,7 +654,7 @@
       "projectIsPackage" : "true",
       "projectName" : "Chaff",
       "targets" : [
-        "c89da9459c4e48f2b159d5c782cc8309fcdc41cd75416e0a200c2ecac2c8bb60",
+        "b189762f1fa3d50a4453b3419bce035da2b3e92edbf2c4782051789ea463b924",
         "8c18a3e288b6925168aa7ff86dda90f08d69331900dac6bb16c10ea3a4ec5276",
         "53d0b225a36333bd4ddec168670a09599383ead0291a31a5f3d0746c46ed2ef8",
         "66be0f07588e0e5384bc0e9a93bf46be606cb0175a1aab6d39fe0bee183da3ca",
@@ -655,7 +663,7 @@
         "03ab9cc50f15f518594c629af4ad424dead698bebfe9c9a80b15236ae36f30c2"
       ]
     },
-    "signature" : "888cd4c9b895fcd0c46cb83fce4bcd205afde35c7e204d5f0d6af5835aefc419",
+    "signature" : "bed482cf61c75535a7eee88ff8f7fdf5d8529b65409f2215f189e74d4a4d86da",
     "type" : "project"
   },
   {
@@ -856,6 +864,15 @@
 
               ],
               "removeHeadersOnCopy" : "false"
+            },
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:macos::MAINGROUP::REF_2::REF_3",
+              "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_0::3",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
             }
           ],
           "guid" : "PACKAGE-PRODUCT:macos_ChaffTests.ChaffTests::BUILDPHASE_0",
@@ -918,7 +935,7 @@
       "productTypeIdentifier" : "com.apple.product-type.bundle.unit-test",
       "type" : "standard"
     },
-    "signature" : "c89da9459c4e48f2b159d5c782cc8309fcdc41cd75416e0a200c2ecac2c8bb60",
+    "signature" : "b189762f1fa3d50a4453b3419bce035da2b3e92edbf2c4782051789ea463b924",
     "type" : "target"
   },
   {

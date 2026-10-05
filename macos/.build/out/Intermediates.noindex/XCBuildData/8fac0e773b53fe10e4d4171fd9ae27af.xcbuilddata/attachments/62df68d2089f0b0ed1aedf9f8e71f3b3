@@ -16,6 +16,16 @@
     "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/test_entry_point.swiftdeps",
     "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/test_entry_point~partial.swiftmodule"
   },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Tests/ChaffTests/AccessibilityTests.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests.dia",
+    "index-unit-output-path" : "/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests.swiftdeps",
+    "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/AccessibilityTests~partial.swiftmodule"
+  },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Tests/ChaffTests/CullingTests.swift" : {
     "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/CullingTests.swiftconstvalues",
     "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/CullingTests.d",
@@ -35,5 +45,15 @@
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/FormattingTests.o",
     "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/FormattingTests.swiftdeps",
     "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/FormattingTests~partial.swiftmodule"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Tests/ChaffTests/NarrowingTests.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.dia",
+    "index-unit-output-path" : "/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests.swiftdeps",
+    "swiftmodule" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/ChaffTests-p.build/Objects-normal/arm64/NarrowingTests~partial.swiftmodule"
   }
 }

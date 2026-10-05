@@ -22,6 +22,28 @@ enum Narrowing: Hashable, Identifiable {
         }
     }
 
+    /// Does a photograph belong to what the grid is narrowed to?
+    ///
+    /// # Why this lives here and not on the view
+    ///
+    /// It was a private method on `LibraryView`, which made it **untestable** — and it is exactly
+    /// the kind of logic that fails silently: a tag that does not match produces an empty grid
+    /// with no error and no clue. The folder comparison beside it *was* silently broken for a
+    /// while, matching a relative path against an absolute one and showing nothing.
+    ///
+    /// The lookups are passed in rather than reached for, so a test can build them without an
+    /// engine, a catalog or a pass.
+    func matches(
+        photoId: Int64,
+        tagsByPhoto: [Int64: Set<String>],
+        peopleByPhoto: [Int64: Set<Int64>]
+    ) -> Bool {
+        switch self {
+        case let .tag(name): tagsByPhoto[photoId]?.contains(name) ?? false
+        case let .person(id, _): peopleByPhoto[photoId]?.contains(id) ?? false
+        }
+    }
+
     /// What to call it in the status line.
     var label: String {
         switch self {
