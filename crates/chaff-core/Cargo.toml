@@ -68,5 +68,10 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # exposure-bracket detection, neither of which can be inferred from a filename.
 kamadak-exif = "0.6"
 
+# The VLM client. One HTTP client for two request shapes, rather than a dependency
+# per feature — and `chaff-faces` already uses it for verified model downloads.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
 [dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 tempfile = "3"
