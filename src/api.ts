@@ -42,6 +42,51 @@ export async function openLibrary(path: string): Promise<LibraryView> {
   return invoke<LibraryView>("open_library", { path });
 }
 
+/** What a face pass did. */
+export interface FacePassReport {
+  detected_files: number;
+  faces_found: number;
+  embedded: number;
+  unreadable: number;
+  people: number;
+  /** The model's licence, shown where the feature is switched on. */
+  licence: string;
+  elapsed_ms: number;
+}
+
+/**
+ * Run the face pass: detect, embed, group.
+ *
+ * Long-running, and resumable — each file is committed as it is processed.
+ */
+export async function runFacePass(libraryId: number): Promise<FacePassReport> {
+  return invoke<FacePassReport>("run_face_pass", { libraryId });
+}
+
+/** A suggested person: a group of faces that might be one individual. */
+export interface PersonView {
+  id: number;
+  name: string | null;
+  confirmed: boolean;
+  faces: number;
+  photos: number;
+}
+
+/** Every suggested person, most photographs first. */
+export async function listPeople(libraryId: number): Promise<PersonView[]> {
+  return invoke<PersonView[]>("list_people", { libraryId });
+}
+
+/** The photographs a person appears in. */
+export async function personPhotos(personId: number): Promise<number[]> {
+  return invoke<number[]>("person_photos", { personId });
+}
+
+/** How many faces were found in each photograph. */
+export async function faceCounts(libraryId: number): Promise<Record<string, number>> {
+  return invoke<Record<string, number>>("face_counts", { libraryId });
+}
+
 /** One file belonging to a photograph. */
 export interface FileDetail {
   path: string;

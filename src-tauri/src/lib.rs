@@ -7,6 +7,7 @@
 //! Keep it that way: anything added here becomes unavailable to the fast test path.
 
 pub mod commands;
+pub mod faces;
 
 use tauri::Manager;
 
@@ -66,6 +67,10 @@ pub fn run() {
             commands::open_library,
             commands::list_photos,
             commands::list_directories,
+            commands::run_face_pass,
+            commands::list_people,
+            commands::person_photos,
+            commands::face_counts,
             commands::photo_detail,
             commands::get_settings,
             commands::set_setting,

@@ -220,6 +220,104 @@ pub struct DirectoryView {
     pub recursive: usize,
 }
 
+/// Run the face pass: detect, embed, group.
+///
+/// Long-running — the first pass downloads a 38 MB model and then runs a network over every
+/// photograph — and **resumable**: each file is committed as it is processed, so closing the
+/// window halfway through loses nothing.
+#[tauri::command]
+pub async fn run_face_pass(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    library_id: i64,
+) -> Result<crate::faces::FacePassReport, String> {
+    let db = state.db();
+    let now = now_seconds();
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("could not resolve the app data directory: {e}"))?;
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<crate::faces::FacePassReport, String> {
+        let mut conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let mut last = 0usize;
+        crate::faces::run(&mut conn, &app_data, library_id, now, &mut |done, _total| {
+            // Logged rather than emitted, for now: the pass reports a total when it
+            // finishes, and a per-file event would need a progress channel this does not
+            // have yet. The log is retrievable, which is the part that matters when it
+            // takes twenty minutes.
+            if done / 50 != last / 50 {
+                log::info!("face pass: {done} files");
+                last = done;
+            }
+        })
+    })
+    .await
+    .map_err(err)?
+}
+
+/// A suggested person: a group of faces that might be one individual.
+#[derive(Debug, Serialize)]
+pub struct PersonView {
+    pub id: i64,
+    pub name: Option<String>,
+    pub confirmed: bool,
+    pub faces: usize,
+    pub photos: usize,
+}
+
+/// Every suggested person in a library, most photographs first.
+#[tauri::command]
+pub async fn list_people(
+    state: State<'_, AppState>,
+    library_id: i64,
+) -> Result<Vec<PersonView>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<PersonView>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let rows = store::people(&conn, library_id).map_err(err)?;
+        Ok(rows
+            .into_iter()
+            .map(|p| PersonView {
+                id: p.id,
+                name: p.name,
+                confirmed: p.confirmed,
+                faces: p.faces,
+                photos: p.photos,
+            })
+            .collect())
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The photographs a person appears in.
+#[tauri::command]
+pub async fn person_photos(state: State<'_, AppState>, person_id: i64) -> Result<Vec<i64>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<i64>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::photos_for_person(&conn, person_id).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// How many faces were found in each photograph of a library.
+#[tauri::command]
+pub async fn face_counts(
+    state: State<'_, AppState>,
+    library_id: i64,
+) -> Result<std::collections::HashMap<i64, usize>, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<std::collections::HashMap<i64, usize>, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        store::face_counts(&conn, library_id).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
 /// Everything known about one photograph, for an inspector panel.
 #[tauri::command]
 pub async fn photo_detail(

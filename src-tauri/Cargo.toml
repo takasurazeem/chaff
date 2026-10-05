@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 # The engine. All indexing, pairing, imaging and scoring lives there, free of Tauri, so
 # it stays testable without a webview. This crate is only the shell.
 chaff-core = { path = "../crates/chaff-core" }
+chaff-faces = { path = "../crates/chaff-faces" }
 
 # `protocol-asset` is what serves thumbnails to the webview without pushing bytes
 # through the JSON IPC bridge. The scope is set in tauri.conf.json and covers the
@@ -26,6 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2.8.1"
 env_logger = "0.11.11"
+log = "0.4.34"
 
 [features]
 # **Required for a release build.** Without it the binary serves `devUrl`

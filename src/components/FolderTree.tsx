@@ -92,6 +92,14 @@ interface Props {
   selected: string | null;
   total: number;
   onSelect: (path: string | null) => void;
+  /**
+   * Render without its own frame, for use inside a shared sidebar.
+   *
+   * The tree was written as a standalone column with its own border and width. When the
+   * people panel was added below it, both wanted to be the sidebar — so the frame moves to
+   * the parent and this only decides whether to draw one.
+   */
+  embedded?: boolean;
 }
 
 function Row({
@@ -162,7 +170,7 @@ function Row({
   );
 }
 
-export function FolderTree({ rows, root, selected, total, onSelect }: Props) {
+export function FolderTree({ rows, root, selected, total, onSelect, embedded }: Props) {
   const tree = useMemo(() => buildTree(rows), [rows]);
   // Top-level folders start open: a library whose tree is entirely collapsed on open looks
   // empty, and the first thing anyone does is expand all of it.
@@ -183,7 +191,11 @@ export function FolderTree({ rows, root, selected, total, onSelect }: Props) {
   return (
     <nav
       aria-label="Folders"
-      className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-zinc-800 bg-zinc-950 py-1"
+      className={
+        embedded
+          ? "flex min-h-0 flex-1 flex-col overflow-y-auto py-1"
+          : "flex w-56 shrink-0 flex-col overflow-y-auto border-r border-zinc-800 bg-zinc-950 py-1"
+      }
     >
       <button
         type="button"

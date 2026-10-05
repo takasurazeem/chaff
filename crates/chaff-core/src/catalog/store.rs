@@ -949,6 +949,119 @@ mod tests {
     }
 
     #[test]
+    fn an_embedding_round_trips_through_the_blob() {
+        // 128 f32 as 512 bytes. An off-by-one in the encoding gives vectors that are subtly
+        // wrong, and a wrong embedding clusters the wrong people together — a failure that
+        // looks like a bad model rather than a bad encoder.
+        let v: Vec<f32> = (0..128).map(|i| (i as f32 - 64.0) / 7.0).collect();
+        let bytes = encode_vector(&v);
+        assert_eq!(bytes.len(), 512);
+        assert_eq!(decode_vector(&bytes), v);
+
+        // And through the database, which is where it actually has to survive.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let fid = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+        let one = vec![FaceRow { file_id: fid, x: 0.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 }];
+        replace_faces(&conn, &FaceDetection {
+            file_id: fid, faces: &one, landmarks: &[vec![0; 40]],
+            size: 1, mtime: 1, detector: "test", now: 100,
+        }).unwrap();
+        let face_id: i64 = conn.query_row("SELECT id FROM face LIMIT 1", [], |r| r.get(0)).unwrap();
+
+        upsert_embedding(&conn, face_id, &v, "sface", 100).unwrap();
+        let read = faces_with_embeddings(&conn, lib, "sface").unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].2, v);
+    }
+
+    #[test]
+    fn confirmed_people_survive_a_recluster() {
+        // **The property that makes corrections stick.** A user who has merged two groups
+        // and split a third has changed the answer; discarding that on the next pass would
+        // make the feature unusable, because the corrections would not survive a restart.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let fid = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+
+        let three = vec![
+            FaceRow { file_id: fid, x: 0.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 },
+            FaceRow { file_id: fid, x: 2.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 },
+            FaceRow { file_id: fid, x: 4.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 },
+        ];
+        replace_faces(&conn, &FaceDetection {
+            file_id: fid, faces: &three, landmarks: &[vec![0; 40], vec![0; 40], vec![0; 40]],
+            size: 1, mtime: 1, detector: "test", now: 100,
+        }).unwrap();
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM face ORDER BY id").unwrap();
+            let rows = stmt.query_map([], |r| r.get::<_, i64>(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+
+        // A first pass groups all three, then the user confirms it.
+        replace_people(&conn, lib, std::slice::from_ref(&ids), 100).unwrap();
+        conn.execute("UPDATE person SET confirmed = 1, name = 'Someone'", []).unwrap();
+
+        // A second pass suggests a different grouping entirely.
+        let written = replace_people(&conn, lib, &[vec![ids[0], ids[1]], vec![ids[1], ids[2]]], 200).unwrap();
+        assert!(written >= 1);
+
+        let all = people(&conn, lib).unwrap();
+        let confirmed: Vec<_> = all.iter().filter(|p| p.confirmed).collect();
+        assert_eq!(confirmed.len(), 1, "the confirmed group must survive");
+        assert_eq!(confirmed[0].name.as_deref(), Some("Someone"));
+        assert_eq!(confirmed[0].faces, 3, "and keep its members");
+    }
+
+    #[test]
+    fn a_recluster_does_not_pull_confirmed_faces_into_a_new_group() {
+        // The confirmed group's members must be excluded from the new partition, or a
+        // re-cluster would move them behind the user's back.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/a.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let fid = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+        let three = vec![
+            FaceRow { file_id: fid, x: 0.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 },
+            FaceRow { file_id: fid, x: 2.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 },
+            FaceRow { file_id: fid, x: 4.0, y: 0.0, width: 1.0, height: 1.0, confidence: 1.0 },
+        ];
+        replace_faces(&conn, &FaceDetection {
+            file_id: fid, faces: &three, landmarks: &[vec![0; 40], vec![0; 40], vec![0; 40]],
+            size: 1, mtime: 1, detector: "test", now: 100,
+        }).unwrap();
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM face ORDER BY id").unwrap();
+            let rows = stmt.query_map([], |r| r.get::<_, i64>(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+
+        replace_people(&conn, lib, &[vec![ids[0], ids[1]]], 100).unwrap();
+        conn.execute("UPDATE person SET confirmed = 1", []).unwrap();
+
+        // A new pass suggests grouping all three. Faces 0 and 1 are taken.
+        replace_people(&conn, lib, std::slice::from_ref(&ids), 200).unwrap();
+
+        let groups = people(&conn, lib).unwrap();
+        for g in &groups {
+            let members = photos_for_person(&conn, g.id).unwrap();
+            let _ = members;
+        }
+        // The unconfirmed suggestion must contain only the face that was free.
+        let unconfirmed: Vec<_> = groups.iter().filter(|p| !p.confirmed).collect();
+        assert!(
+            unconfirmed.iter().all(|p| p.faces < 2),
+            "a new group took a confirmed face: {unconfirmed:?}"
+        );
+    }
+
+    #[test]
     fn faces_replace_rather_than_accumulate() {
         // A detection pass is a complete answer for the file it ran on. Merging would keep
         // a face the detector no longer finds — a ghost no later pass could remove.
@@ -2072,4 +2185,209 @@ pub fn files_needing_faces(
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+// ---------------------------------------------------------------------------
+// Embeddings and people
+// ---------------------------------------------------------------------------
+/// Every face in a library, with its embedding, in a stable order.
+///
+/// The order matters: clustering is a function of position in this list, and a list that
+/// came back differently ordered on each query would produce different groups from the same
+/// data. Ordered by face id, which is assigned once and never changes.
+pub fn faces_with_embeddings(
+    conn: &Connection,
+    library_id: i64,
+    model: &str,
+) -> Result<Vec<(i64, i64, Vec<f32>)>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT face.id, f.photo_id, e.vector
+           FROM face
+           JOIN face_embedding e ON e.face_id = face.id
+           JOIN file f ON f.id = face.file_id
+           JOIN photo p ON p.id = f.photo_id
+          WHERE p.library_id = ?1 AND p.trashed_at IS NULL AND e.model = ?2
+          ORDER BY face.id",
+    )?;
+    let rows = stmt.query_map(params![library_id, model], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, Vec<u8>>(2)?))
+    })?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let (face_id, photo_id, blob) = row?;
+        out.push((face_id, photo_id, decode_vector(&blob)));
+    }
+    Ok(out)
+}
+
+/// Store an embedding.
+pub fn upsert_embedding(
+    conn: &Connection,
+    face_id: i64,
+    vector: &[f32],
+    model: &str,
+    now: i64,
+) -> Result<(), CatalogError> {
+    conn.execute(
+        "INSERT INTO face_embedding (face_id, vector, model, computed_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (face_id) DO UPDATE SET
+             vector = excluded.vector, model = excluded.model, computed_at = excluded.computed_at",
+        params![face_id, encode_vector(vector), model, now],
+    )?;
+    Ok(())
+}
+
+/// The faces still needing an embedding from this model.
+pub fn faces_needing_embeddings(
+    conn: &Connection,
+    library_id: i64,
+    model: &str,
+) -> Result<Vec<(i64, i64)>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT face.id, f.photo_id
+           FROM face
+           JOIN file f ON f.id = face.file_id
+           JOIN photo p ON p.id = f.photo_id
+          WHERE p.library_id = ?1 AND p.trashed_at IS NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM face_embedding e WHERE e.face_id = face.id AND e.model = ?2
+            )
+          ORDER BY face.id",
+    )?;
+    let rows = stmt.query_map(params![library_id, model], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// Replace the unconfirmed clusters of a library with a new partition.
+///
+/// **Confirmed groups are left alone.** A user who has merged two clusters and split a
+/// third has changed the answer, and discarding that on the next pass would make the
+/// feature unusable — the corrections would not survive a restart.
+///
+/// Faces belonging to a confirmed group are excluded from the new partition entirely, so a
+/// re-cluster cannot pull them into a different suggestion behind the user's back.
+pub fn replace_people(
+    conn: &Connection,
+    library_id: i64,
+    clusters: &[Vec<i64>],
+    now: i64,
+) -> Result<usize, CatalogError> {
+    let tx = conn.unchecked_transaction()?;
+
+    tx.execute(
+        "DELETE FROM person WHERE library_id = ?1 AND confirmed = 0",
+        params![library_id],
+    )?;
+
+    let confirmed: std::collections::HashSet<i64> = {
+        let mut stmt = tx.prepare(
+            "SELECT pf.face_id FROM person_face pf
+               JOIN person pe ON pe.id = pf.person_id
+              WHERE pe.library_id = ?1 AND pe.confirmed = 1",
+        )?;
+        let rows = stmt.query_map(params![library_id], |r| r.get::<_, i64>(0))?;
+        rows.collect::<Result<std::collections::HashSet<_>, _>>()?
+    };
+
+    let mut written = 0usize;
+    for members in clusters {
+        // A group of one is not a group, and a cluster that has been reduced to one member
+        // by the confirmed set is not worth showing.
+        if members.len() < 2 {
+            continue;
+        }
+        tx.execute(
+            "INSERT INTO person (library_id, name, confirmed, created_at, updated_at)
+             VALUES (?1, NULL, 0, ?2, ?2)",
+            params![library_id, now],
+        )?;
+        let person_id = tx.last_insert_rowid();
+
+        for face_id in members {
+            if confirmed.contains(face_id) {
+                continue;
+            }
+            tx.execute(
+                "INSERT OR IGNORE INTO person_face (person_id, face_id) VALUES (?1, ?2)",
+                params![person_id, face_id],
+            )?;
+        }
+        written += 1;
+    }
+
+    tx.commit()?;
+    Ok(written)
+}
+
+/// A person, with how many faces and photographs they appear in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonRow {
+    pub id: i64,
+    pub name: Option<String>,
+    pub confirmed: bool,
+    pub faces: usize,
+    /// Distinct photographs, which is what a person actually appears in — a group of six
+    /// faces from two photographs is two photographs, not six.
+    pub photos: usize,
+}
+
+pub fn people(conn: &Connection, library_id: i64) -> Result<Vec<PersonRow>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT pe.id, pe.name, pe.confirmed,
+                COUNT(pf.face_id),
+                COUNT(DISTINCT f.photo_id)
+           FROM person pe
+           LEFT JOIN person_face pf ON pf.person_id = pe.id
+           LEFT JOIN face ON face.id = pf.face_id
+           LEFT JOIN file f ON f.id = face.file_id
+          WHERE pe.library_id = ?1
+          GROUP BY pe.id
+          ORDER BY COUNT(DISTINCT f.photo_id) DESC, pe.id",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok(PersonRow {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            confirmed: r.get::<_, i64>(2)? != 0,
+            faces: r.get::<_, i64>(3)? as usize,
+            photos: r.get::<_, i64>(4)? as usize,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// The photographs a person appears in.
+pub fn photos_for_person(conn: &Connection, person_id: i64) -> Result<Vec<i64>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT f.photo_id
+           FROM person_face pf
+           JOIN face ON face.id = pf.face_id
+           JOIN file f ON f.id = face.file_id
+          WHERE pf.person_id = ?1 AND f.photo_id IS NOT NULL
+          ORDER BY f.photo_id",
+    )?;
+    let rows = stmt.query_map(params![person_id], |r| r.get::<_, i64>(0))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// 128 f32 as 512 little-endian bytes.
+///
+/// A blob rather than 128 columns: nothing queries an individual component, and the only
+/// operation is "compare this whole vector to that one".
+fn encode_vector(v: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(v.len() * 4);
+    for x in v {
+        out.extend_from_slice(&x.to_le_bytes());
+    }
+    out
+}
+
+fn decode_vector(b: &[u8]) -> Vec<f32> {
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
 }

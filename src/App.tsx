@@ -14,6 +14,7 @@ import {
   openLibrary,
   getSettings,
   listDirectories,
+  personPhotos,
   setSetting,
   planDelete,
   type DirectoryView,
@@ -27,6 +28,7 @@ import { Loupe } from "./components/Loupe";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
 import { InfoPanel } from "./components/InfoPanel";
+import { PeoplePanel } from "./components/PeoplePanel";
 import {
   apply as applyFilters,
   counts as computeCounts,
@@ -110,6 +112,16 @@ export default function App() {
 
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [directories, setDirectories] = useState<DirectoryView[]>([]);
+
+  /**
+   * The people whose photographs are being shown, as a set of photo ids.
+   *
+   * A set rather than a person id, because "photographs this person appears in" is a list
+   * the catalog already knows and re-deriving it per render would query per cell. `null`
+   * means no person filter.
+   */
+  const [personPhotos_, setPersonPhotos] = useState<Set<number> | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<number | null>(null);
 
   /**
    * The list the loupe is navigating, captured when it opened.
@@ -318,10 +330,12 @@ export default function App() {
     }
   }, []);
 
-  const visible = useMemo(
-    () => applyFilters(photos, decisions, filters),
-    [photos, decisions, filters],
-  );
+  const visible = useMemo(() => {
+    // The person filter first: it is the narrowest, and running it first means the count
+    // badges in the filter bar describe what is actually reachable.
+    const base = personPhotos_ ? photos.filter((p) => personPhotos_.has(p.id)) : photos;
+    return applyFilters(base, decisions, filters);
+  }, [photos, decisions, filters, personPhotos_]);
 
   /**
    * Which photograph the info panel describes.
@@ -662,12 +676,18 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         {status.kind === "ready" && photos.length > 0 && (
-          <FolderTree
+          <div className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-zinc-800 bg-zinc-950">
+            <FolderTree
             rows={directories}
             root={library?.root ?? ""}
             selected={filters.folder}
             total={photos.length}
+            embedded
             onSelect={(path) => {
+              // Choosing a folder clears the person: two narrow filters at once is a grid
+              // that is usually empty and always confusing.
+              setPersonPhotos(null);
+              setSelectedPerson(null);
               setFilters((f) => ({ ...f, folder: path }));
               cursor.current = 0;
               // Remembered so the next launch lands where this one left off. A folder is
@@ -675,7 +695,27 @@ export default function App() {
               // small tax that makes a tool tiring.
               void setSetting("last_folder", path ?? "").catch(() => {});
             }}
-          />
+            />
+            {library && (
+              <PeoplePanel
+                libraryId={library.library_id}
+                selectedPerson={selectedPerson}
+                onChanged={() => {
+                  /* face counts feed the filter badges; a refresh happens on the next open */
+                }}
+                onSelectPerson={(id) => {
+                  setSelectedPerson(id);
+                  if (id === null) {
+                    setPersonPhotos(null);
+                    return;
+                  }
+                  void personPhotos(id)
+                    .then((ids) => setPersonPhotos(new Set(ids)))
+                    .catch((e) => setStatus({ kind: "error", message: String(e) }));
+                }}
+              />
+            )}
+          </div>
         )}
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">

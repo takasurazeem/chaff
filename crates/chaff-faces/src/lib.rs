@@ -19,12 +19,14 @@
 //! Nothing. Detection runs locally, and embeddings live in the catalog.
 
 pub mod align;
+pub mod cluster;
 pub mod detect;
 pub mod embed;
 pub mod engine;
 pub mod models;
 
 pub use align::{similarity_transform, warp, Affine, ALIGNED};
+pub use cluster::{cluster, Cluster, ClusteringConfig};
 pub use detect::{Detection, Detector};
 pub use embed::{cosine, EmbedError, Recogniser, DIMENSIONS};
 pub use engine::{FaceEngine, YuNet};
