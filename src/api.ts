@@ -143,6 +143,23 @@ export async function faceCounts(libraryId: number): Promise<Record<string, numb
   return invoke<Record<string, number>>("face_counts", { libraryId });
 }
 
+/** What a sidecar write did. */
+export interface SidecarReport {
+  written: number;
+  skipped: number;
+  failed: number;
+}
+
+/**
+ * Write decisions into XMP sidecars.
+ *
+ * Opt-in, and only for photographs that carry a decision. Merges rather than replaces, so
+ * everything Lightroom, darktable or digiKam put in those files survives.
+ */
+export async function writeSidecars(libraryId: number): Promise<SidecarReport> {
+  return invoke<SidecarReport>("write_sidecars", { libraryId });
+}
+
 /** Whether the library watcher is running. */
 export interface WatchView {
   running: boolean;

@@ -70,6 +70,7 @@ pub fn run() {
             commands::list_photos,
             commands::list_directories,
             commands::run_face_pass,
+            commands::write_sidecars,
             commands::start_watching,
             commands::stop_watching,
             commands::watch_status,

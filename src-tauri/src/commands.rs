@@ -259,6 +259,86 @@ pub async fn run_face_pass(
     .map_err(err)?
 }
 
+/// What a sidecar write did.
+#[derive(Debug, Serialize)]
+pub struct SidecarReport {
+    pub written: usize,
+    pub skipped: usize,
+    pub failed: usize,
+}
+
+/// Write decisions into XMP sidecars (#54).
+///
+/// # Opt-in, and only for decided photographs
+///
+/// A culling tool that silently writes files into a library the moment it opens it is one
+/// nobody trusts twice. This is a command the user runs, it writes **only** photographs that
+/// carry a decision, and it merges rather than replaces — everything Lightroom, darktable or
+/// digiKam put in those files survives.
+///
+/// What is written is `xmp:Rating` and `xmp:Label`, which every application agrees on.
+/// Chaff's own composite score and shoot grouping are **not** written: they are this
+/// program's opinion, they change when the model changes, and a sidecar is not the place for
+/// a number that will be different next week.
+#[tauri::command]
+pub async fn write_sidecars(
+    state: State<'_, AppState>,
+    library_id: i64,
+) -> Result<SidecarReport, String> {
+    let db = state.db();
+    tauri::async_runtime::spawn_blocking(move || -> Result<SidecarReport, String> {
+        let conn = db.lock().map_err(|_| "catalog lock poisoned".to_string())?;
+        let decisions = store::decisions_for_library(&conn, library_id).map_err(err)?;
+        let photos = store::photos(&conn, library_id).map_err(err)?;
+
+        let mut report = SidecarReport { written: 0, skipped: 0, failed: 0 };
+        for photo in &photos {
+            let Some(decision) = decisions.get(&photo.id) else {
+                report.skipped += 1;
+                continue;
+            };
+            if decision.is_unrated() {
+                // An unrated photograph is not a decision. Writing `Rating="0"` for every
+                // photograph the user merely looked at would put a claim in the sidecar that
+                // they never made.
+                report.skipped += 1;
+                continue;
+            }
+
+            let Some(primary) = store::files_for_photo(&conn, photo.id)
+                .map_err(err)?
+                .into_iter()
+                .find(|f| f.role == "raw" || f.role == "raster")
+            else {
+                report.skipped += 1;
+                continue;
+            };
+
+            let path = std::path::Path::new(&primary.path);
+            if !chaff_core::xmp::supports_sidecar(path) {
+                report.skipped += 1;
+                continue;
+            }
+            match chaff_core::xmp::write(path, *decision, None) {
+                Ok(_) => report.written += 1,
+                Err(e) => {
+                    log::warn!("could not write a sidecar for {}: {e}", primary.path);
+                    report.failed += 1;
+                }
+            }
+        }
+        log::info!(
+            "sidecars: {} written, {} skipped, {} failed",
+            report.written,
+            report.skipped,
+            report.failed
+        );
+        Ok(report)
+    })
+    .await
+    .map_err(err)?
+}
+
 /// Whether the library watcher is running.
 #[derive(Debug, Serialize)]
 pub struct WatchView {
