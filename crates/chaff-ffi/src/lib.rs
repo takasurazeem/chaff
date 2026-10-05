@@ -6,15 +6,15 @@
 //! Tauri command calls — **not a reimplementation** — so a bug fixed in
 //! `resolve_delete_selection` is fixed for both UIs at once.
 //!
-//! # Not finished: the delete path is not exposed
+//! # What is not exposed yet
 //!
-//! `chaff_core::delete_session` exists and is tested, and **nothing here calls it yet**. This
-//! crate exports seven methods; the Tauri shell has thirty-eight commands. A review caught the
-//! gap by grepping for `delete` and finding only a doc comment claiming the opposite.
+//! A review counted: this crate exports the read path, the thumbnails and the delete session;
+//! the Tauri shell has thirty-eight commands. Missing here and needed by the plan: faces
+//! (#67), tags (#67), settings, the watcher, and the sidecar write.
 //!
-//! So issue #66 — culling from the native shell — is blocked on the wrappers below, and the
-//! claim "a safety guarantee has one implementation rather than two" is true of the *engine*
-//! and not yet true of the *boundary*. Written down rather than left as an implication.
+//! Written down rather than left as an implication, because the first version of this comment
+//! claimed a shared safety guarantee while exposing no delete path at all — and a comment that
+//! overstates what the code does is the failure this project keeps finding.
 //!
 //! # Why the engine is not annotated directly
 //!
@@ -197,6 +197,12 @@ pub struct Engine {
     /// `ThumbnailCache::open` creates three directories and reads the cap; doing that once per
     /// tile is work with no purpose. Behind its own lock so a thumbnail never waits on a read.
     thumbs: Mutex<Option<std::sync::Arc<chaff_core::thumb::ThumbnailCache>>>,
+    /// The delete plan the user has been shown.
+    ///
+    /// Held here rather than in Swift so that "commit takes no file list" is the engine's
+    /// invariant. A shell that held its own copy would be a second implementation of a safety
+    /// guarantee, which is how one of them drifts.
+    pending: Mutex<chaff_core::delete_session::DeleteSession>,
 }
 
 #[uniffi::export]
@@ -206,7 +212,12 @@ impl Engine {
     pub fn new(database_path: String) -> Result<Arc<Self>> {
         let path = std::path::PathBuf::from(&database_path);
         let conn = catalog::open(&path).map_err(|e| ChaffError::engine("catalog", e))?;
-        Ok(Arc::new(Self { conn: Mutex::new(conn), path, thumbs: Mutex::new(None) }))
+        Ok(Arc::new(Self {
+            conn: Mutex::new(conn),
+            path,
+            thumbs: Mutex::new(None),
+            pending: Mutex::new(chaff_core::delete_session::DeleteSession::new()),
+        }))
     }
 
     /// Index a library and score it.
@@ -427,6 +438,148 @@ impl Engine {
     }
 }
 
+/// What a delete will move, before it moves it.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DeletePlan {
+    /// Names the operation, so the dialog can say what it is about to do.
+    pub op_id: String,
+    pub photographs: u32,
+    pub files: u32,
+    pub bytes: u64,
+    /// Conditions worth saying out loud: a cross-volume copy, a file that has gone missing.
+    pub warnings: Vec<String>,
+    /// Reasons this selection cannot be moved. **Non-empty means nothing will move.**
+    pub refusals: Vec<String>,
+}
+
+/// What a delete did.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DeleteReceipt {
+    pub op_id: String,
+    pub moved: u32,
+    pub bytes: u64,
+    pub warnings: Vec<String>,
+}
+
+#[uniffi::export]
+impl Engine {
+    /// Work out what a selection would move, and hold it for confirmation.
+    ///
+    /// # The guarantee this begins
+    ///
+    /// Every file is **hashed now**, while the user is looking at the list, because that is
+    /// what the commit verifies against. Hashing at commit time would compare a file with
+    /// itself and prove nothing.
+    ///
+    /// The plan is held in the engine, not here and not in Swift, so the invariant that
+    /// matters — *commit takes no file list* — has one implementation for every shell.
+    pub fn plan_delete(&self, root: String, photo_ids: Vec<i64>) -> Result<DeletePlan> {
+        let conn = self.lock()?;
+        let now = now_seconds();
+
+        let mut session = self.pending.lock().map_err(|_| {
+            ChaffError::with(FailureKind::Poisoned, "the delete session is unusable; restart Chaff")
+        })?;
+
+        // The refusals are collected before planning so the user sees every reason at once
+        // rather than fixing one and meeting the next.
+        let selection = pipeline::resolve_delete_selection(&conn, &photo_ids)
+            .map_err(|e| ChaffError::engine("delete", e))?;
+        let files: Vec<std::path::PathBuf> =
+            selection.candidates.iter().flat_map(|c| c.files.clone()).collect();
+
+        let trash = chaff_core::trash::Trash::open(std::path::Path::new(&root))
+            .map_err(|e| ChaffError::engine("delete", e))?;
+        let mut refusals: Vec<String> = files
+            .iter()
+            .filter_map(|f| trash.check(f).err().map(|r| r.to_string()))
+            .collect();
+
+        // **A plan that would move nothing is a refusal, not a plan.**
+        //
+        // Found by a test: planning a selection whose photographs have no files produced an
+        // empty file list, no refusals, and a *pending* plan — which a later `commit_delete`
+        // would happily "confirm", reporting success for an operation that moved nothing. A
+        // UI showing "0 files will move" with a working Confirm button is worse than an error.
+        if files.is_empty() && refusals.is_empty() {
+            refusals.push(
+                "Nothing to move: those photographs have no files in the library. They may \
+                 have been removed already."
+                    .to_string(),
+            );
+        }
+
+        if !refusals.is_empty() {
+            // Nothing is held. A plan the user cannot confirm must not sit in the session
+            // waiting to be committed by a later call.
+            session.cancel();
+            return Ok(DeletePlan {
+                op_id: String::new(),
+                photographs: selection.candidates.len() as u32,
+                files: files.len() as u32,
+                bytes: 0,
+                warnings: Vec::new(),
+                refusals,
+            });
+        }
+
+        let planned = session
+            .plan(&conn, std::path::Path::new(&root), &photo_ids, now)
+            .map_err(|e| ChaffError::engine("delete", e))?;
+
+        Ok(DeletePlan {
+            op_id: planned.op_id,
+            photographs: selection.candidates.len() as u32,
+            files: planned.moved as u32,
+            bytes: planned.bytes,
+            warnings: planned.warnings,
+            refusals: Vec::new(),
+        })
+    }
+
+    /// Move what was shown.
+    ///
+    /// **Takes no file list.** It commits the plan the user was shown, and every file is
+    /// re-hashed and compared — a file whose contents changed, or one that appeared after the
+    /// plan, aborts the whole operation rather than being moved unexamined.
+    pub fn commit_delete(&self, root: String) -> Result<DeleteReceipt> {
+        let conn = self.lock()?;
+        let now = now_seconds();
+
+        let mut session = self.pending.lock().map_err(|_| {
+            ChaffError::with(FailureKind::Poisoned, "the delete session is unusable; restart Chaff")
+        })?;
+
+        let receipt = session
+            .commit(&conn, std::path::Path::new(&root), now)
+            .map_err(|e| ChaffError::engine("delete", e))?;
+
+        Ok(DeleteReceipt {
+            op_id: receipt.op_id,
+            moved: receipt.moved as u32,
+            bytes: receipt.bytes,
+            warnings: receipt.warnings,
+        })
+    }
+
+    /// Abandon the plan without moving anything.
+    ///
+    /// A plan that is not cancelled sits until the next one replaces it, and a stale plan is
+    /// one a stray call could commit.
+    pub fn cancel_delete(&self) -> Result<()> {
+        let mut session = self.pending.lock().map_err(|_| {
+            ChaffError::with(FailureKind::Poisoned, "the delete session is unusable; restart Chaff")
+        })?;
+        session.cancel();
+        Ok(())
+    }
+
+    /// Is a delete waiting to be confirmed?
+    pub fn has_pending_delete(&self) -> bool {
+        self.pending.lock().map(|s| s.has_pending()).unwrap_or(false)
+    }
+}
+
 /// Where thumbnails and downloaded models live.
 ///
 /// Passed in rather than assumed: a sandboxed app has a container path the engine cannot
@@ -584,6 +737,40 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM decision", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 0, "a decision for a photograph that does not exist must not be stored");
+    }
+
+    #[test]
+    fn a_delete_plan_that_cannot_proceed_holds_nothing() {
+        // **A plan the user cannot confirm must not sit in the session.** A refusal that left
+        // the plan pending would let a later `commit_delete` — from a UI that did not notice
+        // the refusal — move files the dialog said it would not.
+        let (_d, e) = engine();
+        let lib = tempfile::tempdir().unwrap();
+        e.open_library(lib.path().to_string_lossy().to_string(), Box::new(Silent)).unwrap();
+
+        let plan = e
+            .plan_delete(lib.path().to_string_lossy().to_string(), vec![9999])
+            .unwrap();
+        assert!(!plan.refusals.is_empty() || plan.files == 0);
+        assert!(!e.has_pending_delete(), "a refused plan must not stay pending");
+    }
+
+    #[test]
+    fn committing_with_nothing_pending_is_an_error_not_a_silent_success() {
+        // The invariant in its simplest form: there is no way to commit a plan nobody was
+        // shown. A `commit_delete` that returned an empty receipt would let a UI report
+        // success for an operation that never happened.
+        let (_d, e) = engine();
+        let lib = tempfile::tempdir().unwrap();
+        let r = e.commit_delete(lib.path().to_string_lossy().to_string());
+        assert!(r.is_err(), "got {r:?}");
+    }
+
+    #[test]
+    fn cancelling_clears_the_session() {
+        let (_d, e) = engine();
+        e.cancel_delete().unwrap();
+        assert!(!e.has_pending_delete());
     }
 
     #[test]
