@@ -63,6 +63,26 @@ struct LibraryView: View {
         // Delete opens **the confirmation**, and nothing else. There is no path in this
         // application that removes a file from a keystroke.
         .onDeleteCommand { beginDelete() }
+        // **Every failure the model records, shown.**
+        //
+        // `errorMessage` was set in eight places and displayed in none — so a failed delete, a
+        // failed name, a failed pass all did nothing visible. The operation simply did not
+        // happen and the interface looked as though it had.
+        //
+        // An alert rather than a banner: these are failures of something the user asked for, and
+        // they need acknowledging rather than scrolling past.
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(
+                get: { model.errorMessage != nil },
+                set: { if !$0 { model.errorMessage = nil } }
+            ),
+            presenting: model.errorMessage
+        ) { _ in
+            Button("OK", role: .cancel) { model.errorMessage = nil }
+        } message: { message in
+            Text(message)
+        }
         .sheet(item: $pendingPlan) { plan in
             DeleteConfirmation(
                 plan: plan,

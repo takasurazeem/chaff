@@ -1,4 +1,5 @@
 import Testing
+import chaff_ffiFFI
 @testable import Chaff
 
 /// The culling state machine.
@@ -59,5 +60,54 @@ struct CullingTests {
         #expect(culling.cursor == 42)
         culling.cursor = nil
         #expect(culling.cursor == nil)
+    }
+}
+
+
+/// What the error alert shows.
+///
+/// `describe` is the only thing between an engine error and a sentence in a dialog, and it is
+/// now displayed in eight places — so a message that reads badly is a message the user reads
+/// eight times.
+@MainActor
+struct DescribeTests {
+    @Test("A refusal reads as an instruction, not a stack trace")
+    func refusalIsActionable() {
+        let model = EngineModel()
+        let message = model.describe(
+            ChaffError.Engine(
+                kind: .refused,
+                message: "That is the same group — pick a different one to merge into."
+            )
+        )
+        // **The engine's own sentence is the good one**, so it must survive. A `describe` that
+        // replaced it with "an error occurred" would throw away the only useful part.
+        #expect(message.contains("pick a different one"))
+        #expect(!message.lowercased().contains("error:"))
+    }
+
+    @Test("Every failure kind produces something a person can read")
+    func everyKindReads() {
+        let model = EngineModel()
+        // A table over the kinds, because the failure mode is one arm falling through to a
+        // debug string — and `Other` is exactly where that would hide.
+        let kinds: [FailureKind] = [.busy, .notFound, .poisoned, .refused, .other]
+        for kind in kinds {
+            let message = model.describe(ChaffError.Engine(kind: kind, message: "the detail"))
+            #expect(!message.isEmpty, "\(kind) produced an empty message")
+            #expect(
+                message.contains("the detail"),
+                "\(kind) dropped the engine's own detail, which is the part that helps"
+            )
+        }
+    }
+
+    @Test("A missing file says which file")
+    func notFoundNamesTheThing() {
+        let model = EngineModel()
+        let message = model.describe(
+            ChaffError.Engine(kind: .notFound, message: "IMG_0133.CR3 is no longer there")
+        )
+        #expect(message.contains("IMG_0133.CR3"), "a not-found that does not name the file is useless")
     }
 }
