@@ -12,6 +12,7 @@ resolver = "2"
 members = [
     "crates/chaff-core",
     "crates/chaff-faces",
+    "crates/chaff-cli",
     "src-tauri",
 ]
 

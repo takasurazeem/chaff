@@ -2165,6 +2165,23 @@ pub fn decisions_for_library(
 }
 
 /// How many photographs in a library carry any decision at all.
+/// How many photographs have a composite score.
+///
+/// `score` is `(photo_id, metric, value)` — a long table, not a wide one — so this counts
+/// rows for the `composite` metric rather than a column. The first version queried
+/// `s.composite`, which does not exist, and reported **zero** on a library the same run had
+/// just reported 33 scored photographs for.
+pub fn scored_count(conn: &Connection, library_id: i64) -> Result<usize, CatalogError> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT s.photo_id) FROM score s
+           JOIN photo p ON p.id = s.photo_id
+          WHERE p.library_id = ?1 AND p.trashed_at IS NULL AND s.metric = 'composite'",
+        params![library_id],
+        |r| r.get(0),
+    )?;
+    Ok(n as usize)
+}
+
 pub fn decision_count(conn: &Connection, library_id: i64) -> Result<usize, CatalogError> {
     let n: i64 = conn.query_row(
         "SELECT COUNT(*) FROM decision d JOIN photo p ON p.id = d.photo_id

@@ -23,6 +23,7 @@ pub mod pair;
 pub mod pipeline;
 pub mod preview;
 pub mod scoring;
+pub mod tagging;
 pub mod thumb;
 pub mod trash;
 pub mod vlm;

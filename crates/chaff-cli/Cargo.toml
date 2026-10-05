@@ -1,0 +1,18 @@
+[package]
+name = "chaff-cli"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# **No GUI, no webview.** This is what lets the 3090 box index a library overnight without a
+# desktop session — and it is why `chaff-core` has no Tauri dependency to begin with.
+[dependencies]
+chaff-core = { path = "../chaff-core" }
+chaff-faces = { path = "../chaff-faces" }
+clap = { version = "4", features = ["derive", "env"] }
+env_logger = "0.11"
+log = "0.4"
+
+[[bin]]
+name = "chaff"
+path = "src/main.rs"

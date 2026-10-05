@@ -167,11 +167,22 @@ impl PipelineReport {
             ));
         }
 
-        // A photograph cannot need review without being ambiguous, and the ambiguous count
-        // is what the grid shows.
-        if self.needs_review > self.by_state.ambiguous {
+        // Every ambiguous photograph needs review — but **not the reverse**, and the first
+        // version of this check asserted the reverse.
+        //
+        // `needs_review()` is `state == Ambiguous || !review.is_empty()`, and a group can
+        // carry `MultipleRaw`, `MultipleRaster` or `PossibleDuplicateImport` without being
+        // ambiguous at all. So `needs_review > ambiguous` is a perfectly ordinary library,
+        // and the check reported it as an inconsistency on the fixtures — and would have on
+        // the user's real one.
+        //
+        // A check that cries wolf is worse than no check, because the next real
+        // inconsistency gets read as noise. This is the direction that is actually an
+        // invariant.
+        if self.needs_review < self.by_state.ambiguous {
             out.push(format!(
-                "needs_review ({}) > ambiguous ({})",
+                "needs_review ({}) < ambiguous ({}) — an ambiguous photograph that does not \
+                 need review is one the grid will never surface",
                 self.needs_review, self.by_state.ambiguous
             ));
         }
@@ -246,6 +257,22 @@ pub fn index_and_score(
 /// value without interior mutability, and it is a `&mut dyn` rather than a generic so this
 /// function is not monomorphised once per caller — the engine is compiled once and the
 /// shell supplies a closure that emits an event.
+/// Index and score, ignoring the measurement cache.
+///
+/// The cache is keyed by file identity, so it is right by default and wrong exactly once:
+/// when the *scorer* changed but `SCORER_VERSION` did not — during development, or after a
+/// config change. Clearing is explicit and per-library rather than a silent fallback, because
+/// re-decoding a library is minutes and should be asked for.
+pub fn index_and_score_forced(
+    conn: &mut Connection,
+    root: &Path,
+    now: i64,
+    on_progress: &mut dyn FnMut(Progress),
+) -> Result<PipelineReport, PipelineError> {
+    store::delete_measurements_at_version(conn, SCORER_VERSION).map_err(PipelineError::Catalog)?;
+    index_and_score_with_progress(conn, root, now, on_progress)
+}
+
 pub fn index_and_score_with_progress(
     conn: &mut Connection,
     root: &Path,
@@ -907,9 +934,31 @@ mod tests {
         shootless.shoots = 0;
         assert!(!shootless.inconsistencies().is_empty(), "photographs with no shoot must be caught");
 
+        // **Fewer reviews than ambiguous**, which is the direction that is actually an
+        // invariant: an ambiguous photograph that does not need review is one the grid will
+        // never surface.
+        //
+        // This test asserted the *opposite* — that more reviews than ambiguous is broken —
+        // and the code agreed with it. Both were wrong. `needs_review()` is
+        // `state == Ambiguous || !review.is_empty()`, so a group carrying `MultipleRaw` or a
+        // duplicate import needs review without being ambiguous, and `needs_review >
+        // ambiguous` is an ordinary library. The check fired on the fixtures and would have
+        // fired on the user's real one.
+        let mut under_review = good.clone();
+        under_review.needs_review = 0;
+        assert!(
+            !under_review.inconsistencies().is_empty(),
+            "an ambiguous photograph that needs no review must be caught"
+        );
+
+        // And the ordinary case must be clean: more reviews than ambiguous is normal.
         let mut over_review = good.clone();
         over_review.needs_review = 4;
-        assert!(!over_review.inconsistencies().is_empty(), "more reviews than ambiguous must be caught");
+        assert!(
+            over_review.inconsistencies().is_empty(),
+            "more reviews than ambiguous is ordinary, not inconsistent: {:?}",
+            over_review.inconsistencies()
+        );
     }
 
     #[test]

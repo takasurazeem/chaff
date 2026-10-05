@@ -25,6 +25,7 @@ pub mod embed;
 pub mod engine;
 pub mod eval;
 pub mod models;
+pub mod pass;
 
 pub use align::{similarity_transform, warp, Affine, ALIGNED};
 pub use cluster::{cluster, Cluster, ClusteringConfig};
