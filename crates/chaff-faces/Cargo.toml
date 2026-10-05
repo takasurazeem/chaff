@@ -31,4 +31,6 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 tempfile = "3"
+# The integration tests open a catalog directly, and `chaff-core` does not re-export rusqlite.
+rusqlite = { version = "0.40", features = ["bundled"] }
 tokenizers = { version = "0.23.2", default-features = false, features = ["onig"] }
