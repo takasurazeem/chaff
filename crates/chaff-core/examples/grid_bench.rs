@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = store::photo_metadata(&conn, lib)?;
     results.push(("photo_metadata", t.elapsed().as_secs_f64() * 1000.0));
 
-    println!("\n  {:32} {:>10}  {:>10}  {}", "operation", "actual", "budget", "verdict");
+    println!("\n  {:32} {:>10}  {:>10}  verdict", "operation", "actual", "budget");
     let mut over = Vec::new();
     for (name, actual) in &results {
         let budget = BUDGET_MS
