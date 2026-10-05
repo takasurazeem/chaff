@@ -74,6 +74,9 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 
 [dev-dependencies]
+# The example needs the crate by its own name to probe the reader directly.
+# (`kamadak-exif` is imported as `exif` in the library.)
+
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 tempfile = "3"
 

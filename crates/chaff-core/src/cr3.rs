@@ -53,7 +53,7 @@ pub fn is_cr3(head: &[u8]) -> bool {
 ///
 /// Returns the bytes starting at the TIFF header, which is what `exif::Reader::read_raw`
 /// expects — the container is unwrapped here so the TIFF reader can do the part it is good at.
-pub fn exif_block<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Vec<u8>>> {
+pub fn exif_blocks<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Vec<Vec<u8>>>> {
     let len = reader.seek(SeekFrom::End(0))?;
     reader.seek(SeekFrom::Start(0))?;
 
@@ -98,8 +98,9 @@ pub fn exif_block<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Vec<
                     if reader.read_exact(&mut uuid).is_ok() && uuid == CANON_UUID {
                         let inner_start = body_start + 16;
                         let inner_end = body_start + body_len;
-                        if let Some(block) = find_cmt1(reader, inner_start, inner_end)? {
-                            return Ok(Some(block));
+                        let blocks = find_cmt_blocks(reader, inner_start, inner_end)?;
+                        if !blocks.is_empty() {
+                            return Ok(Some(blocks));
                         }
                     }
                 }
@@ -116,12 +117,28 @@ pub fn exif_block<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Vec<
     Ok(None)
 }
 
-/// Find `CMT1` inside a Canon `uuid` box and return its TIFF block.
-fn find_cmt1<R: Read + Seek>(
+/// Every `CMT` block inside a Canon `uuid` box, in order.
+///
+/// # Why all of them and not just the first
+///
+/// A CR3 splits its metadata across boxes, and the split is not arbitrary:
+///
+/// * **CMT1** — IFD0. Make, Model, Orientation, `DateTime`.
+/// * **CMT2** — the Exif sub-IFD. ISO, shutter, aperture, focal length, `LensModel`,
+///   `DateTimeOriginal`.
+/// * **CMT3** — Canon's maker notes.
+/// * **CMT4** — GPS.
+///
+/// Reading only CMT1 produces a panel that says *"Canon EOS RP"* and nothing else — which is
+/// exactly what the first version of this did, and what a user saw: camera and a date, no lens,
+/// no ISO, no shutter, no aperture. The `DateTime` it showed came from IFD0's fallback, which is
+/// how it looked plausible enough not to be questioned.
+fn find_cmt_blocks<R: Read + Seek>(
     reader: &mut R,
     start: u64,
     end: u64,
-) -> std::io::Result<Option<Vec<u8>>> {
+) -> std::io::Result<Vec<Vec<u8>>> {
+    let mut out = Vec::new();
     let mut offset = start;
     while offset + 8 <= end {
         reader.seek(SeekFrom::Start(offset))?;
@@ -137,15 +154,96 @@ fn find_cmt1<R: Read + Seek>(
             break;
         }
 
-        if kind == b"CMT1" {
+        if kind.starts_with(b"CMT") {
             let mut block = vec![0u8; body_len as usize];
             reader.seek(SeekFrom::Start(body_start))?;
             reader.read_exact(&mut block)?;
-            return Ok(Some(block));
+            out.push(block);
         }
         offset = body_start + body_len;
     }
-    Ok(None)
+    Ok(out)
+}
+
+/// Wrap a bare IFD as the Exif sub-IFD of a synthetic TIFF.
+///
+/// # Why this is necessary
+///
+/// `CMT2` is a **bare IFD** — an entry count followed by entries — with no TIFF header, because
+/// in the file it is reached through IFD0's `ExifIFD` pointer. Pulled out of the container it is
+/// not a document, and `exif::Reader::read_raw` needs one.
+///
+/// So this builds the smallest TIFF that says "the Exif sub-IFD is over there": a header, an
+/// IFD0 with a single `0x8769` entry pointing past itself, and the real IFD after it. That is
+/// enough for the reader to parse the block with the same code it uses for a JPEG.
+pub fn wrap_as_exif_ifd(ifd: &[u8]) -> Vec<u8> {
+    const HEADER: u32 = 8;
+    const IFD0_ENTRIES: u16 = 1;
+    const IFD0_LEN: u32 = 2 + 12 * IFD0_ENTRIES as u32 + 4;
+    let target = HEADER + IFD0_LEN;
+
+    let mut body = ifd.to_vec();
+    shift_value_offsets(&mut body, target);
+
+    let mut out = Vec::with_capacity(body.len() + target as usize);
+    out.extend_from_slice(b"II*\0");
+    out.extend_from_slice(&HEADER.to_le_bytes());
+
+    // IFD0: one entry, the ExifIFD pointer.
+    out.extend_from_slice(&IFD0_ENTRIES.to_le_bytes());
+    out.extend_from_slice(&0x8769u16.to_le_bytes()); // ExifIFD
+    out.extend_from_slice(&4u16.to_le_bytes()); // LONG
+    out.extend_from_slice(&1u32.to_le_bytes()); // one value
+    out.extend_from_slice(&target.to_le_bytes()); // at the IFD we were handed
+    out.extend_from_slice(&0u32.to_le_bytes()); // no next IFD
+
+    out.extend_from_slice(&body);
+    out
+}
+
+/// Add `shift` to every out-of-line value offset in a bare IFD.
+///
+/// # Why this is necessary
+///
+/// A bare IFD's offsets are relative to **its own start**. Moving it behind a TIFF header moves
+/// everything it points at, so every offset that names a location has to move with it. Without
+/// this the reader follows an offset into the middle of the header, finds nothing, and reports
+/// no metadata — which is the failure this whole module exists to stop looking like a normal
+/// file.
+///
+/// Inline values (four bytes or fewer) are **not** offsets and must not be touched; adding a
+/// shift to a two-byte ISO value would turn 100 into 126.
+fn shift_value_offsets(ifd: &mut [u8], shift: u32) {
+    if ifd.len() < 2 {
+        return;
+    }
+    let count = u16::from_le_bytes([ifd[0], ifd[1]]) as usize;
+    for i in 0..count {
+        let at = 2 + i * 12;
+        if at + 12 > ifd.len() {
+            // A truncated IFD is a corrupt file. Stopping is right; reading past the end is
+            // how a parser segfaults on a photograph.
+            return;
+        }
+        let kind = u16::from_le_bytes([ifd[at + 2], ifd[at + 3]]);
+        let n = u32::from_le_bytes([ifd[at + 4], ifd[at + 5], ifd[at + 6], ifd[at + 7]]);
+
+        let unit = match kind {
+            1 | 2 | 6 | 7 => 1u32, // BYTE, ASCII, SBYTE, UNDEFINED
+            3 | 8 => 2,            // SHORT, SSHORT
+            4 | 9 | 11 => 4,       // LONG, SLONG, FLOAT
+            5 | 10 | 12 => 8,      // RATIONAL, SRATIONAL, DOUBLE
+            // An unknown type is left alone rather than guessed at. The reader will reject it,
+            // which is better than this moving a value that was not an offset.
+            _ => continue,
+        };
+
+        if unit.saturating_mul(n) > 4 {
+            let off = u32::from_le_bytes([ifd[at + 8], ifd[at + 9], ifd[at + 10], ifd[at + 11]]);
+            let moved = off.saturating_add(shift);
+            ifd[at + 8..at + 12].copy_from_slice(&moved.to_le_bytes());
+        }
+    }
 }
 
 /// Read the EXIF out of a CR3, mapped into the engine's own type.
@@ -165,10 +263,31 @@ pub fn read_exif(path: &std::path::Path) -> std::io::Result<Option<super::exif::
         ));
     }
 
-    let Some(block) = exif_block(&mut file)? else {
+    let Some(blocks) = exif_blocks(&mut file)? else {
         return Ok(None);
     };
-    Ok(super::exif::parse_tiff_block(&block))
+
+    // **Every block, merged, first value wins.**
+    //
+    // CMT1 is IFD0 and CMT2 is the Exif sub-IFD, so a panel that read only the first showed
+    // "Canon EOS RP" and a date and nothing else — no lens, no ISO, no shutter, no aperture.
+    // Which box holds what is Canon's business; taking everything and filling gaps is the
+    // answer that does not depend on knowing.
+    let mut merged: Option<super::exif::ExifData> = None;
+    for (i, block) in blocks.iter().enumerate() {
+        // The first block is a complete TIFF; the rest are bare IFDs and need wrapping.
+        let parsed = if i == 0 {
+            super::exif::parse_tiff_block(block)
+        } else {
+            super::exif::parse_tiff_block(&wrap_as_exif_ifd(block))
+        };
+        let Some(data) = parsed else { continue };
+        merged = Some(match merged {
+            None => data,
+            Some(acc) => acc.filled_from(data),
+        });
+    }
+    Ok(merged)
 }
 
 #[cfg(test)]
@@ -187,17 +306,61 @@ mod tests {
 
     /// A CR3 with a Canon metadata box holding `CMT1`.
     fn cr3_with(exif: &[u8]) -> Vec<u8> {
+        cr3_with_blocks(&[(b"CMT1", exif)])
+    }
+
+    /// A CR3 with the given `CMT` blocks, in order.
+    fn cr3_with_blocks(blocks: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
         let mut ftyp = Vec::new();
         ftyp.extend_from_slice(b"crx ");
         ftyp.extend_from_slice(&[0, 0, 0, 1]);
         ftyp.extend_from_slice(b"crx isom");
 
         let mut uuid_body = CANON_UUID.to_vec();
-        uuid_body.extend_from_slice(&boxed(b"CMT1", exif));
+        for (kind, body) in blocks {
+            uuid_body.extend_from_slice(&boxed(kind, body));
+        }
 
         let mut out = boxed(b"ftyp", &ftyp);
         out.extend_from_slice(&boxed(b"uuid", &uuid_body));
         out
+    }
+
+    /// A **bare IFD** with one ASCII entry, offsets relative to its own start.
+    ///
+    /// This is what `CMT2` is: an entry count and entries, with no TIFF header, because in the
+    /// file it is reached through IFD0's `ExifIFD` pointer.
+    fn bare_ifd_ascii(tag: u16, value: &[u8]) -> Vec<u8> {
+        let mut v = value.to_vec();
+        v.push(0);
+        // count(2) + entry(12) + next(4) = 18, so the value goes at 18 **relative to here**.
+        let mut t = Vec::new();
+        t.extend_from_slice(&1u16.to_le_bytes());
+        t.extend_from_slice(&tag.to_le_bytes());
+        t.extend_from_slice(&2u16.to_le_bytes()); // ASCII
+        t.extend_from_slice(&(v.len() as u32).to_le_bytes());
+        t.extend_from_slice(&18u32.to_le_bytes());
+        t.extend_from_slice(&0u32.to_le_bytes());
+        t.extend_from_slice(&v);
+        t
+    }
+
+    /// A TIFF with one ASCII entry: `(tag, value)`.
+    fn tiff_ascii(tag: u16, value: &[u8]) -> Vec<u8> {
+        let mut v = value.to_vec();
+        v.push(0);
+        // Header + IFD (2 + 12 + 4) = 8 + 18 = 26, so the value goes at 26.
+        let mut t = Vec::new();
+        t.extend_from_slice(b"II*\0");
+        t.extend_from_slice(&8u32.to_le_bytes());
+        t.extend_from_slice(&1u16.to_le_bytes());
+        t.extend_from_slice(&tag.to_le_bytes());
+        t.extend_from_slice(&2u16.to_le_bytes()); // ASCII
+        t.extend_from_slice(&(v.len() as u32).to_le_bytes());
+        t.extend_from_slice(&26u32.to_le_bytes());
+        t.extend_from_slice(&0u32.to_le_bytes());
+        t.extend_from_slice(&v);
+        t
     }
 
     #[test]
@@ -225,8 +388,44 @@ mod tests {
         let exif = b"II*\0\x08\0\0\0";
         let cr3 = cr3_with(exif);
 
-        let block = exif_block(&mut Cursor::new(&cr3)).unwrap().expect("a block");
-        assert_eq!(block, exif);
+        let blocks = exif_blocks(&mut Cursor::new(&cr3)).unwrap().expect("a block");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0], exif);
+    }
+
+    #[test]
+    fn every_cmt_block_is_read_not_only_the_first() {
+        // **The bug the user found by looking.** A CR3 splits its metadata: CMT1 is IFD0 (Make,
+        // Model, DateTime) and CMT2 is the Exif sub-IFD (ISO, shutter, aperture, focal length,
+        // LensModel). Reading only CMT1 produced a panel saying "Canon EOS RP" and a date and
+        // nothing else — which looked plausible enough that it was not questioned.
+        let cmt1 = tiff_ascii(0x010F, b"Canon"); // Make
+        let cmt2 = bare_ifd_ascii(0x0110, b"Canon EOS RP"); // Model — standing in for the sub-IFD
+
+        let cr3 = cr3_with_blocks(&[(b"CMT1", &cmt1), (b"CMT2", &cmt2)]);
+        let blocks = exif_blocks(&mut Cursor::new(&cr3)).unwrap().expect("blocks");
+        assert_eq!(blocks.len(), 2, "both blocks must be found: {blocks:?}");
+        assert_eq!(blocks[0], cmt1);
+        assert_eq!(blocks[1], cmt2);
+    }
+
+    #[test]
+    fn a_bare_ifd_is_wrapped_so_the_reader_can_parse_it() {
+        // CMT2 is a **bare IFD** — an entry count and entries, with no TIFF header, because in
+        // the file it is reached through IFD0's ExifIFD pointer. Pulled out of the container it
+        // is not a document, and the reader needs one.
+        let bare = bare_ifd_ascii(0x0110, b"Canon EOS RP");
+
+        let wrapped = wrap_as_exif_ifd(&bare);
+        assert!(wrapped.starts_with(b"II*\0"), "it must be a TIFF now");
+
+        // And the reader gets the tag out of it.
+        let parsed = crate::exif::parse_tiff_block(&wrapped);
+        assert_eq!(
+            parsed.and_then(|d| d.model),
+            Some("Canon EOS RP".to_string()),
+            "a wrapped bare IFD must parse"
+        );
     }
 
     #[test]
@@ -239,7 +438,7 @@ mod tests {
         ftyp.extend_from_slice(b"crx isom");
         let cr3 = boxed(b"ftyp", &ftyp);
 
-        assert_eq!(exif_block(&mut Cursor::new(&cr3)).unwrap(), None);
+        assert_eq!(exif_blocks(&mut Cursor::new(&cr3)).unwrap(), None);
     }
 
     #[test]
@@ -256,7 +455,7 @@ mod tests {
 
         let mut cr3 = boxed(b"ftyp", &ftyp);
         cr3.extend_from_slice(&boxed(b"uuid", &body));
-        assert_eq!(exif_block(&mut Cursor::new(&cr3)).unwrap(), None);
+        assert_eq!(exif_blocks(&mut Cursor::new(&cr3)).unwrap(), None);
     }
 
     #[test]
@@ -276,13 +475,13 @@ mod tests {
         cr3.extend_from_slice(&boxed(b"CMT1", b"x"));
 
         // Must not panic, and must not find anything.
-        assert_eq!(exif_block(&mut Cursor::new(&cr3)).unwrap(), None);
+        assert_eq!(exif_blocks(&mut Cursor::new(&cr3)).unwrap(), None);
     }
 
     #[test]
     fn an_empty_file_is_an_error_or_nothing_never_a_panic() {
-        assert!(exif_block(&mut Cursor::new(Vec::new())).is_ok());
-        assert!(exif_block(&mut Cursor::new(b"crx ".to_vec())).is_ok());
+        assert!(exif_blocks(&mut Cursor::new(Vec::new())).is_ok());
+        assert!(exif_blocks(&mut Cursor::new(b"crx ".to_vec())).is_ok());
     }
 
     #[test]
@@ -302,7 +501,8 @@ mod tests {
         let mut cr3 = boxed(b"ftyp", &ftyp);
         cr3.extend_from_slice(&moov);
 
-        let block = exif_block(&mut Cursor::new(&cr3)).unwrap().expect("a block");
-        assert_eq!(block, exif);
+        let blocks = exif_blocks(&mut Cursor::new(&cr3)).unwrap().expect("a block");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0], exif);
     }
 }

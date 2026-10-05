@@ -89,6 +89,34 @@ impl ExifData {
         *self == ExifData::default()
     }
 
+    /// Fill the gaps in this from `other`, keeping what is already here.
+    ///
+    /// # Why a CR3 needs this
+    ///
+    /// Canon splits a CR3's metadata across boxes: **CMT1** is IFD0 (Make, Model, `DateTime`)
+    /// and **CMT2** is the Exif sub-IFD (ISO, shutter, aperture, focal length, `LensModel`,
+    /// `DateTimeOriginal`). A reader that takes only the first produces a panel saying
+    /// "Canon EOS RP" and a date and nothing else — which is exactly what the first version
+    /// did, and it looked plausible enough that nobody questioned it.
+    ///
+    /// Which box holds what is Canon's business. Taking everything and filling gaps is the
+    /// answer that does not depend on knowing.
+    ///
+    /// **`self` wins**, so the caller's order is the priority order: a raw before a JPEG, an
+    /// IFD0 before a maker note.
+    pub fn filled_from(mut self, other: ExifData) -> ExifData {
+        self.captured_at = self.captured_at.or(other.captured_at);
+        self.make = self.make.or(other.make);
+        self.model = self.model.or(other.model);
+        self.lens = self.lens.or(other.lens);
+        self.iso = self.iso.or(other.iso);
+        self.f_number = self.f_number.or(other.f_number);
+        self.exposure_time = self.exposure_time.or(other.exposure_time);
+        self.focal_length = self.focal_length.or(other.focal_length);
+        self.orientation = self.orientation.or(other.orientation);
+        self
+    }
+
     /// A camera identity for burst grouping: body first, falling back to make.
     ///
     /// Two different bodies of the same make are correctly distinguished; a body with no
@@ -132,7 +160,12 @@ impl ExifData {
 ///
 ///   1 — TIFF, JPEG and the other containers `kamadak-exif` handles.
 ///   2 — Canon CR3, read out of its ISO base media container.
-pub const EXIF_VERSION: i64 = 2;
+///   3 — Tags matched by number rather than by the context-carrying `Tag` value, which was
+///       silently dropping **every** tag in an Exif sub-IFD: ISO, shutter, aperture, focal
+///       length, `LensModel` and `DateTimeOriginal`.
+///
+/// Every row written before 3 is missing its exposure data and must be re-read.
+pub const EXIF_VERSION: i64 = 3;
 
 /// Read EXIF from a file.
 ///
@@ -232,9 +265,25 @@ pub fn parse_tiff_block(block: &[u8]) -> Option<ExifData> {
 /// The IFD0 preference is kept so that when a tag genuinely appears twice, the primary
 /// copy wins rather than whichever happened to be enumerated first.
 fn field(exif: &exif::Exif, tag: exif::Tag) -> Option<&exif::Field> {
+    // **Matched by number, not by the `Tag` value.**
+    //
+    // `Tag` is `Tag(Context, u16)` — it carries the *context* it belongs to. `Tag::Model` is
+    // `Tag(Tiff, 0x110)`, and the same tag inside an Exif sub-IFD is `Tag(Exif, 0x110)`. They
+    // are not equal, so `f.tag == tag` was **false for every tag in the Exif sub-IFD** — which
+    // is where ISO, shutter, aperture, focal length, `LensModel` and `DateTimeOriginal` all
+    // live.
+    //
+    // So this returned nothing for exactly the tags that make a photograph's metadata worth
+    // reading, and the panel showed a camera and a date and nothing else. It looked like a CR3
+    // problem because a CR3 was the first file whose *camera* also failed; the exposure data
+    // was missing for every file in the library.
+    //
+    // The IFD preference is kept — when a tag genuinely appears twice, the primary copy wins
+    // rather than whichever was enumerated first — but the comparison is on the number.
+    let n = tag.1;
     exif.fields()
-        .find(|f| f.tag == tag && f.ifd_num == exif::In::PRIMARY)
-        .or_else(|| exif.fields().find(|f| f.tag == tag))
+        .find(|f| f.tag.1 == n && f.ifd_num == exif::In::PRIMARY)
+        .or_else(|| exif.fields().find(|f| f.tag.1 == n))
 }
 
 fn field_string(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
@@ -418,6 +467,58 @@ mod tests {
             matches!(read(&empty_tiff), Ok(ExifRead::Absent)),
             "a readable container with no tags is absent, not unsupported"
         );
+    }
+
+    #[test]
+    fn a_tag_in_the_exif_sub_ifd_is_found() {
+        // **The bug that made every photograph look thin.**
+        //
+        // `Tag` is `Tag(Context, u16)` — it carries the context it belongs to. `Tag::Model` is
+        // `Tag(Tiff, 0x110)` and the same number inside an Exif sub-IFD is `Tag(Exif, 0x110)`.
+        // Comparing the whole `Tag` was therefore **false for every tag in the Exif sub-IFD**,
+        // which is where ISO, shutter, aperture, focal length, `LensModel` and
+        // `DateTimeOriginal` all live.
+        //
+        // A panel showed a camera and a date and nothing else, for every file in the library —
+        // and it looked like a Canon CR3 problem because a CR3 was the first file whose
+        // *camera* also failed.
+        use std::io::Write;
+
+        // A TIFF whose IFD0 points at an Exif sub-IFD carrying only `FNumber` (0x829D).
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes()); // IFD0 at 8
+        tiff.extend_from_slice(&1u16.to_le_bytes()); // one entry
+        tiff.extend_from_slice(&0x8769u16.to_le_bytes()); // ExifIFD pointer
+        tiff.extend_from_slice(&4u16.to_le_bytes()); // LONG
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&26u32.to_le_bytes()); // the sub-IFD
+        tiff.extend_from_slice(&0u32.to_le_bytes()); // no next IFD
+        // The sub-IFD: one entry, FNumber = 28/10.
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        tiff.extend_from_slice(&0x829Du16.to_le_bytes());
+        tiff.extend_from_slice(&5u16.to_le_bytes()); // RATIONAL
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&44u32.to_le_bytes()); // the rational
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        tiff.extend_from_slice(&28u32.to_le_bytes());
+        tiff.extend_from_slice(&10u32.to_le_bytes());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.tif");
+        std::fs::File::create(&path).unwrap().write_all(&tiff).unwrap();
+
+        match read(&path) {
+            Ok(ExifRead::Parsed(d)) => {
+                assert_eq!(
+                    d.f_number,
+                    Some(2.8),
+                    "a tag in the Exif sub-IFD must be found — this is what makes a panel \
+                     show a lens and an exposure rather than a camera and a date"
+                );
+            }
+            other => panic!("expected parsed EXIF, got {other:?}"),
+        }
     }
 
     #[test]
