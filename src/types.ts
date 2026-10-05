@@ -13,6 +13,10 @@ export interface LibraryView {
   scanned_files: number;
   photos: number;
   pairs: number;
+  /** The full breakdown, so a photograph count can be read rather than guessed at. */
+  raw_only: number;
+  raster_only: number;
+  ambiguous: number;
   needs_review: number;
   scored: number;
   /** Photographs whose image data this build cannot read — a raw format needing LibRaw. */

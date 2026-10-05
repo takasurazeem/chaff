@@ -26,6 +26,22 @@ pub fn run() {
         // installed but not registered fails at runtime and only at runtime.
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // **Logging, so the numbers are inspectable rather than inferred.**
+            //
+            // The engine reports what it did — how many photographs, how they resolved,
+            // how many were scored — and until now those numbers existed only as a struct
+            // nobody read. On macOS this goes to the unified log, where `log show
+            // --predicate 'process == "chaff"'` retrieves it. On Linux and Windows, stderr.
+            //
+            // `RUST_LOG` filters it. The default is `info`, which is the level the index
+            // report is written at: enough to answer "what happened?", not enough to bury
+            // it.
+            env_logger::Builder::from_env(
+                env_logger::Env::default().default_filter_or("info"),
+            )
+            .format_timestamp_millis()
+            .init();
+
             // The catalog and the thumbnail cache live under the app data directory, never
             // inside the user's library. Nothing Chaff writes is written beside their
             // photographs unless they explicitly ask for a sidecar.
@@ -44,6 +60,7 @@ pub fn run() {
             commands::list_trash,
             commands::restore_trash,
             commands::purge_trash,
+            commands::build_info,
             commands::capabilities,
             commands::set_decision,
             commands::decision_count,

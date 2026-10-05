@@ -86,6 +86,12 @@ pub struct PipelineReport {
     pub unscoreable: usize,
     pub shoots: usize,
     pub bands: BandCounts,
+    /// How the photographs resolved, by pair state.
+    ///
+    /// Broken out because "2,956 photographs" is not a number anyone can act on. Whether
+    /// the remainder is 2,559 clean pairs or 2,000 ambiguous groups is the difference
+    /// between a library that works and one that needs attention.
+    pub by_state: StateCounts,
     pub elapsed_ms: u128,
     /// Photographs whose measurement was reused instead of decoded again.
     ///
@@ -95,7 +101,107 @@ pub struct PipelineReport {
     pub reused: usize,
 }
 
+/// Photographs by how their files resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct StateCounts {
+    /// Exactly one raw and exactly one rendered file. The healthy case.
+    pub pair: usize,
+    pub raw_only: usize,
+    pub raster_only: usize,
+    /// More than one raw or more than one rendered file under one stem. Never guessed at.
+    pub ambiguous: usize,
+}
+
+impl StateCounts {
+    pub fn total(&self) -> usize {
+        self.pair + self.raw_only + self.raster_only + self.ambiguous
+    }
+}
+
 impl PipelineReport {
+    /// Every way this report could be inconsistent with itself.
+    ///
+    /// **Empty is the only acceptable answer.** These are not style checks — each one is a
+    /// number that has been wrong, or that would silently mislead if it were. A count that
+    /// disagrees with the thing it counts is worse than no count, because it is believed.
+    ///
+    /// Returned rather than asserted so it can be called at runtime as well as in a test:
+    /// a library is a different shape from a fixture folder, and the invariants are worth
+    /// checking against the real thing.
+    pub fn inconsistencies(&self) -> Vec<String> {
+        let mut out = Vec::new();
+
+        // Every photograph is either scored or explicitly counted as unscoreable. If these
+        // do not add up, some photographs were silently dropped between the two.
+        if self.scored + self.unscoreable != self.photos {
+            out.push(format!(
+                "scored ({}) + unscoreable ({}) != photographs ({})",
+                self.scored, self.unscoreable, self.photos
+            ));
+        }
+
+        // Every scored photograph lands in exactly one band.
+        let banded = self.bands.keep + self.bands.review + self.bands.reject;
+        if banded != self.scored {
+            out.push(format!(
+                "bands total ({banded}) != scored ({})",
+                self.scored
+            ));
+        }
+
+        // Every photograph has exactly one state.
+        if self.by_state.total() != self.photos {
+            out.push(format!(
+                "states total ({}) != photographs ({})",
+                self.by_state.total(),
+                self.photos
+            ));
+        }
+
+        // `pairs` counts healthy pairs and must agree with the state breakdown rather than
+        // being tracked separately — two counters for one fact is how they drift.
+        if self.pairs != self.by_state.pair {
+            out.push(format!(
+                "pairs ({}) != state.pair ({})",
+                self.pairs, self.by_state.pair
+            ));
+        }
+
+        // A photograph cannot need review without being ambiguous, and the ambiguous count
+        // is what the grid shows.
+        if self.needs_review > self.by_state.ambiguous {
+            out.push(format!(
+                "needs_review ({}) > ambiguous ({})",
+                self.needs_review, self.by_state.ambiguous
+            ));
+        }
+
+        // A reused measurement is one that was not decoded, so it cannot exceed the number
+        // of photographs that produced measurements at all.
+        if self.reused > self.scored {
+            out.push(format!(
+                "reused ({}) > scored ({})",
+                self.reused, self.scored
+            ));
+        }
+
+        // Every photograph came from at least one file, so a scan cannot see fewer files
+        // than it produced photographs.
+        if self.scanned_files < self.photos {
+            out.push(format!(
+                "scanned_files ({}) < photographs ({})",
+                self.scanned_files, self.photos
+            ));
+        }
+
+        // At least one shoot, unless there is nothing at all.
+        if self.photos > 0 && self.shoots == 0 {
+            out.push("photographs exist but no shoots were formed".to_string());
+        }
+
+        out
+    }
+
     /// The result, without how long it took.
     ///
     /// `elapsed_ms` is a measurement of the machine, not of the library, so two runs that
@@ -147,6 +253,7 @@ pub fn index_and_score_with_progress(
     on_progress: &mut dyn FnMut(Progress),
 ) -> Result<PipelineReport, PipelineError> {
     let started = Instant::now();
+    log::info!("indexing {}", root.display());
 
     let outcome = indexer::index_with_progress(conn, root, now, &mut |files| {
         on_progress(Progress::Scanning { files });
@@ -154,6 +261,17 @@ pub fn index_and_score_with_progress(
     let library_id = outcome.library_id;
 
     let photos = store::photos(conn, library_id)?;
+    log::debug!("{} files scanned, {} photographs resolved", outcome.scanned_files, photos.len());
+
+    let mut by_state = StateCounts::default();
+    for p in &photos {
+        match p.state.as_str() {
+            "pair" => by_state.pair += 1,
+            "raw_only" => by_state.raw_only += 1,
+            "raster_only" => by_state.raster_only += 1,
+            _ => by_state.ambiguous += 1,
+        }
+    }
     let mut measured: Vec<FrameMeasurement> = Vec::with_capacity(photos.len());
     let mut unscoreable = 0usize;
     let total = photos.len();
@@ -247,6 +365,16 @@ pub fn index_and_score_with_progress(
         measured.push(frame);
     }
 
+    if unscoreable > 0 {
+        log::warn!(
+            "{unscoreable} photographs produced no measurement — a raw format this build \
+             cannot read, or a file that is not really an image"
+        );
+    }
+    if reused > 0 {
+        log::info!("reused {reused} measurements instead of decoding again");
+    }
+
     // Ranking is a property of the set, so it can only happen once everything is measured.
     on_progress(Progress::Ranking { photographs: measured.len() });
     let normalised = shoot::normalise(&measured, DEFAULT_SHOOT_GAP_SECONDS)?;
@@ -263,7 +391,7 @@ pub fn index_and_score_with_progress(
 
     let shoot_count = normalised.iter().map(|n| n.shoot_id).max().map(|m| m + 1).unwrap_or(0);
 
-    Ok(PipelineReport {
+    let report = PipelineReport {
         library_id,
         root: root.to_path_buf(),
         scanned_files: outcome.scanned_files,
@@ -274,9 +402,44 @@ pub fn index_and_score_with_progress(
         unscoreable,
         shoots: shoot_count,
         bands,
+        by_state,
         elapsed_ms: started.elapsed().as_millis(),
         reused,
-    })
+    };
+
+    // **Logged, and checked.** The numbers are the only account of what happened, and a
+    // count that disagrees with the thing it counts is worse than no count because it is
+    // believed. Reported here rather than asserted: a real library is a different shape
+    // from a fixture folder, and the invariants are worth checking against the real thing.
+    log::info!(
+        "indexed {}: {} photographs ({} pair, {} raw-only, {} jpeg-only, {} ambiguous), \
+         {} scored, {} unscoreable, {} shoots, bands {} keep / {} review / {} reject, \
+         {:.1}s",
+        root.display(),
+        report.photos,
+        report.by_state.pair,
+        report.by_state.raw_only,
+        report.by_state.raster_only,
+        report.by_state.ambiguous,
+        report.scored,
+        report.unscoreable,
+        report.shoots,
+        report.bands.keep,
+        report.bands.review,
+        report.bands.reject,
+        report.elapsed_ms as f64 / 1000.0,
+    );
+
+    let problems = report.inconsistencies();
+    if problems.is_empty() {
+        log::info!("report is internally consistent");
+    } else {
+        for p in &problems {
+            log::error!("inconsistent report: {p}");
+        }
+    }
+
+    Ok(report)
 }
 
 /// Decode one file and measure it.
@@ -634,6 +797,105 @@ mod tests {
             scored_photos(&c1, r1.library_id).unwrap(),
             scored_photos(&c2, r2.library_id).unwrap()
         );
+    }
+
+    #[test]
+    fn every_real_run_reports_an_internally_consistent_result() {
+        // **The check the user asked for, as a test.** These are not style assertions —
+        // each one is a number that has been wrong or would silently mislead. Run over
+        // several shapes of library rather than one, because the invariants that matter
+        // differ between a folder of pairs and a folder of orphans.
+        let shapes: Vec<Vec<&str>> = vec![
+            vec!["sharp_a", "sharp_b"],
+            vec!["sharp_a", "sharp_b", "blur_defocus_mild", "blur_defocus_heavy"],
+            vec![
+                "sharp_a", "sharp_b", "blur_defocus_mild", "noise_high_iso",
+                "exp_over", "flat_low_contrast", "bokeh_portrait", "burst_0_sharp",
+                "burst_1_sharp", "burst_2_sharp", "bracket_m1", "bracket_p1",
+            ],
+        ];
+
+        for names in shapes {
+            let Some((dir, _)) = build_library(&names) else { return };
+            let mut conn = open_in_memory().unwrap();
+            let report = index_and_score(&mut conn, dir.path(), 1_700_000_000).unwrap();
+
+            assert_eq!(
+                report.inconsistencies(),
+                Vec::<String>::new(),
+                "a run over {} photographs produced an inconsistent report: {:?}",
+                names.len(),
+                report
+            );
+
+            // And the totals are what the counts claim, checked against the catalog
+            // rather than against the report's own arithmetic.
+            let photos = store::photos(&conn, report.library_id).unwrap();
+            assert_eq!(
+                photos.len(),
+                report.photos,
+                "the reported photograph count must match the catalog"
+            );
+            assert_eq!(
+                report.by_state.total(),
+                photos.len(),
+                "and the state breakdown must account for every one of them"
+            );
+        }
+    }
+
+    #[test]
+    fn the_invariant_check_catches_a_broken_report() {
+        // A check that cannot fail is not a check. Each of these is a report that would
+        // mislead, and each must be caught.
+        let good = PipelineReport {
+            library_id: 1,
+            root: PathBuf::from("/lib"),
+            scanned_files: 10,
+            photos: 5,
+            pairs: 3,
+            needs_review: 1,
+            scored: 5,
+            unscoreable: 0,
+            shoots: 2,
+            bands: BandCounts { keep: 1, review: 3, reject: 1 },
+            by_state: StateCounts { pair: 3, raw_only: 1, raster_only: 0, ambiguous: 1 },
+            elapsed_ms: 0,
+            reused: 2,
+        };
+        assert_eq!(good.inconsistencies(), Vec::<String>::new(), "the baseline must be clean");
+
+        let mut dropped = good.clone();
+        dropped.scored = 4; // one photograph vanished between the two counters
+        assert!(!dropped.inconsistencies().is_empty(), "lost photographs must be caught");
+
+        let mut unbanded = good.clone();
+        unbanded.bands.review = 2;
+        assert!(!unbanded.inconsistencies().is_empty(), "an unbanded photograph must be caught");
+
+        let mut bad_states = good.clone();
+        bad_states.by_state.ambiguous = 0;
+        assert!(!bad_states.inconsistencies().is_empty(), "a missing state must be caught");
+
+        let mut drifted = good.clone();
+        drifted.pairs = 2; // tracked separately from the state breakdown
+        assert!(!drifted.inconsistencies().is_empty(), "two counters for one fact must be caught");
+
+        let mut impossible = good.clone();
+        impossible.reused = 9;
+        assert!(!impossible.inconsistencies().is_empty(), "reusing more than was scored must be caught");
+
+        let mut fewer_files = good.clone();
+        fewer_files.scanned_files = 3;
+        assert!(!fewer_files.inconsistencies().is_empty(), "more photographs than files must be caught");
+
+        let mut shootless = good.clone();
+        shootless.shoots = 0;
+        assert!(!shootless.inconsistencies().is_empty(), "photographs with no shoot must be caught");
+
+        let mut over_review = good.clone();
+        over_review.needs_review = 4;
+        assert!(!over_review.inconsistencies().is_empty(), "more reviews than ambiguous must be caught");
     }
 
     #[test]

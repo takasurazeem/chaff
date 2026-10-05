@@ -68,6 +68,10 @@ pub struct LibraryView {
     pub scanned_files: usize,
     pub photos: usize,
     pub pairs: usize,
+    /// The full breakdown, so "2,956 photographs" can be read rather than guessed at.
+    pub raw_only: usize,
+    pub raster_only: usize,
+    pub ambiguous: usize,
     pub needs_review: usize,
     pub scored: usize,
     /// Photographs whose image data this build cannot read. Needs a raw decoder (#8).
@@ -152,6 +156,9 @@ pub async fn open_library(
             scanned_files: report.scanned_files,
             photos: report.photos,
             pairs: report.pairs,
+            raw_only: report.by_state.raw_only,
+            raster_only: report.by_state.raster_only,
+            ambiguous: report.by_state.ambiguous,
             needs_review: report.needs_review,
             scored: report.scored,
             unscoreable: report.unscoreable,
@@ -608,6 +615,41 @@ pub async fn purge_trash(
     .map_err(err)?
 }
 
+/// Which build this is.
+///
+/// Compiled in rather than read from the filesystem: a file's timestamp says when it was
+/// copied, not what it contains, and the whole point is to answer "am I testing the fix or
+/// the bug?" without trusting either.
+#[derive(Debug, Serialize)]
+pub struct BuildInfo {
+    pub version: &'static str,
+    pub git_sha: &'static str,
+    pub built_at: String,
+}
+
+#[tauri::command]
+pub fn build_info() -> BuildInfo {
+    BuildInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        git_sha: env!("CHAFF_GIT_SHA"),
+        built_at: format_epoch(env!("CHAFF_BUILD_EPOCH")),
+    }
+}
+
+/// `2026-10-04 21:46 UTC`, from a build-time epoch second.
+fn format_epoch(seconds: &str) -> String {
+    let Ok(secs) = seconds.parse::<i64>() else {
+        return "unknown".to_string();
+    };
+    let date = chaff_core::trash::civil_date(secs);
+    let time_of_day = secs.rem_euclid(86_400);
+    format!(
+        "{date} {:02}:{:02} UTC",
+        time_of_day / 3600,
+        (time_of_day % 3600) / 60
+    )
+}
+
 fn describe_warning(w: &chaff_core::trash::Warning) -> String {
     use chaff_core::trash::Warning;
     match w {
@@ -634,7 +676,13 @@ pub async fn capabilities(endpoints: Vec<String>) -> Result<String, String> {
         for url in &endpoints {
             probe.endpoints.push(hardware::probe_endpoint(url, 1500));
         }
-        Ok(hardware::render(&probe))
+        let stamp = format!(
+            "{} ({}, {})",
+            env!("CARGO_PKG_VERSION"),
+            env!("CHAFF_GIT_SHA"),
+            format_epoch(env!("CHAFF_BUILD_EPOCH"))
+        );
+        Ok(hardware::render_with_build(&probe, Some(&stamp)))
     })
     .await
     .map_err(err)?
@@ -714,6 +762,24 @@ pub fn initialise(app: &tauri::AppHandle) -> Result<AppState, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_build_date_is_formatted_from_the_epoch() {
+        // Computed at runtime, so it never appears in the binary as a literal and cannot be
+        // checked with `strings`. Which is why an earlier verification confidently reported
+        // a hex string from a dependency instead of the real stamp.
+        assert_eq!(format_epoch("1700000000"), "2023-11-14 22:13 UTC");
+        assert_eq!(format_epoch("0"), "1970-01-01 00:00 UTC");
+        assert_eq!(format_epoch("not a number"), "unknown");
+    }
+
+    #[test]
+    fn the_build_stamp_names_the_commit() {
+        // The whole point: "which build is this?" must have an answer that does not depend
+        // on file timestamps or trust.
+        assert!(!env!("CHAFF_GIT_SHA").is_empty());
+        assert!(!format_epoch(env!("CHAFF_BUILD_EPOCH")).is_empty());
+    }
 
     #[test]
     fn size_names_map_to_the_three_sizes() {

@@ -65,10 +65,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  to check        {}", report.needs_review);
     }
     println!(
+        "  paired          {}  (raw-only {}, jpeg-only {}, ambiguous {})",
+        report.by_state.pair,
+        report.by_state.raw_only,
+        report.by_state.raster_only,
+        report.by_state.ambiguous
+    );
+    println!(
         "  bands           {} keep / {} review / {} reject",
         report.bands.keep, report.bands.review, report.bands.reject
     );
+    if report.reused > 0 {
+        println!("  reused          {} measurements (no decode)", report.reused);
+    }
     println!("  elapsed         {:.1}s", wall.as_secs_f64());
+
+    // The report checks itself. Printed rather than asserted, because a real library is a
+    // different shape from a fixture folder and this is where the numbers get believed.
+    let problems = report.inconsistencies();
+    if problems.is_empty() {
+        println!("  self-check      consistent");
+    } else {
+        println!("  self-check      INCONSISTENT");
+        for p in &problems {
+            println!("                    {p}");
+        }
+    }
 
     let scored = pipeline::scored_photos(&conn, report.library_id)?;
     let mut ranked: Vec<_> = scored.iter().filter_map(|(p, s)| s.map(|s| (p, s))).collect();

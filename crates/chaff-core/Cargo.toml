@@ -38,6 +38,12 @@ blake3 = "1"
 
 thiserror = "2"
 
+# A logging facade, not an implementation. `chaff-core` is a library and must not decide
+# where log lines go — the CLI writes to stderr, the app to the system log, and tests to
+# nowhere at all. Without a logger installed every call here is a no-op, which is why the
+# 400-odd tests are unaffected by it.
+log = "0.4"
+
 # The trash manifest is JSONL. Hand-rolling JSON for paths means hand-rolling path
 # escaping, and a manifest that cannot be parsed is a file that cannot be restored.
 serde = { version = "1", features = ["derive"] }

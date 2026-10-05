@@ -520,12 +520,25 @@ impl HostPort for &str {
 /// The user must be able to see why a tier was chosen. A selection they cannot inspect is
 /// indistinguishable from a bug.
 pub fn render(probe: &Probe) -> String {
+    render_with_build(probe, None)
+}
+
+/// The same, naming which build produced it.
+///
+/// The build stamp is passed in rather than read here, because `chaff-core` has no build
+/// script and no business knowing about one. The shell supplies it; the engine just prints
+/// it. "Which build is this?" is the first question when something behaves oddly, and the
+/// report is where someone already looks.
+pub fn render_with_build(probe: &Probe, build: Option<&str>) -> String {
     let (tier, reason) = choose_tier(probe);
     let gb = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
 
     let mut out = String::new();
     out.push_str("Chaff — Capability Report\n");
     out.push_str("=========================\n\n");
+    if let Some(b) = build {
+        out.push_str(&format!("Build       {b}\n\n"));
+    }
 
     out.push_str(&format!("System      {} ({})\n", probe.os, probe.arch));
     out.push_str(&format!(
@@ -859,6 +872,23 @@ Graphics/Displays:
     // ---------------------------------------------------------------------
     // The report
     // ---------------------------------------------------------------------
+    #[test]
+    fn the_build_stamp_appears_when_supplied() {
+        // "Which build is this?" is the first question when something behaves oddly, and
+        // the user once spent time testing a binary that was seven minutes stale without
+        // any way to tell.
+        let text = render_with_build(&with_gpu(24), Some("0.1.0 (abc1234, 2026-10-04 21:46 UTC)"));
+        assert!(text.contains("Build"));
+        assert!(text.contains("abc1234"));
+    }
+
+    #[test]
+    fn the_report_still_renders_without_a_build_stamp() {
+        let text = render(&with_gpu(24));
+        assert!(text.contains("Capability Report"));
+        assert!(!text.contains("Build       "), "no stamp supplied, none printed");
+    }
+
     #[test]
     fn the_report_states_the_tier_and_the_reason() {
         // A tier the user cannot inspect is indistinguishable from a bug.

@@ -345,6 +345,25 @@ where
             continue;
         };
 
+        // **A sidecar belongs to the photograph underneath it.**
+        //
+        // `IMG_0001.CR3.xmp` takes its stem from everything before the last dot, which is
+        // `IMG_0001.CR3` — so it formed a group of its own, matching no raw and no raster,
+        // and became a photograph that could never load.
+        //
+        // On a real library that was 137 phantom photographs and 125 stranded sidecars:
+        // adjustments sitting in their own tile instead of travelling with the photograph
+        // they describe, and left behind by a delete. Strip the image extension too, and
+        // the sidecar lands in the group it was always meant for.
+        let stem_raw = if kind == FileKind::Sidecar {
+            Path::new(stem_raw)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(stem_raw)
+        } else {
+            stem_raw
+        };
+
         let dir = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
         let key = PhotoKey::new(dir, stem_raw);
 
@@ -371,6 +390,16 @@ where
             FileKind::Other => {}
         }
     }
+
+    // A group holding nothing but sidecars is not a photograph.
+    //
+    // Stripping the image extension above attaches almost all of them, but a genuinely
+    // orphaned `.xmp` — one whose image was deleted outside Chaff — would still form a
+    // group with no raw, no raster and no video. It has nothing to show, nothing to score
+    // and nothing to delete, and a placeholder tile for it is worse than no tile.
+    //
+    // Videos are kept: a clip with no still is a real piece of media.
+    groups.retain(|_, g| !(g.raws.is_empty() && g.rasters.is_empty() && g.videos.is_empty()));
 
     // Deterministic output regardless of input order.
     for group in groups.values_mut() {
@@ -617,5 +646,82 @@ mod tests {
         let files = g.all_files();
         assert_eq!(files.len(), 4);
         assert_eq!(files, g.all_files(), "repeated calls must agree");
+    }
+}
+
+#[cfg(test)]
+mod sidecar_grouping_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn groups(paths: &[&str]) -> Vec<PhotoGroup> {
+        resolve(paths.iter().map(PathBuf::from))
+    }
+
+    #[test]
+    fn a_sidecar_joins_the_photograph_underneath_it() {
+        // **The bug.** `IMG_0001.CR3.xmp` took its stem from everything before the last
+        // dot — `IMG_0001.CR3` — and became a photograph of its own that could never load.
+        // On a real library that was 137 phantom tiles and 125 stranded sidecars.
+        let g = groups(&["/lib/IMG_0001.CR3", "/lib/IMG_0001.JPG", "/lib/IMG_0001.CR3.xmp"]);
+
+        assert_eq!(g.len(), 1, "one photograph, not two");
+        assert_eq!(g[0].state, GroupState::Pair);
+        assert_eq!(g[0].raws.len(), 1);
+        assert_eq!(g[0].rasters.len(), 1);
+        assert_eq!(g[0].sidecars.len(), 1, "the sidecar must ride along");
+    }
+
+    #[test]
+    fn sidecars_of_every_recognised_kind_attach() {
+        // RapidRAW and RawTherapee write their own sidecars beside the raw, and they have
+        // the same problem: two dots in the name.
+        for ext in ["xmp", "rrdata", "pp3", "arp", "on1", "dop", "cos"] {
+            let raw = "/lib/IMG_0002.CR3".to_string();
+            let side = format!("/lib/IMG_0002.CR3.{ext}");
+            let g = groups(&[&raw, &side]);
+            assert_eq!(g.len(), 1, "{ext} must not form its own photograph");
+            assert_eq!(g[0].sidecars.len(), 1, "{ext} must attach");
+        }
+    }
+
+    #[test]
+    fn a_sidecar_on_a_jpeg_attaches_too() {
+        let g = groups(&["/lib/IMG_0003.JPG", "/lib/IMG_0003.JPG.xmp"]);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].sidecars.len(), 1);
+    }
+
+    #[test]
+    fn a_sidecar_named_after_the_stem_alone_still_works() {
+        // The common form, which always worked and must keep working.
+        let g = groups(&["/lib/IMG_0004.CR3", "/lib/IMG_0004.xmp"]);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].sidecars.len(), 1);
+    }
+
+    #[test]
+    fn a_genuinely_orphaned_sidecar_is_not_a_photograph() {
+        // No image anywhere. Nothing to show, nothing to score, nothing to delete — and a
+        // placeholder tile for it is worse than no tile.
+        assert!(groups(&["/lib/orphan.xmp"]).is_empty());
+        assert!(groups(&["/lib/orphan.CR3.xmp", "/lib/orphan.RW2.rrdata"]).is_empty());
+    }
+
+    #[test]
+    fn a_video_with_no_still_is_still_media() {
+        // Deliberately kept. A clip is a real thing even when no photograph accompanies it.
+        let g = groups(&["/lib/MVI_0001.MP4"]);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].videos.len(), 1);
+    }
+
+    #[test]
+    fn a_sidecar_does_not_change_the_state_of_its_photograph() {
+        // Attaching a sidecar must not turn a clean pair into something needing review.
+        let with = groups(&["/lib/IMG_0005.CR3", "/lib/IMG_0005.JPG", "/lib/IMG_0005.CR3.xmp"]);
+        let without = groups(&["/lib/IMG_0005.CR3", "/lib/IMG_0005.JPG"]);
+        assert_eq!(with[0].state, without[0].state);
+        assert!(with[0].review.is_empty(), "a sidecar is not a reason for review");
     }
 }

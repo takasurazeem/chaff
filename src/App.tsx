@@ -441,8 +441,24 @@ export default function App() {
             <span title={library.root} className="max-w-[28ch] truncate">
               {library.root}
             </span>
-            <span>{library.photos.toLocaleString()} photographs</span>
-            {library.pairs > 0 && <span>{library.pairs.toLocaleString()} pairs</span>}
+            <span
+              title={[
+                `${library.pairs.toLocaleString()} paired (raw + jpeg)`,
+                library.raw_only > 0 ? `${library.raw_only.toLocaleString()} raw only` : null,
+                library.raster_only > 0 ? `${library.raster_only.toLocaleString()} jpeg only` : null,
+                library.ambiguous > 0 ? `${library.ambiguous.toLocaleString()} ambiguous` : null,
+              ]
+                .filter(Boolean)
+                .join("\n")}
+            >
+              {library.photos.toLocaleString()} photographs
+            </span>
+            {library.pairs > 0 && (
+              <span className="text-zinc-500">{library.pairs.toLocaleString()} paired</span>
+            )}
+            {library.ambiguous > 0 && (
+              <span className="text-amber-400">{library.ambiguous.toLocaleString()} ambiguous</span>
+            )}
             <span className="text-emerald-400">{library.keep} keep</span>
             <span>{library.review} review</span>
             <span className="text-rose-400">{library.reject} reject</span>
