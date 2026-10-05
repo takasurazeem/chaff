@@ -71,6 +71,13 @@ jobs:
             echo "::notice::$SKIPPED corpus test(s) skipped — fixtures/corpus/ is absent. Run tools/fixtures/fetch_corpus.py to enable them."
           fi
 
+      - name: Grid benchmark at 50k photographs
+        # A budget, not a printout. A benchmark that only reports is one nobody reads, and
+        # the regression this catches is an order of magnitude — a query that lost its index,
+        # an accidental O(n²) — not a 20% drift. Budgets are loose because a shared runner
+        # can double any number, and a flaky check gets disabled.
+        run: cargo run --release -p chaff-core --example grid_bench
+
       - name: Clippy
         shell: bash
         run: cargo clippy -p chaff-core --all-targets -- -D warnings
