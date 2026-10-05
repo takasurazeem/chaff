@@ -160,11 +160,16 @@ private struct TagList: View {
         .listStyle(.sidebar)
         .overlay {
             if tags.isEmpty {
-                ContentUnavailableView(
-                    "No tags yet",
-                    systemImage: "tag",
-                    description: Text("Tag a few photographs from the Cull menu.")
-                )
+                // **An empty state that says how to fill it.** "No tags yet" alone is a dead
+                // end; the shortcut is what makes it actionable, and it is in the menu where a
+                // user can also find it.
+                ContentUnavailableView {
+                    Label("No tags yet", systemImage: "tag")
+                } description: {
+                    Text("Tagging sends a downscaled copy to your model server — or runs CLIP on this machine if you have none. The original and its GPS never leave.")
+                } actions: {
+                    Text("⇧⌘T").font(.caption).foregroundStyle(.tertiary)
+                }
             }
         }
     }
@@ -186,11 +191,15 @@ private struct PeopleList: View {
         .listStyle(.sidebar)
         .overlay {
             if people.isEmpty {
-                ContentUnavailableView(
-                    "No groups yet",
-                    systemImage: "person.2",
-                    description: Text("Find people from the Cull menu.")
-                )
+                ContentUnavailableView {
+                    Label("No groups yet", systemImage: "person.2")
+                } description: {
+                    // **A group is a suggestion, and the wording says so.** Treating a cluster
+                    // as fact is how a stranger's face ends up under someone's name.
+                    Text("Faces are found and grouped on this machine. A group is a suggestion, not a name.")
+                } actions: {
+                    Text("⇧⌘F").font(.caption).foregroundStyle(.tertiary)
+                }
             }
         }
     }

@@ -39,6 +39,8 @@ final class EngineModel {
     private(set) var library: Library?
     private(set) var tags: [(String, UInt32)] = []
     private(set) var people: [Person] = []
+    private(set) var faceReport: FacePassReport?
+    private(set) var tagReport: TagPassReport?
     private(set) var isIndexing = false
     /// `0...1`, or `nil` while the total is unknown.
     ///
@@ -185,6 +187,65 @@ final class EngineModel {
         case ..<10: "a few seconds left"
         case ..<90: "about a minute left"
         default: "about \(Int((remaining / 60).rounded())) minutes left"
+        }
+    }
+
+    /// Find faces and group them.
+    ///
+    /// Long-running: the first pass downloads a 38 MB model and then runs a network over every
+    /// photograph. `isIndexing` is reused rather than a second flag, because from the window's
+    /// point of view it is the same thing — a pass is running and the grid is not to be
+    /// touched.
+    func findFaces() async {
+        guard let library else { return }
+        isIndexing = true
+        progress = nil
+        progressLabel = "finding faces"
+        defer { isIndexing = false }
+
+        let engine = self.engine
+        let data = Self.dataRoot().path
+        do {
+            let report = try await Task.detached(priority: .userInitiated) {
+                try engine.runFacePass(appData: data, libraryId: library.id)
+            }.value
+            faceReport = report
+            people = try engine.people(libraryId: library.id)
+            progressLabel = ""
+        } catch {
+            errorMessage = describe(error)
+        }
+    }
+
+    /// Tag photographs.
+    ///
+    /// **A configured endpoint is an upgrade, not a requirement.** Without one this runs CLIP on
+    /// this machine, and the report names which tagger ran — "tagged 200 photographs" with no
+    /// model named is a claim the user cannot check.
+    func tag(limit: UInt32 = 200) async {
+        guard let library else { return }
+        isIndexing = true
+        progress = nil
+        progressLabel = "tagging"
+        defer { isIndexing = false }
+
+        let engine = self.engine
+        let data = Self.dataRoot().path
+        let endpoint = ProcessInfo.processInfo.environment["CHAFF_VLM"]
+        let model = ProcessInfo.processInfo.environment["CHAFF_VLM_MODEL"] ?? "chaff-vlm"
+
+        do {
+            let report = try await Task.detached(priority: .userInitiated) {
+                try engine.runTagPass(
+                    appData: data, libraryId: library.id,
+                    endpoint: endpoint, model: model, limit: limit
+                )
+            }.value
+            tagReport = report
+            tags = try engine.tags(libraryId: library.id).map { ($0.name, $0.count) }
+            progressLabel = ""
+        } catch {
+            errorMessage = describe(error)
         }
     }
 

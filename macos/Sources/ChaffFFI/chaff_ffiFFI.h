@@ -329,6 +329,16 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_rescore(uint64_t ptr, int64_t libra
 uint32_t uniffi_chaff_ffi_fn_method_engine_restore_trash(uint64_t ptr, RustBuffer root, RustBuffer op_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_FACE_PASS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_FACE_PASS
+RustBuffer uniffi_chaff_ffi_fn_method_engine_run_face_pass(uint64_t ptr, RustBuffer app_data, int64_t library_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_TAG_PASS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_RUN_TAG_PASS
+RustBuffer uniffi_chaff_ffi_fn_method_engine_run_tag_pass(uint64_t ptr, RustBuffer app_data, int64_t library_id, RustBuffer endpoint, RustBuffer model, uint32_t limit, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SET_DECISION
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_SET_DECISION
 void uniffi_chaff_ffi_fn_method_engine_set_decision(uint64_t ptr, int64_t photo_id, uint8_t rating, int8_t rejected, RustCallStatus *_Nonnull out_status
@@ -683,6 +693,18 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_rescore(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RESTORE_TRASH
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RESTORE_TRASH
 uint16_t uniffi_chaff_ffi_checksum_method_engine_restore_trash(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RUN_FACE_PASS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RUN_FACE_PASS
+uint16_t uniffi_chaff_ffi_checksum_method_engine_run_face_pass(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RUN_TAG_PASS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_RUN_TAG_PASS
+uint16_t uniffi_chaff_ffi_checksum_method_engine_run_tag_pass(void
     
 );
 #endif

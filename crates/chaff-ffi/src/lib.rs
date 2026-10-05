@@ -531,6 +531,40 @@ pub struct PhotoDetail {
     pub rejected: bool,
 }
 
+/// What a face pass did.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FacePassReport {
+    pub detected_files: u32,
+    pub faces_found: u32,
+    pub embedded: u32,
+    /// Files whose image data could not be read. A raw format this build has no decoder for.
+    pub unreadable: u32,
+    pub people: u32,
+    /// The model's licence, so the UI can show it where the feature is switched on.
+    pub licence: String,
+    pub elapsed_ms: u64,
+}
+
+/// What a tagging pass did.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TagPassReport {
+    pub tagged: u32,
+    pub remaining: u32,
+    pub unreadable: u32,
+    pub failed: u32,
+    pub tags: u32,
+    pub completion_tokens: u64,
+    pub elapsed_ms: u64,
+    /// Set when the endpoint stopped answering, so the UI can say "stopped" rather than
+    /// "finished" — the difference between a complete library and a third of one.
+    pub stopped_because: Option<String>,
+    /// Which tagger ran: a vision model over HTTP, or CLIP on this machine.
+    ///
+    /// **Not optional in spirit.** "Tagged 200 photographs" with no model named is a claim the
+    /// user cannot check, and there are two very different taggers behind one button.
+    pub used: String,
+}
+
 /// A tag and how many photographs carry it.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct TagCount {
@@ -788,6 +822,116 @@ impl Engine {
                 photos: p.photos as u32,
             })
             .collect())
+    }
+
+    /// Find faces and group them.
+    ///
+    /// Long-running: the first pass downloads a 38 MB model and then runs a network over every
+    /// photograph. Resumable — each file is committed as it is processed, so stopping loses
+    /// nothing and the work list is the catalog.
+    pub fn run_face_pass(&self, app_data: String, library_id: i64) -> Result<FacePassReport> {
+        let mut conn = self.lock()?;
+        let now = now_seconds();
+        let report = chaff_faces::pass::run(
+            &mut conn,
+            std::path::Path::new(&app_data),
+            library_id,
+            now,
+            &mut |_, _| {},
+        )
+        .map_err(|e| ChaffError::engine("faces", e))?;
+
+        Ok(FacePassReport {
+            detected_files: report.detected_files as u32,
+            faces_found: report.faces_found as u32,
+            embedded: report.embedded as u32,
+            unreadable: report.unreadable as u32,
+            people: report.people as u32,
+            licence: report.licence,
+            elapsed_ms: report.elapsed_ms as u64,
+        })
+    }
+
+    /// Tag photographs.
+    ///
+    /// **A configured endpoint is an upgrade, not a requirement.** With `endpoint`, a vision
+    /// model writes real descriptions. Without one, CLIP runs on this machine in ~26 ms a
+    /// photograph and writes tags from a closed vocabulary — and the report says which ran.
+    ///
+    /// `limit` bounds one call, so a library can be done in pieces with feedback between them
+    /// rather than as one silent hour.
+    pub fn run_tag_pass(
+        &self,
+        app_data: String,
+        library_id: i64,
+        endpoint: Option<String>,
+        model: String,
+        limit: u32,
+    ) -> Result<TagPassReport> {
+        let mut conn = self.lock()?;
+        let now = now_seconds();
+        let limit = limit as usize;
+
+        if let Some(base) = endpoint.filter(|b| !b.trim().is_empty()) {
+            // Cloned, because `model` is named in the report below as well — the caller needs
+            // to know which tagger ran, and that is the whole point of the field.
+            let e = chaff_core::vlm::Endpoint { base, model: model.clone() };
+            let report = chaff_core::tagging::run(&mut conn, library_id, &e, limit, now, &mut |_, _| {})
+                .map_err(|e| ChaffError::engine("tags", e))?;
+            return Ok(TagPassReport {
+                tagged: report.tagged as u32,
+                remaining: report.remaining as u32,
+                unreadable: report.unreadable as u32,
+                failed: report.failed as u32,
+                tags: report.tags as u32,
+                completion_tokens: report.completion_tokens,
+                elapsed_ms: report.elapsed_ms as u64,
+                stopped_because: report.stopped_because,
+                used: format!("vision model: {model}"),
+            });
+        }
+
+        // **CLIP, because there is no endpoint.**
+        //
+        // The first version returned "No vision endpoint is configured" and stopped, while CLIP
+        // — built for exactly this tier — sat unreachable. The feature and its entry point were
+        // designed separately and the seam was never checked.
+        let store = chaff_faces::pass::model_store(std::path::Path::new(&app_data));
+        let Some(clip) = chaff_faces::clip::model_in(&store) else {
+            return Err(ChaffError::with(
+                FailureKind::NotFound,
+                "No tagger is available. Either set a vision endpoint, or fetch the CLIP model \
+                 (it is downloaded on first use — check your network).",
+            ));
+        };
+        let Some(vocabulary) = chaff_faces::clip::bundled() else {
+            return Err(ChaffError::with(
+                FailureKind::NotFound,
+                "The CLIP vocabulary file is missing from this build.",
+            ));
+        };
+
+        let report = chaff_faces::pass::run_clip(
+            &mut conn,
+            library_id,
+            &chaff_faces::pass::ClipPaths { model: &clip, vocabulary: &vocabulary },
+            chaff_faces::pass::ClipSettings { keep: 5, min_similarity: 0.2 },
+            now,
+            &mut |_, _| {},
+        )
+        .map_err(|e| ChaffError::engine("tags", e))?;
+
+        Ok(TagPassReport {
+            tagged: report.tagged as u32,
+            remaining: 0,
+            unreadable: report.unreadable as u32,
+            failed: 0,
+            tags: report.tags as u32,
+            completion_tokens: 0,
+            elapsed_ms: report.elapsed_ms as u64,
+            stopped_because: None,
+            used: format!("CLIP on this machine, {} phrases", report.vocabulary),
+        })
     }
 
     /// Is a delete waiting to be confirmed?

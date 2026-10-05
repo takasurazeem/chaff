@@ -43,6 +43,14 @@ struct ChaffApp: App {
                 Divider()
                 Button("Undo") { Task { await culling.undo(in: model) } }
                     .keyboardShortcut("z", modifiers: .command)
+                Divider()
+                // **The AI passes, in the menu** rather than hidden in a panel. They are the
+                // two longest-running operations in the app, and a user who cannot find them
+                // cannot decide whether to start one.
+                Button("Find People") { Task { await model.findFaces() } }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
+                Button("Tag Photographs") { Task { await model.tag() } }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
             }
         }
     }

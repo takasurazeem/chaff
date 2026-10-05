@@ -784,6 +784,27 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func restoreTrash(root: String, opId: String) throws  -> UInt32
     
     /**
+     * Find faces and group them.
+     *
+     * Long-running: the first pass downloads a 38 MB model and then runs a network over every
+     * photograph. Resumable — each file is committed as it is processed, so stopping loses
+     * nothing and the work list is the catalog.
+     */
+    func runFacePass(appData: String, libraryId: Int64) throws  -> FacePassReport
+    
+    /**
+     * Tag photographs.
+     *
+     * **A configured endpoint is an upgrade, not a requirement.** With `endpoint`, a vision
+     * model writes real descriptions. Without one, CLIP runs on this machine in ~26 ms a
+     * photograph and writes tags from a closed vocabulary — and the report says which ran.
+     *
+     * `limit` bounds one call, so a library can be done in pieces with feedback between them
+     * rather than as one silent hour.
+     */
+    func runTagPass(appData: String, libraryId: Int64, endpoint: String?, model: String, limit: UInt32) throws  -> TagPassReport
+    
+    /**
      * Set a photograph's rating and reject flag.
      */
     func setDecision(photoId: Int64, rating: UInt8, rejected: Bool) throws 
@@ -1102,6 +1123,48 @@ open func restoreTrash(root: String, opId: String)throws  -> UInt32  {
 }
     
     /**
+     * Find faces and group them.
+     *
+     * Long-running: the first pass downloads a 38 MB model and then runs a network over every
+     * photograph. Resumable — each file is committed as it is processed, so stopping loses
+     * nothing and the work list is the catalog.
+     */
+open func runFacePass(appData: String, libraryId: Int64)throws  -> FacePassReport  {
+    return try  FfiConverterTypeFacePassReport_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_run_face_pass(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(appData),
+        FfiConverterInt64.lower(libraryId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Tag photographs.
+     *
+     * **A configured endpoint is an upgrade, not a requirement.** With `endpoint`, a vision
+     * model writes real descriptions. Without one, CLIP runs on this machine in ~26 ms a
+     * photograph and writes tags from a closed vocabulary — and the report says which ran.
+     *
+     * `limit` bounds one call, so a library can be done in pieces with feedback between them
+     * rather than as one silent hour.
+     */
+open func runTagPass(appData: String, libraryId: Int64, endpoint: String?, model: String, limit: UInt32)throws  -> TagPassReport  {
+    return try  FfiConverterTypeTagPassReport_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_run_tag_pass(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(appData),
+        FfiConverterInt64.lower(libraryId),
+        FfiConverterOptionString.lower(endpoint),
+        FfiConverterString.lower(model),
+        FfiConverterUInt32.lower(limit),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Set a photograph's rating and reject flag.
      */
 open func setDecision(photoId: Int64, rating: UInt8, rejected: Bool)throws   {try rustCallWithError(FfiConverterTypeChaffError_lift) {
@@ -1350,6 +1413,95 @@ public func FfiConverterTypeDeleteReceipt_lift(_ buf: RustBuffer) throws -> Dele
 #endif
 public func FfiConverterTypeDeleteReceipt_lower(_ value: DeleteReceipt) -> RustBuffer {
     return FfiConverterTypeDeleteReceipt.lower(value)
+}
+
+
+/**
+ * What a face pass did.
+ */
+public struct FacePassReport: Equatable, Hashable {
+    public var detectedFiles: UInt32
+    public var facesFound: UInt32
+    public var embedded: UInt32
+    /**
+     * Files whose image data could not be read. A raw format this build has no decoder for.
+     */
+    public var unreadable: UInt32
+    public var people: UInt32
+    /**
+     * The model's licence, so the UI can show it where the feature is switched on.
+     */
+    public var licence: String
+    public var elapsedMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(detectedFiles: UInt32, facesFound: UInt32, embedded: UInt32, 
+        /**
+         * Files whose image data could not be read. A raw format this build has no decoder for.
+         */unreadable: UInt32, people: UInt32, 
+        /**
+         * The model's licence, so the UI can show it where the feature is switched on.
+         */licence: String, elapsedMs: UInt64) {
+        self.detectedFiles = detectedFiles
+        self.facesFound = facesFound
+        self.embedded = embedded
+        self.unreadable = unreadable
+        self.people = people
+        self.licence = licence
+        self.elapsedMs = elapsedMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FacePassReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFacePassReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FacePassReport {
+        return
+            try FacePassReport(
+                detectedFiles: FfiConverterUInt32.read(from: &buf), 
+                facesFound: FfiConverterUInt32.read(from: &buf), 
+                embedded: FfiConverterUInt32.read(from: &buf), 
+                unreadable: FfiConverterUInt32.read(from: &buf), 
+                people: FfiConverterUInt32.read(from: &buf), 
+                licence: FfiConverterString.read(from: &buf), 
+                elapsedMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FacePassReport, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.detectedFiles, into: &buf)
+        FfiConverterUInt32.write(value.facesFound, into: &buf)
+        FfiConverterUInt32.write(value.embedded, into: &buf)
+        FfiConverterUInt32.write(value.unreadable, into: &buf)
+        FfiConverterUInt32.write(value.people, into: &buf)
+        FfiConverterString.write(value.licence, into: &buf)
+        FfiConverterUInt64.write(value.elapsedMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFacePassReport_lift(_ buf: RustBuffer) throws -> FacePassReport {
+    return try FfiConverterTypeFacePassReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFacePassReport_lower(_ value: FacePassReport) -> RustBuffer {
+    return FfiConverterTypeFacePassReport.lower(value)
 }
 
 
@@ -2114,6 +2266,111 @@ public func FfiConverterTypeTagCount_lower(_ value: TagCount) -> RustBuffer {
 
 
 /**
+ * What a tagging pass did.
+ */
+public struct TagPassReport: Equatable, Hashable {
+    public var tagged: UInt32
+    public var remaining: UInt32
+    public var unreadable: UInt32
+    public var failed: UInt32
+    public var tags: UInt32
+    public var completionTokens: UInt64
+    public var elapsedMs: UInt64
+    /**
+     * Set when the endpoint stopped answering, so the UI can say "stopped" rather than
+     * "finished" — the difference between a complete library and a third of one.
+     */
+    public var stoppedBecause: String?
+    /**
+     * Which tagger ran: a vision model over HTTP, or CLIP on this machine.
+     *
+     * **Not optional in spirit.** "Tagged 200 photographs" with no model named is a claim the
+     * user cannot check, and there are two very different taggers behind one button.
+     */
+    public var used: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tagged: UInt32, remaining: UInt32, unreadable: UInt32, failed: UInt32, tags: UInt32, completionTokens: UInt64, elapsedMs: UInt64, 
+        /**
+         * Set when the endpoint stopped answering, so the UI can say "stopped" rather than
+         * "finished" — the difference between a complete library and a third of one.
+         */stoppedBecause: String?, 
+        /**
+         * Which tagger ran: a vision model over HTTP, or CLIP on this machine.
+         *
+         * **Not optional in spirit.** "Tagged 200 photographs" with no model named is a claim the
+         * user cannot check, and there are two very different taggers behind one button.
+         */used: String) {
+        self.tagged = tagged
+        self.remaining = remaining
+        self.unreadable = unreadable
+        self.failed = failed
+        self.tags = tags
+        self.completionTokens = completionTokens
+        self.elapsedMs = elapsedMs
+        self.stoppedBecause = stoppedBecause
+        self.used = used
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TagPassReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTagPassReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TagPassReport {
+        return
+            try TagPassReport(
+                tagged: FfiConverterUInt32.read(from: &buf), 
+                remaining: FfiConverterUInt32.read(from: &buf), 
+                unreadable: FfiConverterUInt32.read(from: &buf), 
+                failed: FfiConverterUInt32.read(from: &buf), 
+                tags: FfiConverterUInt32.read(from: &buf), 
+                completionTokens: FfiConverterUInt64.read(from: &buf), 
+                elapsedMs: FfiConverterUInt64.read(from: &buf), 
+                stoppedBecause: FfiConverterOptionString.read(from: &buf), 
+                used: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TagPassReport, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.tagged, into: &buf)
+        FfiConverterUInt32.write(value.remaining, into: &buf)
+        FfiConverterUInt32.write(value.unreadable, into: &buf)
+        FfiConverterUInt32.write(value.failed, into: &buf)
+        FfiConverterUInt32.write(value.tags, into: &buf)
+        FfiConverterUInt64.write(value.completionTokens, into: &buf)
+        FfiConverterUInt64.write(value.elapsedMs, into: &buf)
+        FfiConverterOptionString.write(value.stoppedBecause, into: &buf)
+        FfiConverterString.write(value.used, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTagPassReport_lift(_ buf: RustBuffer) throws -> TagPassReport {
+    return try FfiConverterTypeTagPassReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTagPassReport_lower(_ value: TagPassReport) -> RustBuffer {
+    return FfiConverterTypeTagPassReport.lower(value)
+}
+
+
+/**
  * An error crossing the boundary.
  */
 public 
@@ -2848,6 +3105,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_restore_trash() != 23357) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_run_face_pass() != 60707) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_run_tag_pass() != 56987) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_set_decision() != 38375) {
