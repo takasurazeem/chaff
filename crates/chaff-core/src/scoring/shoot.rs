@@ -88,7 +88,7 @@ pub const ALL_METRICS: [Metric; 8] = [
     Metric::Noise,
 ];
 
-const N_METRICS: usize = ALL_METRICS.len();
+pub const N_METRICS: usize = ALL_METRICS.len();
 
 /// Which way a metric points.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,6 +155,32 @@ impl FrameMeasurement {
     pub fn set(&mut self, metric: Metric, value: f64) -> &mut Self {
         self.values[metric as usize] = value;
         self
+    }
+
+    /// The raw values, for persistence.
+    ///
+    /// Exposed as a slice rather than eight accessors so the store can write them in one
+    /// loop and cannot get the order wrong — the order is the `Metric` discriminant, which
+    /// is the same order the array is indexed by.
+    pub fn values(&self) -> &[f64; N_METRICS] {
+        &self.values
+    }
+
+    /// Rebuild from persisted values. The inverse of [`Self::values`].
+    pub fn with_values(
+        photo_id: i64,
+        dir: impl Into<String>,
+        camera: Option<String>,
+        captured_at: Option<i64>,
+        values: [f64; N_METRICS],
+    ) -> Self {
+        Self {
+            photo_id,
+            dir: dir.into(),
+            camera: camera.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()),
+            captured_at,
+            values,
+        }
     }
 
     pub fn get(&self, metric: Metric) -> f64 {

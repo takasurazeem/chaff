@@ -1272,3 +1272,96 @@ pub fn content_hash_for_path(
         None => Ok(None),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Measurements — what a score was computed from
+// ---------------------------------------------------------------------------
+/// A stored measurement, with the file identity it came from.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredMeasurement {
+    pub values: [f64; crate::scoring::shoot::N_METRICS],
+    pub camera: Option<String>,
+    pub captured_at: Option<i64>,
+    pub measured_path: String,
+    pub measured_size: i64,
+    pub measured_mtime: i64,
+}
+
+/// Write a measurement, replacing any previous one for this photograph and version.
+pub fn upsert_measurement(
+    conn: &Connection,
+    photo_id: i64,
+    scorer_version: i64,
+    m: &StoredMeasurement,
+    now: i64,
+) -> Result<(), CatalogError> {
+    conn.execute(
+        "INSERT INTO measurement
+            (photo_id, scorer_version, measured_path, measured_size, measured_mtime,
+             camera, captured_at, m0, m1, m2, m3, m4, m5, m6, m7, measured_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+         ON CONFLICT (photo_id, scorer_version) DO UPDATE SET
+             measured_path  = excluded.measured_path,
+             measured_size  = excluded.measured_size,
+             measured_mtime = excluded.measured_mtime,
+             camera         = excluded.camera,
+             captured_at    = excluded.captured_at,
+             m0=excluded.m0, m1=excluded.m1, m2=excluded.m2, m3=excluded.m3,
+             m4=excluded.m4, m5=excluded.m5, m6=excluded.m6, m7=excluded.m7,
+             measured_at    = excluded.measured_at",
+        params![
+            photo_id,
+            scorer_version,
+            m.measured_path,
+            m.measured_size,
+            m.measured_mtime,
+            m.camera,
+            m.captured_at,
+            m.values[0], m.values[1], m.values[2], m.values[3],
+            m.values[4], m.values[5], m.values[6], m.values[7],
+            now,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Every stored measurement for a scorer version, keyed by photograph.
+///
+/// One query rather than one per photograph: a pass over fifty thousand photographs asking
+/// per row is fifty thousand round trips, which is the cost this whole table exists to
+/// avoid.
+pub fn measurements(
+    conn: &Connection,
+    scorer_version: i64,
+) -> Result<std::collections::HashMap<i64, StoredMeasurement>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT photo_id, measured_path, measured_size, measured_mtime, camera, captured_at,
+                m0, m1, m2, m3, m4, m5, m6, m7
+           FROM measurement WHERE scorer_version = ?1",
+    )?;
+    let rows = stmt.query_map(params![scorer_version], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            StoredMeasurement {
+                measured_path: r.get(1)?,
+                measured_size: r.get(2)?,
+                measured_mtime: r.get(3)?,
+                camera: r.get(4)?,
+                captured_at: r.get(5)?,
+                values: [
+                    r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
+                    r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?,
+                ],
+            },
+        ))
+    })?;
+    Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)
+}
+
+/// Remove measurements from an older scorer version.
+pub fn delete_measurements_at_version(
+    conn: &Connection,
+    scorer_version: i64,
+) -> Result<usize, CatalogError> {
+    Ok(conn.execute("DELETE FROM measurement WHERE scorer_version = ?1", params![scorer_version])?)
+}
