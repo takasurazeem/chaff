@@ -323,14 +323,51 @@ impl Engine {
             .collect())
     }
 
-    /// Folders with their two counts.
+    /// Folders with their two counts, **relative to the library root**.
+    ///
+    /// # Why relative
+    ///
+    /// `list_directories` returns absolute paths, and a navigator that renders them as a
+    /// hierarchy shows the user's whole filesystem above their library:
+    ///
+    /// ```text
+    /// /                 0
+    /// Users             6
+    /// takasurazeem      6
+    /// Desktop           6
+    /// Photography       6
+    /// KY-Indy           6     <- the library actually opens here
+    /// Canon             1
+    /// Panasonic         5
+    /// ```
+    ///
+    /// Every row above `KY-Indy` is a folder the user did not open, cannot meaningfully select,
+    /// and can filter the grid to nothing with. `/` showing 0 is the honest count of
+    /// photographs directly in `/`, which is not a useful row.
+    ///
+    /// The root itself is dropped too: it is the library, not a folder inside it.
     pub fn folders(&self, library_id: i64) -> Result<Vec<Folder>> {
         let conn = self.lock()?;
+        let root = store::library_root(&conn, library_id)
+            .map_err(|e| ChaffError::engine("directories", e))?
+            .unwrap_or_default();
         let rows = store::directories(&conn, library_id)
             .map_err(|e| ChaffError::engine("directories", e))?;
+
         Ok(rows
             .into_iter()
-            .map(|d| Folder { path: d.path, direct: d.direct as u32, recursive: d.recursive as u32 })
+            .filter_map(|d| {
+                // `strip_prefix` on the string, with the separator, so `/lib` does not match
+                // `/library`.
+                let rel = d
+                    .path
+                    .strip_prefix(&root)
+                    .map(|r| r.trim_start_matches('/').to_string())?;
+                if rel.is_empty() {
+                    return None; // the root itself
+                }
+                Some(Folder { path: rel, direct: d.direct as u32, recursive: d.recursive as u32 })
+            })
             .collect())
     }
 

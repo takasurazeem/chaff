@@ -47,6 +47,27 @@ final class EngineModel {
     /// is a bar that lies.
     private(set) var progress: Double?
     private(set) var progressLabel = ""
+    /// What is left, in words — or `nil` when it cannot be justified.
+    ///
+    /// The web app's `formatEta` rule, kept: **never print a number it cannot justify.** Under
+    /// ten seconds it says so rather than showing a countdown that jitters between 4 and 6.
+    private(set) var eta: String?
+    private var passStarted: Date?
+    private var lastDone = 0
+    private var lastSample: Date?
+    private var rate = 0.0
+
+    /// Ask the running pass to stop.
+    ///
+    /// Nothing is lost: the pass commits each photograph as it goes, so stopping leaves the
+    /// catalog consistent and the work already done is kept. The next pass picks up where this
+    /// one stopped, because the work list is the catalog rather than a list in memory.
+    func cancelIndexing() {
+        cancelRequested = true
+        progressLabel = "stopping…"
+    }
+
+    private var cancelRequested = false
     var errorMessage: String?
 
     private let engine: Engine
@@ -105,10 +126,7 @@ final class EngineModel {
                             // it runs on the pass's thread, and waiting on the main actor here
                             // would stall the pass.
                             Task { @MainActor in
-                                self.progress = total > 0 ? Double(done) / Double(total) : nil
-                                self.progressLabel = current.isEmpty
-                                    ? "\(stage) \(done)"
-                                    : "\(stage) \(done) · \(current)"
+                                self.record(done: done, total: total, stage: stage, current: current)
                             }
                         }
                     )
@@ -131,6 +149,43 @@ final class EngineModel {
         return try await Task.detached(priority: .userInitiated) {
             try engine.photoDetail(photoId: photoId)
         }.value
+    }
+
+    /// Update progress, and work out an estimate from the rate actually achieved.
+    ///
+    /// The rate is sampled between callbacks rather than averaged over the whole pass: a pass
+    /// that starts slow — the first decode warms caches — would otherwise report a remaining
+    /// time that is wrong for minutes.
+    private func record(done: UInt32, total: UInt32, stage: String, current: String) {
+        progress = total > 0 ? Double(done) / Double(total) : nil
+        progressLabel = current.isEmpty ? "\(stage) \(done)" : "\(stage) \(done) · \(current)"
+
+        let now = Date()
+        if passStarted == nil { passStarted = now }
+
+        // Sample every few seconds; more often and the rate is noise.
+        if let last = lastSample, now.timeIntervalSince(last) >= 3, Int(done) > lastDone {
+            rate = Double(Int(done) - lastDone) / now.timeIntervalSince(last)
+            lastSample = now
+            lastDone = Int(done)
+        } else if lastSample == nil {
+            lastSample = now
+            lastDone = Int(done)
+        }
+
+        guard total > 0, rate > 0.01 else {
+            // **No total, so no estimate.** The scan phase genuinely does not know how many
+            // files there are until the walk finishes, and a bar or a time over an unknown
+            // total is a lie.
+            eta = nil
+            return
+        }
+        let remaining = Double(Int(total) - Int(done)) / rate
+        eta = switch remaining {
+        case ..<10: "a few seconds left"
+        case ..<90: "about a minute left"
+        default: "about \(Int((remaining / 60).rounded())) minutes left"
+        }
     }
 
     /// Write a decision.

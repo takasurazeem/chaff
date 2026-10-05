@@ -5,11 +5,11 @@
       "name" : "Chaff",
       "path" : "/Users/takasurazeem/Developer/indie/photo_culling/macos",
       "projects" : [
-        "19cfe2b215a9378ae51bbdc5ad4b1250104d928487800a2a71da51af377ab3fa",
+        "635f40392a87390936891bcd81f91324df0643a6822bfb599c32baff3509a152",
         "4045d8b2aa98d8ba76f93dc167a1adfa551d94e8456825047d185b545e02f126"
       ]
     },
-    "signature" : "5b3203dee56fea03f129aa7dc7cab77b411456a557ace2a7008dc68de4f72284",
+    "signature" : "fe3890fdd23ba614c1f3383f94ee2ff30d8e4fcd478b56d80c3fe3d627430192",
     "type" : "workspace"
   },
   {
@@ -53,7 +53,7 @@
             "KEEP_PRIVATE_EXTERNS" : "NO",
             "LIBTOOL_NO_WARNING_FOR_NO_SYMBOLS" : "YES",
             "LINKER_DRIVER" : "auto",
-            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
             "ONLY_ACTIVE_ARCH" : "YES",
             "OTHER_CFLAGS" : [
               "$(inherited)",
@@ -131,7 +131,7 @@
             "KEEP_PRIVATE_EXTERNS" : "NO",
             "LIBTOOL_NO_WARNING_FOR_NO_SYMBOLS" : "YES",
             "LINKER_DRIVER" : "auto",
-            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
             "OTHER_CFLAGS" : [
               "$(inherited)",
               "-DXcode"
@@ -453,14 +453,14 @@
       "projectIsPackage" : "true",
       "projectName" : "Chaff",
       "targets" : [
-        "c3a3f88d608028911ea9cae8b36c8ff92dac2c790daa3a7a50ef4d2573059ec2",
+        "2f3d623d1d502ed71f1713e57f9699b5963bac66090e6b634c1b50decb7655fc",
         "45886455de37663c5782d4c56dc8551eff0813376b2dc465cefd860f74a5f522",
         "22b53f876b14e3e26ae733b498c2e2bb678a48bd71d55b4523f7b3cada849afe",
         "b1fd9d4465d978e33ff1bcb9c4027d8c95718bbdd35ab0ff723c51480506ac80",
         "c7eb4550484eeac0528e1466ef5d51607293eea5ba185cfb0734d040eb3ac51e"
       ]
     },
-    "signature" : "19cfe2b215a9378ae51bbdc5ad4b1250104d928487800a2a71da51af377ab3fa",
+    "signature" : "635f40392a87390936891bcd81f91324df0643a6822bfb599c32baff3509a152",
     "type" : "project"
   },
   {
@@ -475,7 +475,7 @@
             "GENERATE_RESOURCE_ACCESSORS" : "YES",
             "IPHONEOS_DEPLOYMENT_TARGET" : "15.0",
             "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "15.0",
-            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
             "OTHER_SWIFT_FLAGS" : [
               "$(inherited)",
               "$(OTHER_SWIFT_FLAGS_ENABLE_LIBFUZZER_$(ENABLE_LIBFUZZER))"
@@ -522,7 +522,7 @@
             "GENERATE_RESOURCE_ACCESSORS" : "YES",
             "IPHONEOS_DEPLOYMENT_TARGET" : "15.0",
             "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "15.0",
-            "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
             "OTHER_SWIFT_FLAGS" : [
               "$(inherited)",
               "$(OTHER_SWIFT_FLAGS_ENABLE_LIBFUZZER_$(ENABLE_LIBFUZZER))"
@@ -697,7 +697,7 @@
       "productTypeIdentifier" : "com.apple.product-type.tool",
       "type" : "standard"
     },
-    "signature" : "c3a3f88d608028911ea9cae8b36c8ff92dac2c790daa3a7a50ef4d2573059ec2",
+    "signature" : "2f3d623d1d502ed71f1713e57f9699b5963bac66090e6b634c1b50decb7655fc",
     "type" : "target"
   },
   {

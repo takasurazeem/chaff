@@ -14,7 +14,19 @@ import PackageDescription
 // dependency; this package is the shell around it.
 let package = Package(
     name: "Chaff",
-    platforms: [.macOS(.v14)],
+    // **macOS 26, so the system gives the chrome Liquid Glass.**
+    //
+    // This was `.v14`, chosen without thinking, and it is the whole reason the app looked like a
+    // macOS 14 window on a macOS 27 machine: the deployment target is what asks the system for
+    // the compatibility appearance. Toolbars, sidebars and inspectors adopt the new material
+    // automatically once the app declares it can use it.
+    //
+    // The cost is real and worth stating: this no longer runs on macOS 14 or 15. Given the
+    // machine it is built for is on 27, that is a trade worth making — and the Tauri build
+    // remains for anything older.
+    // `.v26` is not in this SwiftPM's `PackageDescription` — it predates macOS 26 — so the
+    // version is given as a string. The effect is identical.
+    platforms: [.macOS("26.0")],
     products: [
         .executable(name: "Chaff", targets: ["Chaff"])
     ],

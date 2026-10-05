@@ -25,17 +25,45 @@ struct Inspector: View {
     @State private var detail: PhotoDetail?
     @State private var loadFailed = false
 
+    /// What the panel is doing, as a value.
+    ///
+    /// **Three states, not two.** The first version had `detail`, `loadFailed`, and "everything
+    /// else" — and "everything else" was both *loading* and *nothing selected*. Those are
+    /// different: one is work in progress and the other is an empty panel, and showing a spinner
+    /// for the second says "working on it" when there is nothing to work on. A user saw a
+    /// spinner in an empty inspector and reasonably read it as stuck.
+    private enum State {
+        case nothingSelected
+        case loading
+        case failed
+        case loaded(PhotoDetail)
+    }
+
+    private var state: State {
+        if photoId == nil { return .nothingSelected }
+        if loadFailed { return .failed }
+        if let detail { return .loaded(detail) }
+        return .loading
+    }
+
     var body: some View {
         Group {
-            if let detail {
+            switch state {
+            case let .loaded(detail):
                 content(detail)
-            } else if loadFailed {
+            case .nothingSelected:
+                ContentUnavailableView(
+                    "Nothing selected",
+                    systemImage: "photo",
+                    description: Text("Choose a photograph to see its camera, exposure and score.")
+                )
+            case .failed:
                 ContentUnavailableView(
                     "Could not read that photograph",
                     systemImage: "exclamationmark.triangle",
                     description: Text("The catalog has a record of it but the details did not load.")
                 )
-            } else {
+            case .loading:
                 ProgressView().controlSize(.small)
             }
         }

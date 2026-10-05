@@ -37,7 +37,12 @@ struct LibraryView: View {
                 }
 
                 if model.isIndexing {
-                    IndexingOverlay(progress: model.progress, label: model.progressLabel)
+                    IndexingOverlay(
+                        progress: model.progress,
+                        label: model.progressLabel,
+                        eta: model.eta,
+                        onCancel: { model.cancelIndexing() }
+                    )
                 }
             }
             // Xcode's status line, along the bottom of the editor: what is shown, out of what.
@@ -135,6 +140,9 @@ private struct StatusBar: View {
 private struct IndexingOverlay: View {
     let progress: Double?
     let label: String
+    /// What is left, in words — or `nil` when it cannot be justified.
+    var eta: String?
+    var onCancel: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
@@ -151,9 +159,25 @@ private struct IndexingOverlay: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: 300)
+
+            // Cancel and an estimate — issue #73. The estimate is computed from the rate the
+            // pass has actually achieved, and **says nothing it cannot justify**: under ten
+            // seconds it says so rather than printing a countdown that jitters.
+            HStack(spacing: 10) {
+                if let eta {
+                    Text(eta).font(.caption).foregroundStyle(.tertiary)
+                }
+                Button("Cancel") { onCancel() }
+                    .buttonStyle(.glass)
+            }
         }
         .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .shadow(radius: 12)
+        // **Glass, because this genuinely floats.**
+        //
+        // It is a card over the grid, not part of the layout — which is the test for whether
+        // glass is right. The rule kept throughout: glass on the chrome, never on the content.
+        // A photograph behind glass is a colour cast on the photograph, and this tool's job is
+        // to show the frame accurately.
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
     }
 }

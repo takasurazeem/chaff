@@ -676,7 +676,29 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func commitDelete(root: String) throws  -> DeleteReceipt
     
     /**
-     * Folders with their two counts.
+     * Folders with their two counts, **relative to the library root**.
+     *
+     * # Why relative
+     *
+     * `list_directories` returns absolute paths, and a navigator that renders them as a
+     * hierarchy shows the user's whole filesystem above their library:
+     *
+     * ```text
+     * /                 0
+     * Users             6
+     * takasurazeem      6
+     * Desktop           6
+     * Photography       6
+     * KY-Indy           6     <- the library actually opens here
+     * Canon             1
+     * Panasonic         5
+     * ```
+     *
+     * Every row above `KY-Indy` is a folder the user did not open, cannot meaningfully select,
+     * and can filter the grid to nothing with. `/` showing 0 is the honest count of
+     * photographs directly in `/`, which is not a useful row.
+     *
+     * The root itself is dropped too: it is the library, not a folder inside it.
      */
     func folders(libraryId: Int64) throws  -> [Folder]
     
@@ -897,7 +919,29 @@ open func commitDelete(root: String)throws  -> DeleteReceipt  {
 }
     
     /**
-     * Folders with their two counts.
+     * Folders with their two counts, **relative to the library root**.
+     *
+     * # Why relative
+     *
+     * `list_directories` returns absolute paths, and a navigator that renders them as a
+     * hierarchy shows the user's whole filesystem above their library:
+     *
+     * ```text
+     * /                 0
+     * Users             6
+     * takasurazeem      6
+     * Desktop           6
+     * Photography       6
+     * KY-Indy           6     <- the library actually opens here
+     * Canon             1
+     * Panasonic         5
+     * ```
+     *
+     * Every row above `KY-Indy` is a folder the user did not open, cannot meaningfully select,
+     * and can filter the grid to nothing with. `/` showing 0 is the honest count of
+     * photographs directly in `/`, which is not a useful row.
+     *
+     * The root itself is dropped too: it is the library, not a folder inside it.
      */
 open func folders(libraryId: Int64)throws  -> [Folder]  {
     return try  FfiConverterSequenceTypeFolder.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
@@ -2779,7 +2823,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_commit_delete() != 32525) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_chaff_ffi_checksum_method_engine_folders() != 36458) {
+    if (uniffi_chaff_ffi_checksum_method_engine_folders() != 46347) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_has_pending_delete() != 25653) {
