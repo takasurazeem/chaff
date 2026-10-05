@@ -1076,6 +1076,50 @@ mod tests {
     }
 
     #[test]
+    fn a_file_read_by_an_older_exif_reader_is_examined_again() {
+        // **The bug behind the bug, and the reason the CR3 fix did not appear to work.**
+        //
+        // `files_needing_exif` re-read a file only when its **modification time** changed. That
+        // is right for a file that changed and wrong for a *reader* that changed: a library
+        // indexed before the Canon CR3 fix kept its "no EXIF" rows forever, and the fix could
+        // not reach the files it was written for.
+        //
+        // The user saw "No camera information" for every CR3 *after* the reader was fixed,
+        // because the catalog was still serving the old answer.
+        let mut conn = crate::catalog::open_in_memory().unwrap();
+        let lib = upsert_library(&conn, Path::new("/lib"), 100).unwrap();
+        let files = ["/lib/IMG_0001.CR3"];
+        index(&mut conn, lib, &files, &meta_for(&files, 1, 1), 100);
+        let fid = files_by_role(&conn, lib, "raw").unwrap()[0].id;
+
+        // A row written by a reader that could not read a CR3 — the absent case, which is
+        // exactly what the old code stored.
+        upsert_exif(&conn, fid, 1, None, 100).unwrap();
+        assert!(
+            files_needing_exif(&conn, lib).unwrap().is_empty(),
+            "a current row must not be re-read on every pass"
+        );
+
+        // Now the same row, written by an **older** reader.
+        conn.execute("UPDATE exif SET reader_version = ?1", params![crate::exif::EXIF_VERSION - 1])
+            .unwrap();
+        assert_eq!(
+            files_needing_exif(&conn, lib).unwrap().len(),
+            1,
+            "a row from an older reader must be examined again — this is the fix reaching \
+             the files it was written for"
+        );
+
+        // And a row with no version at all — written before the column existed — is stale too.
+        conn.execute("UPDATE exif SET reader_version = NULL", []).unwrap();
+        assert_eq!(
+            files_needing_exif(&conn, lib).unwrap().len(),
+            1,
+            "an unversioned row cannot be trusted to be current"
+        );
+    }
+
+    #[test]
     fn a_rename_does_not_lose_a_rating() {
         // **The bug this exists for.** A photograph is `(dir, stem)`, so renaming
         // `IMG_0001.CR3` to `IMG_0001-edit.CR3` creates a *new* row on the next index and
@@ -1811,10 +1855,18 @@ pub fn files_needing_exif(
            LEFT JOIN exif e ON e.file_id = f.id
           WHERE f.library_id = ?1
             AND f.role IN ('raw', 'raster')
-            AND (e.file_id IS NULL OR e.source_mtime_ns <> f.mtime_ns)
+            AND (
+                e.file_id IS NULL
+                OR e.source_mtime_ns <> f.mtime_ns
+                -- **Or the reader changed.** A row written by an older reader cannot be
+                -- trusted to be current: every Canon CR3 kept its absent-metadata row after
+                -- the reader learned to read one, and the fix could not reach those files.
+                OR e.reader_version IS NULL
+                OR e.reader_version <> ?2
+            )
           ORDER BY f.path",
     )?;
-    let rows = stmt.query_map(params![library_id], |r| {
+    let rows = stmt.query_map(params![library_id, crate::exif::EXIF_VERSION], |r| {
         Ok((r.get::<_, i64>(0)?, PathBuf::from(r.get::<_, String>(1)?), r.get::<_, i64>(2)?))
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1835,9 +1887,11 @@ pub fn upsert_exif(
     let d = data.cloned().unwrap_or_default();
     conn.execute(
         "INSERT INTO exif (file_id, source_mtime_ns, captured_at, make, model, lens,
-                           iso, f_number, exposure_time, focal_length, orientation, read_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                           iso, f_number, exposure_time, focal_length, orientation, read_at,
+                           reader_version)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
          ON CONFLICT (file_id) DO UPDATE SET
+             reader_version  = excluded.reader_version,
              source_mtime_ns = excluded.source_mtime_ns,
              captured_at     = excluded.captured_at,
              make            = excluded.make,
@@ -1861,7 +1915,8 @@ pub fn upsert_exif(
             d.exposure_time,
             d.focal_length,
             d.orientation.map(|v| v as i64),
-            now
+            now,
+            crate::exif::EXIF_VERSION
         ],
     )?;
     Ok(())

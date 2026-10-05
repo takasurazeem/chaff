@@ -118,6 +118,22 @@ impl ExifData {
     }
 }
 
+/// Which EXIF reader produced a stored row.
+///
+/// **Bump this whenever the reader learns to read something it could not before.**
+///
+/// `files_needing_exif` re-reads a file when its modification time changes — right for a file
+/// that changed, and wrong for a *reader* that changed. Every Canon CR3 in a library indexed
+/// before the CR3 fix kept its "this file has no EXIF" row, and the fix could not reach the
+/// files it was written for.
+///
+/// The same pattern as `SCORER_VERSION`, and for the same reason: a cache keyed by file
+/// identity alone silently serves stale answers after the code that produced them changes.
+///
+///   1 — TIFF, JPEG and the other containers `kamadak-exif` handles.
+///   2 — Canon CR3, read out of its ISO base media container.
+pub const EXIF_VERSION: i64 = 2;
+
 /// Read EXIF from a file.
 ///
 /// Only an I/O failure is an error. A file with no EXIF, or in a container the reader
