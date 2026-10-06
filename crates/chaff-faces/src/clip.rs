@@ -119,6 +119,20 @@ pub const VOCABULARY: &[&str] = &[
     "a night sky", "stars", "the moon", "clouds", "a storm", "rain",
     "snow", "fog or mist", "a rainbow", "backlit", "silhouette",
     "harsh sunlight", "soft light", "shadow", "reflection",
+    // ---- Scene, in the words a person would use ----
+    //
+    // **The categories a culling session actually asks for**, and the ones the first pass missed.
+    // "Outdoors" and "indoors" are not implied by the phrases around them: CLIP scores each phrase
+    // independently, so a beach photograph does not score "outdoors" unless "outdoors" is one of
+    // the things it is choosing between.
+    //
+    // These are deliberately **coarse**. A user narrowing 3,000 photographs wants "show me the
+    // outdoor ones" before "show me the ones with a mountain", and a tagger with only the second
+    // makes the first a matter of selecting nine tags at once.
+    "outdoors", "indoors", "a landscape", "a street scene", "a group photo",
+    "a group portrait", "a night scene", "a cityscape", "a seascape",
+    "a rural scene", "an urban scene", "a wide open space", "a confined space",
+
     // ---- Photographic character ----
     "a close-up", "a macro photograph", "a wide landscape", "a still life",
     "an abstract photograph", "a black and white photograph", "a blurry photograph",

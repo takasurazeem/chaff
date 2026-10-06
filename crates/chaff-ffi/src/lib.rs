@@ -274,7 +274,7 @@ impl Engine {
         let path = std::path::Path::new(&root);
         let now = now_seconds();
 
-        let report = pipeline::index_and_score_with_progress(&mut conn, path, now, &mut |p| {
+        let report = pipeline::index_and_score_with_progress(&mut conn, path, now, &|p| {
             let (done, total, stage, current) = match p {
                 pipeline::Progress::Scanning { files } => (files as u32, 0, "scanning", String::new()),
                 // `current` was discarded by the first version with `..`. For a pass that runs
@@ -682,7 +682,7 @@ fn watch_loop(
                 &mut conn,
                 &root,
                 now_s,
-                &mut |_| {},
+                &|_| {},
             ) {
                 Ok(report) => log::info!(
                     "watcher: re-indexed {} photographs for library {library_id}, {} reused",

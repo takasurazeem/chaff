@@ -63,7 +63,7 @@ fn the_vocabulary_that_ships_is_usable() {
     // that the file being wrong is caught rather than shipped.
     assert_eq!(
         vocab.len(),
-        204,
+        217,
         "the shipped vocabulary changed size — if that was deliberate, regenerate the embeddings \
          and update this; if not, the file and the list have diverged"
     );
@@ -220,7 +220,7 @@ fn a_vocabulary_edited_without_regenerating_fails_loudly() {
 
 #[test]
 fn the_shipped_vocabulary_covers_what_a_culling_session_asks() {
-    // **Categories, by name.** A vocabulary that lost its people would still be 204 phrases if
+    // **Categories, by name.** A vocabulary that lost its people would still be 217 phrases if
     // something else were duplicated, and "is there a person in this?" is the first question
     // anyone asks of a shoot.
     let words: Vec<&str> = chaff_faces::clip::VOCABULARY.to_vec();

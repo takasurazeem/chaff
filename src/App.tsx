@@ -391,7 +391,7 @@ export default function App() {
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let cancelled = false;
-    void onIndexProgress((p) => setProgress(p)).then((off) => {
+    void onIndexProgress((p) => setProgress((prev) => (prev && prev.done > p.done ? prev : p))).then((off) => {
       // The component can unmount before the listener resolves.
       if (cancelled) off();
       else unsubscribe = off;

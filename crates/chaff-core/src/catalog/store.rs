@@ -446,6 +446,49 @@ pub fn review_reasons(conn: &Connection, photo_id: i64) -> Result<Vec<String>, C
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
+/// Every file in a library, grouped by photograph.
+///
+/// # Why this exists beside `files_for_photo`
+///
+/// The scoring pass needs the files of every photograph it is about to measure. Asking per
+/// photograph is **one query per row** — 3,000 queries to build one list, each a prepare and a
+/// round trip through SQLite. One query returns the same data.
+///
+/// It is also what makes the pass parallelisable: the connection is not `Sync`, so the file list
+/// has to be read **before** the threads start rather than from inside them.
+pub fn files_by_photo(
+    conn: &Connection,
+    library_id: i64,
+) -> Result<std::collections::HashMap<i64, Vec<FileRow>>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT f.photo_id, f.id, f.path, f.role, f.size_bytes, f.mtime_ns, f.content_hash
+           FROM file f
+           JOIN photo p ON p.id = f.photo_id
+          WHERE p.library_id = ?1
+          ORDER BY f.photo_id, f.role, f.path",
+    )?;
+    let rows = stmt.query_map(params![library_id], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            FileRow {
+                id: r.get(1)?,
+                path: r.get(2)?,
+                role: r.get(3)?,
+                size_bytes: r.get(4)?,
+                mtime_ns: r.get(5)?,
+                content_hash: r.get(6)?,
+            },
+        ))
+    })?;
+
+    let mut out: std::collections::HashMap<i64, Vec<FileRow>> = std::collections::HashMap::new();
+    for row in rows {
+        let (photo_id, file) = row?;
+        out.entry(photo_id).or_default().push(file);
+    }
+    Ok(out)
+}
+
 pub fn files_for_photo(conn: &Connection, photo_id: i64) -> Result<Vec<FileRow>, CatalogError> {
     let mut stmt = conn.prepare(
         "SELECT id, path, role, size_bytes, mtime_ns, content_hash

@@ -584,6 +584,7 @@ dependencies = [
  "kamadak-exif",
  "libraw_rs_vendor",
  "log",
+ "rayon",
  "rusqlite",
  "serde",
  "serde_json",

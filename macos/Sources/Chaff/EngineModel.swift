@@ -76,6 +76,8 @@ final class EngineModel {
     private var lastDone = 0
     private var lastSample: Date?
     private var rate = 0.0
+    /// The highest `done` seen, because reports arrive out of order.
+    private var highWater: UInt32 = 0
 
     /// Ask the running pass to stop.
     ///
@@ -182,7 +184,12 @@ final class EngineModel {
     /// that starts slow — the first decode warms caches — would otherwise report a remaining
     /// time that is wrong for minutes.
     private func record(done: UInt32, total: UInt32, stage: String, current: String) {
-        progress = total > 0 ? Double(done) / Double(total) : nil
+        // **The high-water mark.** The scoring pass reports from several threads at once, so
+        // `done` arrives in *completion* order — 0, 3, 1, 2 — and a bar driven by the raw value
+        // jumps backwards, which reads as a stall. `max` is the whole fix.
+        let highest = max(done, highWater)
+        highWater = highest
+        progress = total > 0 ? Double(highest) / Double(total) : nil
         progressLabel = current.isEmpty ? "\(stage) \(done)" : "\(stage) \(done) · \(current)"
 
         let now = Date()
@@ -224,6 +231,7 @@ final class EngineModel {
         isIndexing = true
         progress = nil
         progressLabel = "finding faces"
+        highWater = 0
         defer { isIndexing = false }
 
         let engine = self.engine
@@ -278,6 +286,7 @@ final class EngineModel {
         isIndexing = true
         progress = nil
         progressLabel = "tagging"
+        highWater = 0
         defer { isIndexing = false }
 
         let engine = self.engine
@@ -536,6 +545,7 @@ final class EngineModel {
         isIndexing = true
         progress = nil
         progressLabel = "re-indexing"
+        highWater = 0
         passStarted = nil
         lastSample = nil
         rate = 0

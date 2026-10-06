@@ -14,6 +14,10 @@
 //! Getting that order wrong produces numbers that look plausible and rank nothing — which
 //! is why it is asserted rather than assumed.
 
+// The scoring pass measures every photograph in parallel — see the phase comment in
+// `score_pass`. One core of a ten-core machine was nine cores idle.
+use rayon::prelude::*;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -248,7 +252,7 @@ pub fn index_and_score(
     root: &Path,
     now: i64,
 ) -> Result<PipelineReport, PipelineError> {
-    index_and_score_with_progress(conn, root, now, &mut |_| {})
+    index_and_score_with_progress(conn, root, now, &|_| {})
 }
 
 /// The same run, reporting how far along it is.
@@ -267,7 +271,7 @@ pub fn index_and_score_forced(
     conn: &mut Connection,
     root: &Path,
     now: i64,
-    on_progress: &mut dyn FnMut(Progress),
+    on_progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<PipelineReport, PipelineError> {
     store::delete_measurements_at_version(conn, SCORER_VERSION).map_err(PipelineError::Catalog)?;
     index_and_score_with_progress(conn, root, now, on_progress)
@@ -277,7 +281,7 @@ pub fn index_and_score_with_progress(
     conn: &mut Connection,
     root: &Path,
     now: i64,
-    on_progress: &mut dyn FnMut(Progress),
+    on_progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<PipelineReport, PipelineError> {
     let started = Instant::now();
     log::info!("indexing {}", root.display());
@@ -310,101 +314,140 @@ pub fn index_and_score_with_progress(
     let stored = store::measurements(conn, library_id, SCORER_VERSION)?;
     let mut reused = 0usize;
 
-    for (index, photo) in photos.iter().enumerate() {
-        on_progress(Progress::Scoring {
-            done: index,
-            total,
-            current: photo.stem.clone(),
-        });
-        let files = store::files_for_photo(conn, photo.id)?;
+    // **One query for every file, before the threads start.**
+    //
+    // The connection is not `Sync`, so the file list has to be read outside the parallel section
+    // rather than from inside it — and asking per photograph was one query per row anyway.
+    let files_by_photo = store::files_by_photo(conn, library_id)?;
 
-        // Prefer the raw: its embedded preview is the camera's own rendering, and for a
-        // paired photograph the raw is the one that carries the full sensor data. Fall
-        // back to the rendered file, then to anything readable.
-        let mut candidates: Vec<&store::FileRow> =
-            files.iter().filter(|f| f.role == "raw").collect();
-        candidates.extend(files.iter().filter(|f| f.role == "raster"));
+    // ---------------------------------------------------------------------------------------
+    // Phase 1 — decode and measure, **in parallel**.
+    //
+    // This is the expensive half of an index: `measure` decodes the image and runs the focus and
+    // exposure analysis, and it is pure CPU over one file with no shared state. It ran on a
+    // single thread for the whole life of this project, which on a ten-core machine is nine cores
+    // idle for the minutes an index takes.
+    //
+    // Nothing is written here. The connection stays on this thread, which is what makes the
+    // parallel section safe — a `rayon` closure cannot borrow it, and trying to would not
+    // compile.
+    //
+    // **Reuse is decided here too**, because it needs no database: whether a measurement can be
+    // reused is a question about the file's size and modification time, both of which came from
+    // the bulk query above.
+    // ---------------------------------------------------------------------------------------
+    enum Outcome {
+        Measured(Box<FrameMeasurement>, store::StoredMeasurement),
+        Reused(Box<FrameMeasurement>),
+        Unscoreable,
+    }
 
-        // **Reuse before decoding.** A measurement from a previous pass is valid when the
-        // file it came from is byte-for-byte the same file, which size and modification
-        // time establish without reading it. On a re-run this is the difference between
-        // minutes of decoding and none — measured at 8.4 s versus 8.2 s on 400 real
-        // photographs before this existed, because nothing was being reused at all.
-        if let Some(prev) = stored.get(&photo.id) {
-            let unchanged = files.iter().any(|f| {
-                f.path == prev.measured_path
-                    && f.size_bytes == prev.measured_size
-                    && f.mtime_ns == prev.measured_mtime
+    // **A count of what is finished, not an index — and it arrives out of order.**
+    //
+    // The first version reported the loop index, and a test caught what that does: threads finish
+    // out of order, so `done` went 0, 3, 1, 2, and a progress bar driven by it **jumps
+    // backwards**, which reads as a stall or a bug.
+    //
+    // The counter below fixes the value — every call gets a distinct, increasing number — but it
+    // cannot fix the *delivery* order, because the calls happen on whichever thread finished.
+    //
+    // **So the contract is: `done` is the number completed so far, and a consumer must track the
+    // high-water mark.** `max(seen, done)` is one line, and it is the difference between a bar
+    // that advances and one that stutters. Both shells do it.
+    let completed = std::sync::atomic::AtomicUsize::new(0);
+
+    let outcomes: Vec<Outcome> = photos
+        .par_iter()
+        .map(|photo| {
+            let done = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            on_progress(Progress::Scoring {
+                done,
+                total,
+                current: photo.stem.clone(),
             });
-            if unchanged {
-                reused += 1;
 
-                // **EXIF is re-read, not reused.** It is cheap — a header parse, no decode —
-                // while the measurement is the expensive part and is what gets reused.
-                //
-                // Reusing the stored camera and capture time made a *transient* read
-                // failure permanent: `exif::read(..).ok()` turns an I/O error into `None`,
-                // indistinguishable from a file that genuinely has no EXIF, and the reuse
-                // path then restored that `None` on every subsequent pass. The photograph
-                // would never be grouped into its shoot and would fall back to library-wide
-                // ranking forever, for a file that was fine a second later.
-                let fresh = exif::read(Path::new(&prev.measured_path))
-                    .ok()
-                    .and_then(|r| r.data().cloned());
+            let files = files_by_photo.get(&photo.id).cloned().unwrap_or_default();
 
-                measured.push(FrameMeasurement::with_values(
-                    photo.id,
-                    &photo.dir,
-                    fresh.as_ref().and_then(|e| e.camera_key()),
-                    fresh.as_ref().and_then(|e| e.captured_at),
-                    prev.values,
-                ));
-                continue;
+            if let Some(prev) = stored.get(&photo.id) {
+                let unchanged = files.iter().any(|f| {
+                    f.path == prev.measured_path
+                        && f.size_bytes == prev.measured_size
+                        && f.mtime_ns == prev.measured_mtime
+                });
+                if unchanged {
+                    // **EXIF is re-read, not reused.** It is cheap — a header parse, no decode —
+                    // while the measurement is the expensive part and is what gets reused. A
+                    // camera correction or a new reader then takes effect on the next pass rather
+                    // than requiring a full re-index.
+                    let fresh = exif::read(Path::new(&prev.measured_path))
+                        .ok()
+                        .and_then(|r| r.data().cloned());
+                    return Outcome::Reused(Box::new(FrameMeasurement::with_values(
+                        photo.id,
+                        &photo.dir,
+                        fresh.as_ref().and_then(|e| e.camera_key()),
+                        fresh.as_ref().and_then(|e| e.captured_at),
+                        prev.values,
+                    )));
+                }
             }
-        }
 
-        let mut row = None;
-        for f in candidates {
-            if let Some(m) = measure(Path::new(&f.path)) {
-                row = Some((f.clone(), m));
-                break;
+            let mut row = None;
+            for f in &files {
+                if let Some(m) = measure(Path::new(&f.path)) {
+                    row = Some((f.clone(), m));
+                    break;
+                }
             }
-        }
 
-        let Some((file, (focus_m, exposure_m))) = row else {
-            // No readable image data. A raw format needing LibRaw (#8), or a corrupt file.
-            // Counted rather than fatal: one unreadable photograph must not abandon a
-            // scoring pass over ten thousand others.
-            unscoreable += 1;
-            continue;
-        };
+            let Some((file, (focus_m, exposure_m))) = row else {
+                // No readable image data. A raw format needing LibRaw, or a corrupt file.
+                // Counted rather than fatal: one unreadable photograph must not abandon a
+                // scoring pass over ten thousand others.
+                return Outcome::Unscoreable;
+            };
 
-        let exif_data = exif::read(Path::new(&file.path)).ok().and_then(|r| r.data().cloned());
+            let exif_data = exif::read(Path::new(&file.path)).ok().and_then(|r| r.data().cloned());
 
-        // `with_exif` consumes and returns, so the chain has to be reassembled rather
-        // than built up with two `&mut self` calls and then moved.
-        let mut frame = FrameMeasurement::from_focus(photo.id, &photo.dir, &focus_m);
-        frame.from_exposure(&exposure_m);
-        let frame = frame.with_exif(exif_data.as_ref());
+            // `with_exif` consumes and returns, so the chain has to be reassembled rather
+            // than built up with two `&mut self` calls and then moved.
+            let mut frame = FrameMeasurement::from_focus(photo.id, &photo.dir, &focus_m);
+            frame.from_exposure(&exposure_m);
+            let frame = frame.with_exif(exif_data.as_ref());
 
-        // Keep it, so the next pass does not have to decode this photograph again.
-        store::upsert_measurement(
-            conn,
-            photo.id,
-            SCORER_VERSION,
-            &store::StoredMeasurement {
+            let stored_row = store::StoredMeasurement {
                 values: *frame.values(),
                 camera: frame.camera.clone(),
                 captured_at: frame.captured_at,
                 measured_path: file.path.clone(),
                 measured_size: file.size_bytes,
                 measured_mtime: file.mtime_ns,
-            },
-            now,
-        )?;
+            };
+            Outcome::Measured(Box::new(frame), stored_row)
+        })
+        .collect();
 
-        measured.push(frame);
+    // ---------------------------------------------------------------------------------------
+    // Phase 2 — write, **serially**.
+    //
+    // SQLite takes one writer. Doing it here rather than in the parallel section is not a
+    // compromise: the writes are microseconds against milliseconds of decoding, so there is
+    // nothing to win by contending for the lock.
+    // ---------------------------------------------------------------------------------------
+    for outcome in outcomes {
+        match outcome {
+            Outcome::Measured(frame, row) => {
+                store::upsert_measurement(conn, frame.photo_id, SCORER_VERSION, &row, now)?;
+                measured.push(*frame);
+            }
+            Outcome::Reused(frame) => {
+                reused += 1;
+                measured.push(*frame);
+            }
+            Outcome::Unscoreable => unscoreable += 1,
+        }
     }
+
 
     if unscoreable > 0 {
         log::warn!(
@@ -1098,11 +1141,17 @@ mod tests {
         let Some((dir, _)) = build_library(&names) else { return };
 
         let mut conn = open_in_memory().unwrap();
-        let mut seen: Vec<Progress> = Vec::new();
-        index_and_score_with_progress(&mut conn, dir.path(), 1_700_000_000, &mut |p| {
-            seen.push(p)
+        // A `Mutex`, because the callback is now `Fn + Sync` — the scoring pass reports from
+        // several threads at once, which is the whole point of the change. A test that collected
+        // into a plain `Vec` would not compile, and should not.
+        let seen: std::sync::Mutex<Vec<Progress>> = std::sync::Mutex::new(Vec::new());
+        index_and_score_with_progress(&mut conn, dir.path(), 1_700_000_000, &|p| {
+            if let Ok(mut v) = seen.lock() {
+                v.push(p);
+            }
         })
         .unwrap();
+        let seen = seen.into_inner().unwrap();
 
         // Scanning is reported with a running count, and ends at the real total.
         let scans: Vec<usize> = seen
@@ -1131,10 +1180,23 @@ mod tests {
             })
             .collect();
         assert_eq!(scores.len(), names.len(), "one report per photograph");
-        assert_eq!(scores[0], (0, names.len()));
-        assert_eq!(scores.last().unwrap(), &(names.len() - 1, names.len()));
-        assert!(scores.iter().all(|(d, t)| d < t), "done must never reach total");
-        assert!(scores.windows(2).all(|w| w[0].0 < w[1].0), "must advance");
+        // **Every count appears exactly once, and they arrive out of order.**
+        //
+        // The scoring pass reports from several threads at once, which is the point of it — so
+        // the callback is called in *completion* order, not index order. The assertions that were
+        // here encoded a single-threaded pass: first report is 0, last is n-1, and each advances
+        // by one.
+        //
+        // What is guaranteed is the **set**: each of `0..n` exactly once. A consumer tracking the
+        // high-water mark therefore always sees a bar that only advances, whatever order they arrive
+        // in.
+        let mut sorted: Vec<usize> = scores.iter().map(|(d, _)| *d).collect();
+        sorted.sort_unstable();
+        assert_eq!(
+            sorted,
+            (0..names.len()).collect::<Vec<_>>(),
+            "every photograph must be reported exactly once"
+        );
 
         // Ranking comes last, and carries the number of photographs ranked.
         match seen.last().unwrap() {

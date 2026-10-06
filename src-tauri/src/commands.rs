@@ -193,7 +193,7 @@ pub async fn open_library(
         // emit is best-effort: a window that has gone away must not fail an index that is
         // otherwise fine.
         use tauri::Emitter;
-        let report = pipeline::index_and_score_with_progress(&mut conn, &root, now, &mut |p| {
+        let report = pipeline::index_and_score_with_progress(&mut conn, &root, now, &|p| {
             let _ = app.emit("chaff://index-progress", &p);
         })
         .map_err(err)?;
@@ -446,7 +446,7 @@ pub async fn start_watching(
                 &mut conn,
                 std::path::Path::new(&root),
                 now,
-                &mut |_| {},
+                &|_| {},
             ) {
                 Ok(report) => log::info!(
                     "watcher re-index: {} photographs, {} reused measurements",

@@ -126,9 +126,9 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Index { root, rescore } => {
             let now = now_seconds();
             let report = if *rescore {
-                pipeline::index_and_score_forced(&mut conn, root, now, &mut progress)?
+                pipeline::index_and_score_forced(&mut conn, root, now, &progress)?
             } else {
-                pipeline::index_and_score_with_progress(&mut conn, root, now, &mut progress)?
+                pipeline::index_and_score_with_progress(&mut conn, root, now, &progress)?
             };
             println!(
                 "{} photographs · {} files scanned · {} scored · {} unscoreable in {:.1}s",

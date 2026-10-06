@@ -35,6 +35,9 @@ walkdir = "2"
 # Content hashing for the thumbnail cache key and for the pre-move verification that
 # ADR-0004 requires before any file is moved.
 blake3 = "1"
+# The scoring pass decodes and measures every photograph, which is the expensive half of an
+# index and is pure CPU with no shared state. One core of a ten-core machine is a waste of nine.
+rayon = "1"
 
 thiserror = "2"
 
