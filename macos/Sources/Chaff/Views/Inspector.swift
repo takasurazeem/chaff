@@ -23,6 +23,7 @@ struct Inspector: View {
     let photoId: Int64?
 
     @State private var detail: PhotoDetail?
+    @State private var tags: [String] = []
     @State private var loadFailed = false
 
     /// What the panel is doing, as a value.
@@ -64,6 +65,10 @@ struct Inspector: View {
             loadFailed = false
             do {
                 detail = try await model.detail(for: photoId)
+                // **The tags, so a filter is explainable.** Seeing "412 of 2,956 tagged
+                // sunset" and then the photograph's own tags is how a user checks the filter
+                // did what they meant — without it the results are a black box.
+                tags = await model.photoTags(photoId)
             } catch {
                 loadFailed = true
             }
@@ -114,6 +119,20 @@ struct Inspector: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                    }
+                }
+            }
+
+            if !tags.isEmpty {
+                Section("Tags") {
+                    // A flowing row rather than a list: tags are short, there are few, and a
+                    // vertical list of four one-word rows wastes the panel's height.
+                    FlowRow(tags) { tag in
+                        Text(tag)
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: Capsule())
                     }
                 }
             }

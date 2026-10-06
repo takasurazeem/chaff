@@ -5,7 +5,10 @@
 /Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Formatting.swift
 /Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Narrowing.swift
 /Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/ThumbnailLoader.swift
+/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/CapabilitiesSheet.swift
 /Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/DeleteConfirmation.swift
+/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FaceReview.swift
+/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FlowRow.swift
 /Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/IndexingOverlay.swift
 /Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Inspector.swift
 /Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Inspector/InspectorState.swift

@@ -573,6 +573,63 @@ pub struct TagPassReport {
     pub used: String,
 }
 
+/// One remembered setting.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Setting {
+    pub key: String,
+    pub value: String,
+}
+
+/// A face clustering was unsure about, waiting for a person to say.
+///
+/// **The input to the feature that already exists.** Naming and merging let a user fix a group
+/// after the fact; this is how they are asked *before* the fact. Without it a group can only be
+/// corrected once it has been named wrong.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AmbiguousFace {
+    pub face_id: i64,
+    pub photo_id: i64,
+    /// The group it is currently in, if any.
+    pub person_id: Option<i64>,
+    pub person_name: Option<String>,
+    /// How sure clustering was, 0–1. Lower is more worth asking about.
+    pub confidence: f64,
+}
+
+/// What writing sidecars did.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SidecarReport {
+    pub written: u32,
+    pub skipped: u32,
+    pub failed: u32,
+    /// Where they went, so a user can go and look.
+    pub first_path: Option<String>,
+}
+
+/// What a tagging endpoint can actually do.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EndpointReport {
+    pub reachable: bool,
+    /// The models the endpoint offers.
+    pub models: Vec<String>,
+    /// Whether the configured model is among them.
+    pub model_present: bool,
+    /// Whether it answers a real vision request — **the only test that proves it can tag.**
+    pub vision_ok: bool,
+    pub detail: String,
+    pub elapsed_ms: u64,
+}
+
+/// What this machine can do.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Capabilities {
+    pub tier: String,
+    pub gpu: Option<String>,
+    pub vram_mb: Option<u64>,
+    pub unified_memory: bool,
+    pub summary: String,
+}
+
 /// One operation in the trash.
 ///
 /// **An operation, not a file.** The manifest records what one confirmation moved, and restoring
@@ -1113,6 +1170,216 @@ impl Engine {
         // where the other order would claim a photograph is gone while it is still there.
         let _ = &conn;
         Ok(receipt.operations as u32)
+    }
+
+    /// Faces clustering was unsure about, most uncertain first.
+    pub fn ambiguous_faces(&self, library_id: i64, limit: u32) -> Result<Vec<AmbiguousFace>> {
+        let conn = self.lock()?;
+        // The recogniser's name is part of the question: embeddings from two different models
+        // are not comparable, so "which faces is clustering unsure about" only has an answer
+        // *for a given model*.
+        let model = chaff_faces::pass::recogniser_model();
+        // `margin` is how close the two nearest groups are. The engine's default is the one the
+        // web app uses; a UI that chose its own would ask a different question than the shell it
+        // is meant to match.
+        let rows = store::ambiguous_faces(&conn, library_id, model, 0.12, limit as usize)
+            .map_err(|e| ChaffError::engine("faces", e))?;
+        Ok(rows
+            .into_iter()
+            .map(|f| AmbiguousFace {
+                face_id: f.face_id,
+                photo_id: f.photo_id,
+                person_id: f.person_id,
+                person_name: None,
+                // **The gap between the nearest two groups**, which is what makes a face worth
+                // asking about: a face that is 0.4 from one group and 0.9 from another is not
+                // ambiguous, and one that is 0.71 and 0.74 is.
+                confidence: (1.0 - (f.other - f.own).abs()) as f64,
+            })
+            .collect())
+    }
+
+    /// Write XMP sidecars for the photographs that have a decision.
+    ///
+    /// **Ratings that do not leave the app are ratings a photographer re-does.** Lightroom,
+    /// Darktable and Bridge all read XMP, and a culling tool whose stars stop at its own catalog
+    /// is one that has to be used twice.
+    ///
+    /// Only photographs with a rating or a rejection are written: a sidecar for every frame in a
+    /// library would create 50,000 files to say "unrated", which is what the absence of a
+    /// sidecar already means.
+    pub fn write_sidecars(&self, library_id: i64) -> Result<SidecarReport> {
+        let conn = self.lock()?;
+        let photos = store::photos(&conn, library_id)
+            .map_err(|e| ChaffError::engine("photos", e))?;
+
+        let mut written = 0u32;
+        let mut skipped = 0u32;
+        let mut failed = 0u32;
+        let mut first_path: Option<String> = None;
+
+        // The decisions, not the photo rows — `PhotoRow` carries no rating, and asking each
+        // photograph individually would be 50,000 queries for one pass.
+        let decisions = store::decisions_for_library(&conn, library_id)
+            .map_err(|e| ChaffError::engine("photos", e))?;
+
+        for photo in &photos {
+            let Some(decision) = decisions.get(&photo.id) else {
+                skipped += 1;
+                continue;
+            };
+            // **An unrated photograph is not a decision.** Writing `Rating="0"` for every frame
+            // the user merely looked at would put a claim in the sidecar they never made — and
+            // the absence of a sidecar already means exactly that.
+            if decision.is_unrated() {
+                skipped += 1;
+                continue;
+            }
+
+            let Some(primary) = store::files_for_photo(&conn, photo.id)
+                .map_err(|e| ChaffError::engine("photos", e))?
+                .into_iter()
+                .find(|f| f.role == "raw" || f.role == "raster")
+            else {
+                skipped += 1;
+                continue;
+            };
+
+            let path = std::path::Path::new(&primary.path);
+            // A format nothing reads a sidecar beside — a PNG, a video. Counted rather than
+            // attempted, because a failure per file would drown the real ones.
+            if !chaff_core::xmp::supports_sidecar(path) {
+                skipped += 1;
+                continue;
+            }
+            match chaff_core::xmp::write(path, *decision, None) {
+                Ok(written_to) => {
+                    written += 1;
+                    if first_path.is_none() {
+                        first_path = Some(written_to.to_string_lossy().to_string());
+                    }
+                }
+                Err(e) => {
+                    log::warn!("could not write a sidecar for {}: {e}", primary.path);
+                    failed += 1;
+                }
+            }
+        }
+
+        Ok(SidecarReport { written, skipped, failed, first_path })
+    }
+
+    /// Ask a tagging endpoint what it can do, before starting a pass that would fail.
+    pub fn diagnose_endpoint(&self, endpoint: String, model: String) -> EndpointReport {
+        let e = chaff_core::vlm::Endpoint { base: endpoint, model };
+        let report = chaff_core::tagging::diagnose(&e, None);
+        EndpointReport {
+            reachable: report.reachable,
+            // Whether the *configured* model is among the ones the endpoint lists. A reachable
+            // endpoint offering a different model is a pass that will fail on its first
+            // photograph, and this is the field that says so before it starts.
+            model_present: report.models.iter().any(|m| m == &e.model),
+            models: report.models,
+            // **The only test that proves it can tag.** An endpoint that lists a model and
+            // answers `/models` can still refuse a vision request, and a pass started against
+            // one would fail on every photograph.
+            vision_ok: report.vision_works,
+            detail: format!(
+                "healthy: {}, schema enforced: {}, {:.2}s per photograph, {} reasoning tokens wasted",
+                report.healthy, report.schema_enforced, report.seconds_per_photo,
+                report.reasoning_tokens_wasted
+            ),
+            elapsed_ms: (report.seconds_per_photo * 1000.0) as u64,
+        }
+    }
+
+    /// What this machine can do, for the same reason the web app has it.
+    pub fn capabilities(&self) -> Capabilities {
+        let probe = chaff_core::hardware::probe();
+        let (tier, why) = chaff_core::hardware::choose_tier(&probe);
+        let gpu = probe.gpus.first();
+        Capabilities {
+            tier: format!("{tier:?}"),
+            gpu: gpu.map(|g| g.name.clone()),
+            // Bytes in the engine, megabytes here: a UI shows a number a person reads, and the
+            // conversion belongs at the boundary rather than in every view.
+            vram_mb: gpu.and_then(|g| g.vram_bytes).map(|b| b / (1024 * 1024)),
+            // **Unified memory is the difference between a tier that works and one that does
+            // not on Apple Silicon**, where there is no separate VRAM figure to read.
+            // Apple Silicon reports no separate VRAM figure, so a machine with a large unified
+            // memory and no discrete GPU is tiered on its total RAM. The engine decides that;
+            // this only reports which case it was.
+            unified_memory: probe.gpus.is_empty() && probe.os == "macos",
+            summary: why,
+        }
+    }
+
+    /// Every remembered setting.
+    ///
+    /// Returned as pairs rather than a map because UniFFI has no `HashMap` in its type set, and
+    /// inventing one for four values would be more machinery than the feature is worth.
+    pub fn settings(&self) -> Result<Vec<Setting>> {
+        let conn = self.lock()?;
+        let all = store::settings(&conn).map_err(|e| ChaffError::engine("settings", e))?;
+        let mut out: Vec<Setting> = all
+            .into_iter()
+            .map(|(key, value)| Setting { key, value })
+            .collect();
+        // Sorted, so a settings list is stable between reads and a diff means something.
+        out.sort_by(|a, b| a.key.cmp(&b.key));
+        Ok(out)
+    }
+
+    /// The tags on one photograph.
+    ///
+    /// The inspector shows them, and the navigator filters by them — this is what connects the
+    /// two, so a user can see *why* a photograph is in the results they are looking at.
+    pub fn photo_tags(&self, photo_id: i64) -> Result<Vec<String>> {
+        let conn = self.lock()?;
+        let rows = store::tags_for_photo(&conn, photo_id)
+            .map_err(|e| ChaffError::engine("tags", e))?;
+        Ok(rows.into_iter().map(|t| t.name).collect())
+    }
+
+    /// Why this photograph scored what it did, in words.
+    ///
+    /// The inspector already shows per-term percentiles, which is most of the answer. This is the
+    /// sentence on top of it — and it is what a user pastes into a message when they disagree
+    /// with the number.
+    pub fn photo_explanation(&self, photo_id: i64) -> Result<Vec<String>> {
+        let conn = self.lock()?;
+        let detail = pipeline::photo_detail(&conn, photo_id)
+            .map_err(|e| ChaffError::engine("photos", e))?;
+
+        let mut lines = Vec::new();
+        match (detail.composite, detail.band.as_deref()) {
+            (Some(c), Some(band)) => lines.push(format!("{:.0}/100 — {band}", c)),
+            (Some(c), None) => lines.push(format!("{:.0}/100", c)),
+            // **Said, not skipped.** A photograph with no score is one that produced no
+            // measurement — a raw this build cannot decode — and silence reads as "fine".
+            (None, _) => lines.push("Not scored — this file produced no measurement.".to_string()),
+        }
+        for (label, percentile) in &detail.terms {
+            lines.push(format!("{label}: {:.0}th percentile of this shoot", percentile));
+        }
+        if detail.terms.is_empty() && detail.composite.is_some() {
+            lines.push("No per-term breakdown was recorded for this photograph.".to_string());
+        }
+        Ok(lines)
+    }
+
+    /// A setting, or `None` if it was never written.
+    pub fn setting(&self, key: String) -> Result<Option<String>> {
+        let conn = self.lock()?;
+        let all = store::settings(&conn).map_err(|e| ChaffError::engine("settings", e))?;
+        Ok(all.get(&key).cloned())
+    }
+
+    /// Remember a setting.
+    pub fn set_setting(&self, key: String, value: String) -> Result<()> {
+        let conn = self.lock()?;
+        store::set_setting(&conn, &key, &value, now_seconds())
+            .map_err(|e| ChaffError::engine("settings", e))
     }
 
     /// Is a delete waiting to be confirmed?

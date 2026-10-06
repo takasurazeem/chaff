@@ -47,6 +47,9 @@ final class EngineModel {
     private(set) var tagsByPhoto: [Int64: Set<String>] = [:]
     private(set) var peopleByPhoto: [Int64: Set<Int64>] = [:]
     private(set) var tagReport: TagPassReport?
+    private(set) var sidecarReport: SidecarReport?
+    private(set) var endpointReport: EndpointReport?
+    var machine: Capabilities?
     private(set) var isIndexing = false
     /// `0...1`, or `nil` while the total is unknown.
     ///
@@ -358,6 +361,127 @@ final class EngineModel {
         }.value
         if let library { photos = try engine.photos(libraryId: library.id) }
         return n
+    }
+
+    /// Faces clustering was unsure about.
+    func ambiguousFaces(limit: UInt32 = 50) async throws -> [AmbiguousFace] {
+        guard let library else { return [] }
+        let engine = self.engine
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.ambiguousFaces(libraryId: library.id, limit: limit)
+        }.value
+    }
+
+    /// Ask a tagging endpoint what it can do, **before** starting a pass that would fail.
+    func diagnoseEndpoint(_ endpoint: String, model: String) async -> EndpointReport {
+        let engine = self.engine
+        return await Task.detached(priority: .userInitiated) {
+            engine.diagnoseEndpoint(endpoint: endpoint, model: model)
+        }.value
+    }
+
+    /// What this machine can do.
+    func capabilities() async -> Capabilities {
+        let engine = self.engine
+        return await Task.detached(priority: .utility) {
+            engine.capabilities()
+        }.value
+    }
+
+    /// A remembered setting.
+    func setting(_ key: String) async -> String? {
+        let engine = self.engine
+        return try? await Task.detached(priority: .utility) {
+            try engine.setting(key: key)
+        }.value
+    }
+
+    /// Remember a setting.
+    func setSetting(_ key: String, _ value: String) async {
+        let engine = self.engine
+        try? await Task.detached(priority: .utility) {
+            try engine.setSetting(key: key, value: value)
+        }.value
+    }
+
+    /// Take faces out of a group and into one of their own.
+    ///
+    /// The group keeps at least one face — the engine refuses to empty it, because a person with
+    /// no faces is not a group and would appear in the navigator as a name with nothing behind
+    /// it.
+    func splitPerson(personId: Int64, faceIds: [Int64]) async throws -> Int64? {
+        let engine = self.engine
+        let created = try await Task.detached(priority: .userInitiated) {
+            try engine.splitPerson(personId: personId, faceIds: faceIds)
+        }.value
+        if let library { people = try engine.people(libraryId: library.id) }
+        return created
+    }
+
+    /// Write sidecars and say what happened.
+    ///
+    /// The report is shown rather than logged: "12 written, 40 skipped" is the difference between
+    /// a photographer trusting their ratings left the app and re-doing them by hand.
+    func writeSidecars() async {
+        isIndexing = true
+        progressLabel = "writing sidecars"
+        defer { isIndexing = false }
+        do {
+            let report = try await writeSidecarsReport()
+            sidecarReport = report
+            progressLabel = ""
+        } catch {
+            errorMessage = describe(error)
+        }
+    }
+
+    private func writeSidecarsReport() async throws -> SidecarReport {
+        guard let library else {
+            throw ChaffError.Engine(kind: .notFound, message: "no library is open")
+        }
+        let engine = self.engine
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.writeSidecars(libraryId: library.id)
+        }.value
+    }
+
+    /// Test the tagging endpoint and say what it can do.
+    ///
+    /// **Before a pass, not after it fails.** A reachable endpoint offering a different model, or
+    /// one that lists a model and refuses a vision request, both produce a pass that fails on
+    /// every photograph — and this is the field that says so first.
+    func diagnoseTagging() async {
+        let endpoint = ProcessInfo.processInfo.environment["CHAFF_VLM"] ?? ""
+        guard !endpoint.trimmingCharacters(in: .whitespaces).isEmpty else {
+            // **Said plainly rather than attempted.** With no endpoint the pass uses CLIP, which
+            // is a different tagger with a closed vocabulary — not a broken vision model.
+            endpointReport = nil
+            errorMessage = """
+                No vision endpoint is configured, so tagging uses CLIP on this machine — a \
+                different tagger with a fixed vocabulary of about 38 phrases.
+
+                Set CHAFF_VLM to use a model instead.
+                """
+            return
+        }
+        let model_ = ProcessInfo.processInfo.environment["CHAFF_VLM_MODEL"] ?? "chaff-vlm"
+        endpointReport = await diagnoseEndpoint(endpoint, model: model_)
+    }
+
+    /// The tags on one photograph, for the inspector.
+    func photoTags(_ photoId: Int64) async -> [String] {
+        let engine = self.engine
+        return (try? await Task.detached(priority: .utility) {
+            try engine.photoTags(photoId: photoId)
+        }.value) ?? []
+    }
+
+    /// Why a photograph scored what it did, in words.
+    func photoExplanation(_ photoId: Int64) async -> [String] {
+        let engine = self.engine
+        return (try? await Task.detached(priority: .utility) {
+            try engine.photoExplanation(photoId: photoId)
+        }.value) ?? []
     }
 
     /// Write a decision.

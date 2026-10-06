@@ -5,6 +5,8 @@ struct ChaffApp: App {
     @State private var model = EngineModel()
     @State private var culling = Culling()
     @State private var showTrash = false
+    @State private var showFaceReview = false
+    @State private var showCapabilities = false
 
     var body: some Scene {
         WindowGroup {
@@ -12,6 +14,8 @@ struct ChaffApp: App {
                 .environment(model)
                 .environment(culling)
                 .sheet(isPresented: $showTrash) { TrashPanel() }
+                .sheet(isPresented: $showFaceReview) { FaceReview() }
+                .sheet(isPresented: $showCapabilities) { CapabilitiesSheet() }
                 // A photo tool wants the room. The default window is sized for a form.
                 .frame(minWidth: 900, minHeight: 600)
         }
@@ -59,6 +63,14 @@ struct ChaffApp: App {
                 // restart, ⌘Z has nothing to reverse.
                 Button("Trash…") { showTrash = true }
                     .keyboardShortcut("t", modifiers: [.command, .shift, .option])
+                Button("Faces to Check…") { showFaceReview = true }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                Divider()
+                // **Ratings that do not leave the app are ratings a photographer re-does.**
+                // Lightroom, Darktable and Bridge all read XMP.
+                Button("Write Sidecars") { Task { await model.writeSidecars() } }
+                Button("This Machine…") { showCapabilities = true }
+                Button("Check Tagging Endpoint") { Task { await model.diagnoseTagging() } }
             }
         }
     }

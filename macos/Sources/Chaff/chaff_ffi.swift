@@ -659,12 +659,22 @@ fileprivate struct FfiConverterString: FfiConverter {
 public protocol EngineProtocol: AnyObject, Sendable {
     
     /**
+     * Faces clustering was unsure about, most uncertain first.
+     */
+    func ambiguousFaces(libraryId: Int64, limit: UInt32) throws  -> [AmbiguousFace]
+    
+    /**
      * Abandon the plan without moving anything.
      *
      * A plan that is not cancelled sits until the next one replaces it, and a stale plan is
      * one a stray call could commit.
      */
     func cancelDelete() throws 
+    
+    /**
+     * What this machine can do, for the same reason the web app has it.
+     */
+    func capabilities()  -> Capabilities
     
     /**
      * Move what was shown.
@@ -674,6 +684,11 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * plan, aborts the whole operation rather than being moved unexamined.
      */
     func commitDelete(root: String) throws  -> DeleteReceipt
+    
+    /**
+     * Ask a tagging endpoint what it can do, before starting a pass that would fail.
+     */
+    func diagnoseEndpoint(endpoint: String, model: String)  -> EndpointReport
     
     /**
      * Folders with their two counts, **relative to the library root**.
@@ -768,6 +783,23 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func photoDetail(photoId: Int64) throws  -> PhotoDetail
     
     /**
+     * Why this photograph scored what it did, in words.
+     *
+     * The inspector already shows per-term percentiles, which is most of the answer. This is the
+     * sentence on top of it — and it is what a user pastes into a message when they disagree
+     * with the number.
+     */
+    func photoExplanation(photoId: Int64) throws  -> [String]
+    
+    /**
+     * The tags on one photograph.
+     *
+     * The inspector shows them, and the navigator filters by them — this is what connects the
+     * two, so a user can see *why* a photograph is in the results they are looking at.
+     */
+    func photoTags(photoId: Int64) throws  -> [String]
+    
+    /**
      * Every photograph in a library.
      *
      * One call returning everything, which is what the web shell does too. At 50,000
@@ -852,6 +884,24 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func setDecision(photoId: Int64, rating: UInt8, rejected: Bool) throws 
     
     /**
+     * Remember a setting.
+     */
+    func setSetting(key: String, value: String) throws 
+    
+    /**
+     * A setting, or `None` if it was never written.
+     */
+    func setting(key: String) throws  -> String?
+    
+    /**
+     * Every remembered setting.
+     *
+     * Returned as pairs rather than a map because UniFFI has no `HashMap` in its type set, and
+     * inventing one for four values would be more machinery than the feature is worth.
+     */
+    func settings() throws  -> [Setting]
+    
+    /**
      * Split a face out of a group and into one of its own.
      *
      * The other correction, and the reason both exist: clustering errs in both directions, and
@@ -881,6 +931,19 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * scroll.
      */
     func trash(root: String) throws  -> [TrashEntry]
+    
+    /**
+     * Write XMP sidecars for the photographs that have a decision.
+     *
+     * **Ratings that do not leave the app are ratings a photographer re-does.** Lightroom,
+     * Darktable and Bridge all read XMP, and a culling tool whose stars stop at its own catalog
+     * is one that has to be used twice.
+     *
+     * Only photographs with a rating or a rejection are written: a sidecar for every frame in a
+     * library would create 50,000 files to say "unrated", which is what the absence of a
+     * sidecar already means.
+     */
+    func writeSidecars(libraryId: Int64) throws  -> SidecarReport
     
 }
 /**
@@ -968,6 +1031,20 @@ public convenience init(databasePath: String)throws  {
 
     
     /**
+     * Faces clustering was unsure about, most uncertain first.
+     */
+open func ambiguousFaces(libraryId: Int64, limit: UInt32)throws  -> [AmbiguousFace]  {
+    return try  FfiConverterSequenceTypeAmbiguousFace.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_ambiguous_faces(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(libraryId),
+        FfiConverterUInt32.lower(limit),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Abandon the plan without moving anything.
      *
      * A plan that is not cancelled sits until the next one replaces it, and a stale plan is
@@ -979,6 +1056,18 @@ open func cancelDelete()throws   {try rustCallWithError(FfiConverterTypeChaffErr
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * What this machine can do, for the same reason the web app has it.
+     */
+open func capabilities() -> Capabilities  {
+    return try!  FfiConverterTypeCapabilities_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_capabilities(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -994,6 +1083,20 @@ open func commitDelete(root: String)throws  -> DeleteReceipt  {
     uniffi_chaff_ffi_fn_method_engine_commit_delete(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Ask a tagging endpoint what it can do, before starting a pass that would fail.
+     */
+open func diagnoseEndpoint(endpoint: String, model: String) -> EndpointReport  {
+    return try!  FfiConverterTypeEndpointReport_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_diagnose_endpoint(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(endpoint),
+        FfiConverterString.lower(model),uniffiCallStatus
     )
 })
 }
@@ -1149,6 +1252,39 @@ open func photoDetail(photoId: Int64)throws  -> PhotoDetail  {
     return try  FfiConverterTypePhotoDetail_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
         uniffiCallStatus in
     uniffi_chaff_ffi_fn_method_engine_photo_detail(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(photoId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Why this photograph scored what it did, in words.
+     *
+     * The inspector already shows per-term percentiles, which is most of the answer. This is the
+     * sentence on top of it — and it is what a user pastes into a message when they disagree
+     * with the number.
+     */
+open func photoExplanation(photoId: Int64)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_photo_explanation(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(photoId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The tags on one photograph.
+     *
+     * The inspector shows them, and the navigator filters by them — this is what connects the
+     * two, so a user can see *why* a photograph is in the results they are looking at.
+     */
+open func photoTags(photoId: Int64)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_photo_tags(
             self.uniffiCloneHandle(),
         FfiConverterInt64.lower(photoId),uniffiCallStatus
     )
@@ -1326,6 +1462,47 @@ open func setDecision(photoId: Int64, rating: UInt8, rejected: Bool)throws   {tr
 }
     
     /**
+     * Remember a setting.
+     */
+open func setSetting(key: String, value: String)throws   {try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_set_setting(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(key),
+        FfiConverterString.lower(value),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * A setting, or `None` if it was never written.
+     */
+open func setting(key: String)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_setting(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(key),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Every remembered setting.
+     *
+     * Returned as pairs rather than a map because UniFFI has no `HashMap` in its type set, and
+     * inventing one for four values would be more machinery than the feature is worth.
+     */
+open func settings()throws  -> [Setting]  {
+    return try  FfiConverterSequenceTypeSetting.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_settings(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Split a face out of a group and into one of its own.
      *
      * The other correction, and the reason both exist: clustering errs in both directions, and
@@ -1390,6 +1567,27 @@ open func trash(root: String)throws  -> [TrashEntry]  {
 })
 }
     
+    /**
+     * Write XMP sidecars for the photographs that have a decision.
+     *
+     * **Ratings that do not leave the app are ratings a photographer re-does.** Lightroom,
+     * Darktable and Bridge all read XMP, and a culling tool whose stars stop at its own catalog
+     * is one that has to be used twice.
+     *
+     * Only photographs with a rating or a rejection are written: a sidecar for every frame in a
+     * library would create 50,000 files to say "unrated", which is what the absence of a
+     * sidecar already means.
+     */
+open func writeSidecars(libraryId: Int64)throws  -> SidecarReport  {
+    return try  FfiConverterTypeSidecarReport_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_write_sidecars(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(libraryId),uniffiCallStatus
+    )
+})
+}
+    
 
     
 }
@@ -1436,6 +1634,160 @@ public func FfiConverterTypeEngine_lower(_ value: Engine) -> UInt64 {
 }
 
 
+
+
+/**
+ * A face clustering was unsure about, waiting for a person to say.
+ *
+ * **The input to the feature that already exists.** Naming and merging let a user fix a group
+ * after the fact; this is how they are asked *before* the fact. Without it a group can only be
+ * corrected once it has been named wrong.
+ */
+public struct AmbiguousFace: Equatable, Hashable {
+    public var faceId: Int64
+    public var photoId: Int64
+    /**
+     * The group it is currently in, if any.
+     */
+    public var personId: Int64?
+    public var personName: String?
+    /**
+     * How sure clustering was, 0–1. Lower is more worth asking about.
+     */
+    public var confidence: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(faceId: Int64, photoId: Int64, 
+        /**
+         * The group it is currently in, if any.
+         */personId: Int64?, personName: String?, 
+        /**
+         * How sure clustering was, 0–1. Lower is more worth asking about.
+         */confidence: Double) {
+        self.faceId = faceId
+        self.photoId = photoId
+        self.personId = personId
+        self.personName = personName
+        self.confidence = confidence
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AmbiguousFace: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAmbiguousFace: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AmbiguousFace {
+        return
+            try AmbiguousFace(
+                faceId: FfiConverterInt64.read(from: &buf), 
+                photoId: FfiConverterInt64.read(from: &buf), 
+                personId: FfiConverterOptionInt64.read(from: &buf), 
+                personName: FfiConverterOptionString.read(from: &buf), 
+                confidence: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AmbiguousFace, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.faceId, into: &buf)
+        FfiConverterInt64.write(value.photoId, into: &buf)
+        FfiConverterOptionInt64.write(value.personId, into: &buf)
+        FfiConverterOptionString.write(value.personName, into: &buf)
+        FfiConverterDouble.write(value.confidence, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAmbiguousFace_lift(_ buf: RustBuffer) throws -> AmbiguousFace {
+    return try FfiConverterTypeAmbiguousFace.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAmbiguousFace_lower(_ value: AmbiguousFace) -> RustBuffer {
+    return FfiConverterTypeAmbiguousFace.lower(value)
+}
+
+
+/**
+ * What this machine can do.
+ */
+public struct Capabilities: Equatable, Hashable {
+    public var tier: String
+    public var gpu: String?
+    public var vramMb: UInt64?
+    public var unifiedMemory: Bool
+    public var summary: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tier: String, gpu: String?, vramMb: UInt64?, unifiedMemory: Bool, summary: String) {
+        self.tier = tier
+        self.gpu = gpu
+        self.vramMb = vramMb
+        self.unifiedMemory = unifiedMemory
+        self.summary = summary
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Capabilities: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCapabilities: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Capabilities {
+        return
+            try Capabilities(
+                tier: FfiConverterString.read(from: &buf), 
+                gpu: FfiConverterOptionString.read(from: &buf), 
+                vramMb: FfiConverterOptionUInt64.read(from: &buf), 
+                unifiedMemory: FfiConverterBool.read(from: &buf), 
+                summary: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Capabilities, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.tier, into: &buf)
+        FfiConverterOptionString.write(value.gpu, into: &buf)
+        FfiConverterOptionUInt64.write(value.vramMb, into: &buf)
+        FfiConverterBool.write(value.unifiedMemory, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCapabilities_lift(_ buf: RustBuffer) throws -> Capabilities {
+    return try FfiConverterTypeCapabilities.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCapabilities_lower(_ value: Capabilities) -> RustBuffer {
+    return FfiConverterTypeCapabilities.lower(value)
+}
 
 
 /**
@@ -1594,6 +1946,97 @@ public func FfiConverterTypeDeleteReceipt_lift(_ buf: RustBuffer) throws -> Dele
 #endif
 public func FfiConverterTypeDeleteReceipt_lower(_ value: DeleteReceipt) -> RustBuffer {
     return FfiConverterTypeDeleteReceipt.lower(value)
+}
+
+
+/**
+ * What a tagging endpoint can actually do.
+ */
+public struct EndpointReport: Equatable, Hashable {
+    public var reachable: Bool
+    /**
+     * The models the endpoint offers.
+     */
+    public var models: [String]
+    /**
+     * Whether the configured model is among them.
+     */
+    public var modelPresent: Bool
+    /**
+     * Whether it answers a real vision request — **the only test that proves it can tag.**
+     */
+    public var visionOk: Bool
+    public var detail: String
+    public var elapsedMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(reachable: Bool, 
+        /**
+         * The models the endpoint offers.
+         */models: [String], 
+        /**
+         * Whether the configured model is among them.
+         */modelPresent: Bool, 
+        /**
+         * Whether it answers a real vision request — **the only test that proves it can tag.**
+         */visionOk: Bool, detail: String, elapsedMs: UInt64) {
+        self.reachable = reachable
+        self.models = models
+        self.modelPresent = modelPresent
+        self.visionOk = visionOk
+        self.detail = detail
+        self.elapsedMs = elapsedMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension EndpointReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEndpointReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EndpointReport {
+        return
+            try EndpointReport(
+                reachable: FfiConverterBool.read(from: &buf), 
+                models: FfiConverterSequenceString.read(from: &buf), 
+                modelPresent: FfiConverterBool.read(from: &buf), 
+                visionOk: FfiConverterBool.read(from: &buf), 
+                detail: FfiConverterString.read(from: &buf), 
+                elapsedMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EndpointReport, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.reachable, into: &buf)
+        FfiConverterSequenceString.write(value.models, into: &buf)
+        FfiConverterBool.write(value.modelPresent, into: &buf)
+        FfiConverterBool.write(value.visionOk, into: &buf)
+        FfiConverterString.write(value.detail, into: &buf)
+        FfiConverterUInt64.write(value.elapsedMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEndpointReport_lift(_ buf: RustBuffer) throws -> EndpointReport {
+    return try FfiConverterTypeEndpointReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEndpointReport_lower(_ value: EndpointReport) -> RustBuffer {
+    return FfiConverterTypeEndpointReport.lower(value)
 }
 
 
@@ -2402,6 +2845,134 @@ public func FfiConverterTypeScoreTerm_lower(_ value: ScoreTerm) -> RustBuffer {
 
 
 /**
+ * One remembered setting.
+ */
+public struct Setting: Equatable, Hashable {
+    public var key: String
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(key: String, value: String) {
+        self.key = key
+        self.value = value
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Setting: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSetting: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Setting {
+        return
+            try Setting(
+                key: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Setting, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.key, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSetting_lift(_ buf: RustBuffer) throws -> Setting {
+    return try FfiConverterTypeSetting.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSetting_lower(_ value: Setting) -> RustBuffer {
+    return FfiConverterTypeSetting.lower(value)
+}
+
+
+/**
+ * What writing sidecars did.
+ */
+public struct SidecarReport: Equatable, Hashable {
+    public var written: UInt32
+    public var skipped: UInt32
+    public var failed: UInt32
+    /**
+     * Where they went, so a user can go and look.
+     */
+    public var firstPath: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(written: UInt32, skipped: UInt32, failed: UInt32, 
+        /**
+         * Where they went, so a user can go and look.
+         */firstPath: String?) {
+        self.written = written
+        self.skipped = skipped
+        self.failed = failed
+        self.firstPath = firstPath
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SidecarReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSidecarReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SidecarReport {
+        return
+            try SidecarReport(
+                written: FfiConverterUInt32.read(from: &buf), 
+                skipped: FfiConverterUInt32.read(from: &buf), 
+                failed: FfiConverterUInt32.read(from: &buf), 
+                firstPath: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SidecarReport, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.written, into: &buf)
+        FfiConverterUInt32.write(value.skipped, into: &buf)
+        FfiConverterUInt32.write(value.failed, into: &buf)
+        FfiConverterOptionString.write(value.firstPath, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSidecarReport_lift(_ buf: RustBuffer) throws -> SidecarReport {
+    return try FfiConverterTypeSidecarReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSidecarReport_lower(_ value: SidecarReport) -> RustBuffer {
+    return FfiConverterTypeSidecarReport.lower(value)
+}
+
+
+/**
  * A tag and how many photographs carry it.
  */
 public struct TagCount: Equatable, Hashable {
@@ -3071,6 +3642,30 @@ fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
     typealias SwiftType = Int64?
 
@@ -3185,6 +3780,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAmbiguousFace: FfiConverterRustBuffer {
+    typealias SwiftType = [AmbiguousFace]
+
+    public static func write(_ value: [AmbiguousFace], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAmbiguousFace.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AmbiguousFace] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AmbiguousFace]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAmbiguousFace.read(from: &buf))
         }
         return seq
     }
@@ -3318,6 +3938,31 @@ fileprivate struct FfiConverterSequenceTypeScoreTerm: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSetting: FfiConverterRustBuffer {
+    typealias SwiftType = [Setting]
+
+    public static func write(_ value: [Setting], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSetting.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Setting] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Setting]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSetting.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTagCount: FfiConverterRustBuffer {
     typealias SwiftType = [TagCount]
 
@@ -3396,10 +4041,19 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_func_set_data_root() != 17067) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_ambiguous_faces() != 20679) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_cancel_delete() != 29718) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_capabilities() != 19069) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_commit_delete() != 32525) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_diagnose_endpoint() != 455) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_folders() != 46347) {
@@ -3424,6 +4078,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_photo_detail() != 54102) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_photo_explanation() != 55334) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_photo_tags() != 34658) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_photos() != 25175) {
@@ -3453,6 +4113,15 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_set_decision() != 38375) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_set_setting() != 48395) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_setting() != 15485) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_settings() != 10609) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_split_person() != 24982) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3463,6 +4132,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_trash() != 22919) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_write_sidecars() != 47160) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_constructor_engine_new() != 43103) {
