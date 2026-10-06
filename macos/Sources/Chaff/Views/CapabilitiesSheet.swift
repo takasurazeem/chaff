@@ -63,6 +63,36 @@ struct CapabilitiesSheet: View {
                     .textSelection(.enabled)
             }
 
+            if let cache = model.cacheInfo {
+                Divider()
+                Text("Thumbnail cache").font(.headline)
+                Form {
+                    LabeledContent("Files", value: "\(cache.files)")
+                    LabeledContent(
+                        "Size",
+                        value: ByteCountFormatStyle().format(Int64(cache.bytes))
+                    )
+                }
+                .formStyle(.grouped)
+                Text(cache.path)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+
+                HStack {
+                    // **Said plainly, because deleting a cache sounds risky and is not.** Every
+                    // thumbnail is derived from a photograph that is still there, so the worst
+                    // case is that the next scroll decodes again.
+                    Text("Safe to clear — thumbnails are rebuilt from the photographs.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear Oldest…") { Task { await model.trimThumbnailCache() } }
+                }
+            }
+
             HStack {
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
@@ -72,6 +102,7 @@ struct CapabilitiesSheet: View {
         .frame(width: 460)
         .task {
             model.machine = await model.capabilities()
+            model.cacheInfo = await model.thumbnailCache()
         }
     }
 }

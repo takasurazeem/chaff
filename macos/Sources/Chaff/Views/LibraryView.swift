@@ -19,9 +19,10 @@ struct LibraryView: View {
     @State private var pendingPlan: DeletePlan?
 
     var body: some View {
-        // `@Bindable` for the binding to the cursor: `@Environment` hands back the object, and a
-        // `Binding` needs the wrapper.
+        // `@Bindable` for the bindings: `@Environment` hands back the object, and a `Binding`
+        // needs the wrapper.
         @Bindable var culling = culling
+        @Bindable var model = model
 
         return NavigationSplitView {
             Navigator(chosenFolder: $chosenFolder, narrowedTo: $narrowedTo)
@@ -89,6 +90,12 @@ struct LibraryView: View {
                 root: model.library?.root ?? "",
                 onFinished: { pendingPlan = nil }
             )
+        }
+        // The loupe pages through **what the grid is showing**, not the whole library — paging
+        // past the end of a filtered view into photographs the filter excluded is how a user
+        // rates something they were not looking at.
+        .sheet(isPresented: $model.showLoupe) {
+            Loupe(photos: visible, isPresented: $model.showLoupe)
         }
         .inspector(isPresented: .constant(true)) {
             // The engine takes one photograph's detail in one call. The panel follows the

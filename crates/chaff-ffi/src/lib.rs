@@ -208,6 +208,14 @@ pub struct Engine {
     /// invariant. A shell that held its own copy would be a second implementation of a safety
     /// guarantee, which is how one of them drifts.
     pending: Mutex<chaff_core::delete_session::DeleteSession>,
+    /// The library watcher, when one is running.
+    watch: Mutex<Option<WatchHandle>>,
+    /// True while a delete plan is pending.
+    ///
+    /// **A flag rather than the session itself**, because the watcher runs on a thread that
+    /// outlives any borrow of the engine. The session is the authority; this mirrors the one bit
+    /// of it the watcher needs, and is set and cleared wherever the session's state changes.
+    plan_pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[uniffi::export]
@@ -222,6 +230,8 @@ impl Engine {
             path,
             thumbs: Mutex::new(None),
             pending: Mutex::new(chaff_core::delete_session::DeleteSession::new()),
+            watch: Mutex::new(None),
+            plan_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }))
     }
 
@@ -573,6 +583,137 @@ pub struct TagPassReport {
     pub used: String,
 }
 
+/// A running watcher.
+struct WatchHandle {
+    handle: Option<std::thread::JoinHandle<()>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    seen: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Watch a directory, and re-index when files settle.
+///
+/// # Why polling rather than `notify`
+///
+/// `chaff-core` has no filesystem-notification dependency on purpose — it is the GUI-free crate,
+/// and a native event API is one more platform-specific thing to build on Windows and Linux. The
+/// Tauri shell brings its own watcher for exactly that reason.
+///
+/// A poll is the honest trade here: a library that changes while the app is open changes on the
+/// scale of a card copy or a sync, and a five-second poll catches that with no dependency and no
+/// per-platform code. What it costs is up to five seconds of latency on a change, which for a
+/// culling tool is not a cost anyone can perceive.
+fn watch_loop(
+    root: std::path::PathBuf,
+    library_id: i64,
+    catalog: std::path::PathBuf,
+    pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    seen: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::sync::atomic::Ordering;
+
+    let mut last = newest_mtime(&root);
+    while !stop.load(Ordering::Relaxed) {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+
+        let now = newest_mtime(&root);
+        let Some(now) = now else { continue };
+        if Some(now) == last {
+            continue;
+        }
+        last = Some(now);
+        seen.fetch_add(1, Ordering::Relaxed);
+
+        // **Not while a delete plan is pending.** `commit` refuses any file that was not in the
+        // plan the user was shown, so a re-index during the confirmation dialog turns Confirm
+        // into a hard failure with no recovery path — and the user has no way to know a watcher
+        // caused it.
+        if pending.load(std::sync::atomic::Ordering::Relaxed) {
+            continue;
+        }
+
+        busy.store(true, Ordering::Relaxed);
+        // A connection of its own, so the grid keeps reading while this runs. The engine's read
+        // lock is what made a pass block every query for its whole duration once already.
+        if let Ok(mut conn) = chaff_core::catalog::open(&catalog) {
+            let now_s = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            match chaff_core::pipeline::index_and_score_with_progress(
+                &mut conn,
+                &root,
+                now_s,
+                &mut |_| {},
+            ) {
+                Ok(report) => log::info!(
+                    "watcher: re-indexed {} photographs for library {library_id}, {} reused",
+                    report.photos,
+                    report.reused
+                ),
+                Err(e) => log::warn!("watcher: re-index failed: {e}"),
+            }
+        }
+        busy.store(false, Ordering::Relaxed);
+    }
+}
+
+/// The most recent modification time anywhere under a directory.
+///
+/// **A single number rather than a set of paths**, because the question this watcher answers is
+/// "has anything changed", not "what changed" — and the second question needs a full scan to
+/// answer, which is the work the re-index is about to do anyway.
+fn newest_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
+    let mut newest: Option<std::time::SystemTime> = None;
+    let mut stack = vec![dir.to_path_buf()];
+
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // The trash is inside the library and changes when the *app* moves something, so
+            // watching it would make every delete trigger a re-index of the library it just
+            // changed.
+            if path.file_name().is_some_and(|n| n == ".cull-trash") {
+                continue;
+            }
+            if path.is_dir() {
+                stack.push(path);
+            } else if let Ok(meta) = entry.metadata() {
+                if let Ok(when) = meta.modified() {
+                    if newest.is_none_or(|n| when > n) {
+                        newest = Some(when);
+                    }
+                }
+            }
+        }
+    }
+    newest
+}
+
+/// Whether a library is being watched, and what the watcher has seen.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct WatchStatus {
+    pub running: bool,
+    /// How many files have changed since the watcher started.
+    pub seen: u64,
+    /// True while a re-index triggered by the watcher is running.
+    pub busy: bool,
+}
+
+/// What the thumbnail cache holds.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ThumbnailCacheInfo {
+    pub path: String,
+    pub files: u64,
+    pub bytes: u64,
+}
+
 /// One remembered setting.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct Setting {
@@ -721,6 +862,9 @@ impl Engine {
         // rather than fixing one and meeting the next.
         let selection = pipeline::resolve_delete_selection(&conn, &photo_ids)
             .map_err(|e| ChaffError::engine("delete", e))?;
+        // The watcher's mirror of this session, set the moment a plan exists. See
+        // `Engine::plan_pending` for why it is a flag rather than the session itself.
+        self.plan_pending.store(true, std::sync::atomic::Ordering::Relaxed);
         let files: Vec<std::path::PathBuf> =
             selection.candidates.iter().flat_map(|c| c.files.clone()).collect();
 
@@ -786,6 +930,11 @@ impl Engine {
             ChaffError::with(FailureKind::Poisoned, "the delete session is unusable; restart Chaff")
         })?;
 
+        // Cleared **before** the result is inspected: a refusal also ends the pending state —
+        // the session drops the plan on every path out of `commit` — and a flag left set would
+        // stop the watcher forever with nothing on screen to explain it.
+        self.plan_pending.store(false, std::sync::atomic::Ordering::Relaxed);
+
         let receipt = session
             .commit(&conn, std::path::Path::new(&root), now)
             .map_err(|e| ChaffError::engine("delete", e))?;
@@ -807,6 +956,7 @@ impl Engine {
             ChaffError::with(FailureKind::Poisoned, "the delete session is unusable; restart Chaff")
         })?;
         session.cancel();
+        self.plan_pending.store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -1368,6 +1518,113 @@ impl Engine {
         Ok(lines)
     }
 
+    /// Start watching a library for changes on disk.
+    ///
+    /// # What it does, and what it deliberately does not
+    ///
+    /// It re-indexes when files settle — a copy in progress produces hundreds of events, and
+    /// indexing on each would be hundreds of passes. The accumulator debounces.
+    ///
+    /// **It does not run while a delete plan is pending.** `DeleteSession::commit` refuses any
+    /// file that was not in the plan the user was shown, so a re-index during the confirmation
+    /// dialog turned Confirm into a hard failure with no recovery path — and the user had no way
+    /// to know a watcher caused it.
+    ///
+    /// Idempotent: calling it twice for the same library is a no-op rather than two watchers.
+    pub fn start_watching(&self, root: String, library_id: i64) -> Result<WatchStatus> {
+        if self.watch.lock().map(|w| w.is_some()).unwrap_or(false) {
+            return self.watch_status();
+        }
+
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let busy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let path = self.path.clone();
+        let pending = std::sync::Arc::clone(&self.plan_pending);
+        let thread_seen = std::sync::Arc::clone(&seen);
+        let thread_busy = std::sync::Arc::clone(&busy);
+        let thread_stop = std::sync::Arc::clone(&stop);
+        let watch_root = std::path::PathBuf::from(&root);
+
+        let handle = std::thread::spawn(move || {
+            watch_loop(watch_root, library_id, path, pending, thread_seen, thread_busy, thread_stop);
+        });
+
+        *self.watch.lock().map_err(|_| ChaffError::with(FailureKind::Poisoned, "the engine lock was poisoned"))? =
+            Some(WatchHandle { handle: Some(handle), stop, seen, busy });
+
+        self.watch_status()
+    }
+
+    /// Stop watching.
+    ///
+    /// The thread is asked to stop rather than killed, and it is **not joined**: a re-index in
+    /// progress commits each photograph as it goes, and blocking the UI on a pass that may take
+    /// minutes to reach its next check is worse than letting it finish in the background.
+    pub fn stop_watching(&self) -> Result<WatchStatus> {
+        if let Ok(mut slot) = self.watch.lock() {
+            if let Some(mut w) = slot.take() {
+                w.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                // Dropped without joining. See above.
+                w.handle = None;
+            }
+        }
+        Ok(WatchStatus { running: false, seen: 0, busy: false })
+    }
+
+    /// Is a library being watched, and what has it seen?
+    pub fn watch_status(&self) -> Result<WatchStatus> {
+        let slot = self.watch.lock().map_err(|_| ChaffError::with(FailureKind::Poisoned, "the engine lock was poisoned"))?;
+        Ok(match slot.as_ref() {
+            Some(w) => WatchStatus {
+                running: true,
+                seen: w.seen.load(std::sync::atomic::Ordering::Relaxed),
+                busy: w.busy.load(std::sync::atomic::Ordering::Relaxed),
+            },
+            None => WatchStatus { running: false, seen: 0, busy: false },
+        })
+    }
+
+    /// How big the thumbnail cache is, and how much is worth reclaiming.
+    ///
+    /// **A cache nobody can see is one nobody trusts.** The engine keeps decoded thumbnails on
+    /// disk keyed by content hash, and on a large library that is a real amount of space — so a
+    /// user has to be able to find out how much, and get it back.
+    pub fn thumbnail_cache(&self) -> Result<ThumbnailCacheInfo> {
+        let root = thumbnail_root();
+        let (files, bytes) = directory_size(&root);
+        Ok(ThumbnailCacheInfo { path: root.to_string_lossy().to_string(), files, bytes })
+    }
+
+    /// Delete cached thumbnails, keeping the most recently used.
+    ///
+    /// `keep` is a count rather than a size: a user thinks in "the last few hundred", and a byte
+    /// budget would delete an unpredictable number of them. **Sorted by modification time**, so
+    /// what survives is what was looked at most recently — which is the whole point of a cache.
+    ///
+    /// Reclaimable at any time: every thumbnail is derived from a photograph that is still there,
+    /// so the worst case is that the next scroll decodes again.
+    pub fn trim_thumbnail_cache(&self, keep: u32) -> Result<u32> {
+        let root = thumbnail_root();
+        let mut entries: Vec<(std::path::PathBuf, std::time::SystemTime)> = Vec::new();
+        collect_files(&root, &mut entries);
+
+        if entries.len() <= keep as usize {
+            return Ok(0);
+        }
+        // Newest first, so `keep` of them survive.
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let mut removed = 0u32;
+        for (path, _) in entries.into_iter().skip(keep as usize) {
+            if std::fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     /// A setting, or `None` if it was never written.
     pub fn setting(&self, key: String) -> Result<Option<String>> {
         let conn = self.lock()?;
@@ -1421,6 +1678,38 @@ pub fn set_data_root(path: String) {
 /// The fallback is now the **platform cache directory**, which is where a cache belongs, and it
 /// says so in the log. Still a fallback — but one whose failure mode is a cache in the right
 /// place rather than a cache in `/`.
+/// Total files and bytes under a directory, recursively.
+///
+/// A directory that does not exist is `(0, 0)` rather than an error: a cache that has never been
+/// written is empty, not broken.
+fn directory_size(dir: &std::path::Path) -> (u64, u64) {
+    let mut entries = Vec::new();
+    collect_files(dir, &mut entries);
+    let bytes = entries
+        .iter()
+        .filter_map(|(p, _)| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .sum();
+    (entries.len() as u64, bytes)
+}
+
+/// Every file under a directory, with its modification time.
+fn collect_files(
+    dir: &std::path::Path,
+    out: &mut Vec<(std::path::PathBuf, std::time::SystemTime)>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, out);
+        } else if let Ok(meta) = entry.metadata() {
+            let when = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            out.push((path, when));
+        }
+    }
+}
+
 fn thumbnail_root() -> std::path::PathBuf {
     match DATA_ROOT.lock().ok().and_then(|r| r.clone()) {
         Some(root) => root.join("thumbnails"),

@@ -619,6 +619,7 @@ version = "0.1.0"
 dependencies = [
  "chaff-core",
  "chaff-faces",
+ "libc",
  "log",
  "tempfile",
  "thiserror 2.0.21",

@@ -25,6 +25,18 @@ actor ThumbnailLoader {
         memory.countLimit = 400
     }
 
+    /// A larger render, for the loupe.
+    func loupe(for id: Int64) async -> NSImage? {
+        // One unwrap: `try?` **flattens** in modern Swift, so a throwing call returning `String?`
+        // gives `String?` and not `String??`. The grid's loader learned this already.
+        guard let path = try? EngineHolder.shared.thumbnailPath(for: id, size: "loupe") else {
+            return nil
+        }
+        // Decoded off the main actor, like the grid's. A 1024-pixel decode is ~4 MB of pixels and
+        // doing it in `body` is what turns paging through a shoot into a slideshow.
+        return NSImage(contentsOfFile: path)
+    }
+
     func image(for id: Int64) async -> NSImage? {
         if let hit = memory.object(forKey: NSNumber(value: id)) {
             return hit
@@ -37,7 +49,7 @@ actor ThumbnailLoader {
             // One unwrap, not two: `try?` **flattens** in modern Swift, so a throwing call
             // returning `String?` gives `String?` and not `String??`. I assumed the older
             // nesting and the compiler said otherwise.
-            guard let path = try? EngineHolder.shared.thumbnailPath(for: id) else { return nil }
+            guard let path = try? EngineHolder.shared.gridPath(for: id) else { return nil }
             return NSImage(contentsOfFile: path)
         }
         inFlight[id] = task
@@ -62,8 +74,22 @@ final class EngineHolder: @unchecked Sendable {
 
     func set(_ engine: Engine) { self.engine = engine }
 
-    func thumbnailPath(for id: Int64) throws -> String? {
+    /// A thumbnail at a given size.
+    ///
+    /// Three sizes, and they are not interchangeable: **grid** is 256 and is what a scrolling
+    /// wall of tiles needs; **loupe** is 1024 and is what fills a window; **zoom** is 2048 and is
+    /// for judging focus at 100%. Asking for a loupe where a grid belongs decodes four times the
+    /// pixels for every tile on screen, and asking for a grid in the loupe shows a photograph too
+    /// soft to decide on.
+    func thumbnailPath(for id: Int64, size: String = "grid") throws -> String? {
+        guard let engine else { return nil }
+        return try engine.thumbnail(photoId: id, size: size)
+    }
+
+    /// The old single-size entry point, kept because the grid calls it on every tile.
+    func gridPath(for id: Int64) throws -> String? {
         guard let engine else { return nil }
         return try engine.thumbnail(photoId: id, size: "grid")
     }
+
 }

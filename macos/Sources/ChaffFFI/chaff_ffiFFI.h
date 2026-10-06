@@ -414,6 +414,16 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_settings(uint64_t ptr, RustCallStat
 RustBuffer uniffi_chaff_ffi_fn_method_engine_split_person(uint64_t ptr, int64_t person_id, RustBuffer face_ids, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_START_WATCHING
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_START_WATCHING
+RustBuffer uniffi_chaff_ffi_fn_method_engine_start_watching(uint64_t ptr, RustBuffer root, int64_t library_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_STOP_WATCHING
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_STOP_WATCHING
+RustBuffer uniffi_chaff_ffi_fn_method_engine_stop_watching(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TAGS
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TAGS
 RustBuffer uniffi_chaff_ffi_fn_method_engine_tags(uint64_t ptr, int64_t library_id, RustCallStatus *_Nonnull out_status
@@ -424,9 +434,24 @@ RustBuffer uniffi_chaff_ffi_fn_method_engine_tags(uint64_t ptr, int64_t library_
 RustBuffer uniffi_chaff_ffi_fn_method_engine_thumbnail(uint64_t ptr, int64_t photo_id, RustBuffer size, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_THUMBNAIL_CACHE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_THUMBNAIL_CACHE
+RustBuffer uniffi_chaff_ffi_fn_method_engine_thumbnail_cache(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TRASH
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TRASH
 RustBuffer uniffi_chaff_ffi_fn_method_engine_trash(uint64_t ptr, RustBuffer root, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TRIM_THUMBNAIL_CACHE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_TRIM_THUMBNAIL_CACHE
+uint32_t uniffi_chaff_ffi_fn_method_engine_trim_thumbnail_cache(uint64_t ptr, uint32_t keep, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_WATCH_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_WATCH_STATUS
+RustBuffer uniffi_chaff_ffi_fn_method_engine_watch_status(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_FN_METHOD_ENGINE_WRITE_SIDECARS
@@ -878,6 +903,18 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_split_person(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_START_WATCHING
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_START_WATCHING
+uint16_t uniffi_chaff_ffi_checksum_method_engine_start_watching(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_STOP_WATCHING
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_STOP_WATCHING
+uint16_t uniffi_chaff_ffi_checksum_method_engine_stop_watching(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TAGS
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TAGS
 uint16_t uniffi_chaff_ffi_checksum_method_engine_tags(void
@@ -890,9 +927,27 @@ uint16_t uniffi_chaff_ffi_checksum_method_engine_thumbnail(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_THUMBNAIL_CACHE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_THUMBNAIL_CACHE
+uint16_t uniffi_chaff_ffi_checksum_method_engine_thumbnail_cache(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TRASH
 #define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TRASH
 uint16_t uniffi_chaff_ffi_checksum_method_engine_trash(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TRIM_THUMBNAIL_CACHE
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_TRIM_THUMBNAIL_CACHE
+uint16_t uniffi_chaff_ffi_checksum_method_engine_trim_thumbnail_cache(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_WATCH_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_CHAFF_FFI_CHECKSUM_METHOD_ENGINE_WATCH_STATUS
+uint16_t uniffi_chaff_ffi_checksum_method_engine_watch_status(void
     
 );
 #endif

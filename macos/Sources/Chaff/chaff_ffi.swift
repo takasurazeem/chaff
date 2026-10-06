@@ -910,6 +910,32 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func splitPerson(personId: Int64, faceIds: [Int64]) throws  -> Int64?
     
     /**
+     * Start watching a library for changes on disk.
+     *
+     * # What it does, and what it deliberately does not
+     *
+     * It re-indexes when files settle — a copy in progress produces hundreds of events, and
+     * indexing on each would be hundreds of passes. The accumulator debounces.
+     *
+     * **It does not run while a delete plan is pending.** `DeleteSession::commit` refuses any
+     * file that was not in the plan the user was shown, so a re-index during the confirmation
+     * dialog turned Confirm into a hard failure with no recovery path — and the user had no way
+     * to know a watcher caused it.
+     *
+     * Idempotent: calling it twice for the same library is a no-op rather than two watchers.
+     */
+    func startWatching(root: String, libraryId: Int64) throws  -> WatchStatus
+    
+    /**
+     * Stop watching.
+     *
+     * The thread is asked to stop rather than killed, and it is **not joined**: a re-index in
+     * progress commits each photograph as it goes, and blocking the UI on a pass that may take
+     * minutes to reach its next check is worse than letting it finish in the background.
+     */
+    func stopWatching() throws  -> WatchStatus
+    
+    /**
      * Every tag in a library, with counts, ranked by how many photographs carry it.
      */
     func tags(libraryId: Int64) throws  -> [TagCount]
@@ -924,6 +950,15 @@ public protocol EngineProtocol: AnyObject, Sendable {
     func thumbnail(photoId: Int64, size: String) throws  -> String?
     
     /**
+     * How big the thumbnail cache is, and how much is worth reclaiming.
+     *
+     * **A cache nobody can see is one nobody trusts.** The engine keeps decoded thumbnails on
+     * disk keyed by content hash, and on a large library that is a real amount of space — so a
+     * user has to be able to find out how much, and get it back.
+     */
+    func thumbnailCache() throws  -> ThumbnailCacheInfo
+    
+    /**
      * Everything in the library's trash.
      *
      * Newest first, because the thing a user wants back is almost always the last thing they
@@ -931,6 +966,23 @@ public protocol EngineProtocol: AnyObject, Sendable {
      * scroll.
      */
     func trash(root: String) throws  -> [TrashEntry]
+    
+    /**
+     * Delete cached thumbnails, keeping the most recently used.
+     *
+     * `keep` is a count rather than a size: a user thinks in "the last few hundred", and a byte
+     * budget would delete an unpredictable number of them. **Sorted by modification time**, so
+     * what survives is what was looked at most recently — which is the whole point of a cache.
+     *
+     * Reclaimable at any time: every thumbnail is derived from a photograph that is still there,
+     * so the worst case is that the next scroll decodes again.
+     */
+    func trimThumbnailCache(keep: UInt32) throws  -> UInt32
+    
+    /**
+     * Is a library being watched, and what has it seen?
+     */
+    func watchStatus() throws  -> WatchStatus
     
     /**
      * Write XMP sidecars for the photographs that have a decision.
@@ -1520,6 +1572,48 @@ open func splitPerson(personId: Int64, faceIds: [Int64])throws  -> Int64?  {
 }
     
     /**
+     * Start watching a library for changes on disk.
+     *
+     * # What it does, and what it deliberately does not
+     *
+     * It re-indexes when files settle — a copy in progress produces hundreds of events, and
+     * indexing on each would be hundreds of passes. The accumulator debounces.
+     *
+     * **It does not run while a delete plan is pending.** `DeleteSession::commit` refuses any
+     * file that was not in the plan the user was shown, so a re-index during the confirmation
+     * dialog turned Confirm into a hard failure with no recovery path — and the user had no way
+     * to know a watcher caused it.
+     *
+     * Idempotent: calling it twice for the same library is a no-op rather than two watchers.
+     */
+open func startWatching(root: String, libraryId: Int64)throws  -> WatchStatus  {
+    return try  FfiConverterTypeWatchStatus_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_start_watching(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(root),
+        FfiConverterInt64.lower(libraryId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Stop watching.
+     *
+     * The thread is asked to stop rather than killed, and it is **not joined**: a re-index in
+     * progress commits each photograph as it goes, and blocking the UI on a pass that may take
+     * minutes to reach its next check is worse than letting it finish in the background.
+     */
+open func stopWatching()throws  -> WatchStatus  {
+    return try  FfiConverterTypeWatchStatus_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_stop_watching(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Every tag in a library, with counts, ranked by how many photographs carry it.
      */
 open func tags(libraryId: Int64)throws  -> [TagCount]  {
@@ -1551,6 +1645,22 @@ open func thumbnail(photoId: Int64, size: String)throws  -> String?  {
 }
     
     /**
+     * How big the thumbnail cache is, and how much is worth reclaiming.
+     *
+     * **A cache nobody can see is one nobody trusts.** The engine keeps decoded thumbnails on
+     * disk keyed by content hash, and on a large library that is a real amount of space — so a
+     * user has to be able to find out how much, and get it back.
+     */
+open func thumbnailCache()throws  -> ThumbnailCacheInfo  {
+    return try  FfiConverterTypeThumbnailCacheInfo_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_thumbnail_cache(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Everything in the library's trash.
      *
      * Newest first, because the thing a user wants back is almost always the last thing they
@@ -1563,6 +1673,38 @@ open func trash(root: String)throws  -> [TrashEntry]  {
     uniffi_chaff_ffi_fn_method_engine_trash(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Delete cached thumbnails, keeping the most recently used.
+     *
+     * `keep` is a count rather than a size: a user thinks in "the last few hundred", and a byte
+     * budget would delete an unpredictable number of them. **Sorted by modification time**, so
+     * what survives is what was looked at most recently — which is the whole point of a cache.
+     *
+     * Reclaimable at any time: every thumbnail is derived from a photograph that is still there,
+     * so the worst case is that the next scroll decodes again.
+     */
+open func trimThumbnailCache(keep: UInt32)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_trim_thumbnail_cache(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(keep),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Is a library being watched, and what has it seen?
+     */
+open func watchStatus()throws  -> WatchStatus  {
+    return try  FfiConverterTypeWatchStatus_lift(try rustCallWithError(FfiConverterTypeChaffError_lift) {
+        uniffiCallStatus in
+    uniffi_chaff_ffi_fn_method_engine_watch_status(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -3135,6 +3277,67 @@ public func FfiConverterTypeTagPassReport_lower(_ value: TagPassReport) -> RustB
 
 
 /**
+ * What the thumbnail cache holds.
+ */
+public struct ThumbnailCacheInfo: Equatable, Hashable {
+    public var path: String
+    public var files: UInt64
+    public var bytes: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, files: UInt64, bytes: UInt64) {
+        self.path = path
+        self.files = files
+        self.bytes = bytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ThumbnailCacheInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeThumbnailCacheInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ThumbnailCacheInfo {
+        return
+            try ThumbnailCacheInfo(
+                path: FfiConverterString.read(from: &buf), 
+                files: FfiConverterUInt64.read(from: &buf), 
+                bytes: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ThumbnailCacheInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt64.write(value.files, into: &buf)
+        FfiConverterUInt64.write(value.bytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThumbnailCacheInfo_lift(_ buf: RustBuffer) throws -> ThumbnailCacheInfo {
+    return try FfiConverterTypeThumbnailCacheInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThumbnailCacheInfo_lower(_ value: ThumbnailCacheInfo) -> RustBuffer {
+    return FfiConverterTypeThumbnailCacheInfo.lower(value)
+}
+
+
+/**
  * One operation in the trash.
  *
  * **An operation, not a file.** The manifest records what one confirmation moved, and restoring
@@ -3230,6 +3433,79 @@ public func FfiConverterTypeTrashEntry_lift(_ buf: RustBuffer) throws -> TrashEn
 #endif
 public func FfiConverterTypeTrashEntry_lower(_ value: TrashEntry) -> RustBuffer {
     return FfiConverterTypeTrashEntry.lower(value)
+}
+
+
+/**
+ * Whether a library is being watched, and what the watcher has seen.
+ */
+public struct WatchStatus: Equatable, Hashable {
+    public var running: Bool
+    /**
+     * How many files have changed since the watcher started.
+     */
+    public var seen: UInt64
+    /**
+     * True while a re-index triggered by the watcher is running.
+     */
+    public var busy: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(running: Bool, 
+        /**
+         * How many files have changed since the watcher started.
+         */seen: UInt64, 
+        /**
+         * True while a re-index triggered by the watcher is running.
+         */busy: Bool) {
+        self.running = running
+        self.seen = seen
+        self.busy = busy
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WatchStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWatchStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WatchStatus {
+        return
+            try WatchStatus(
+                running: FfiConverterBool.read(from: &buf), 
+                seen: FfiConverterUInt64.read(from: &buf), 
+                busy: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WatchStatus, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.running, into: &buf)
+        FfiConverterUInt64.write(value.seen, into: &buf)
+        FfiConverterBool.write(value.busy, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWatchStatus_lift(_ buf: RustBuffer) throws -> WatchStatus {
+    return try FfiConverterTypeWatchStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWatchStatus_lower(_ value: WatchStatus) -> RustBuffer {
+    return FfiConverterTypeWatchStatus.lower(value)
 }
 
 
@@ -4125,13 +4401,28 @@ private let initializationResult: InitializationResult = {
     if (uniffi_chaff_ffi_checksum_method_engine_split_person() != 24982) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_start_watching() != 62623) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_stop_watching() != 49520) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_tags() != 10764) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_thumbnail() != 9552) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_chaff_ffi_checksum_method_engine_thumbnail_cache() != 13016) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_chaff_ffi_checksum_method_engine_trash() != 22919) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_trim_thumbnail_cache() != 16302) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_chaff_ffi_checksum_method_engine_watch_status() != 48767) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_chaff_ffi_checksum_method_engine_write_sidecars() != 47160) {

@@ -58,6 +58,11 @@
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FaceReview.bc",
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FaceReview.o"
   },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FlowRow.swift" : {
+    "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FlowRow.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FlowRow.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FlowRow.o"
+  },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/IndexingOverlay.swift" : {
     "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/IndexingOverlay.o",
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/IndexingOverlay.bc",
@@ -77,6 +82,11 @@
     "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/LibraryView.o",
     "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/LibraryView.bc",
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/LibraryView.o"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Loupe.swift" : {
+    "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Loupe.o",
+    "llvm-bc" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Loupe.bc",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/Loupe.o"
   },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Navigator/FolderList.swift" : {
     "index-unit-output-path" : "/Chaff.build/Release/Chaff-p.build/Objects-normal/arm64/FolderList.o",

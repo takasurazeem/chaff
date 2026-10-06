@@ -29,6 +29,11 @@ struct ChaffApp: App {
             CommandGroup(after: .newItem) {
                 Button("Open Library…") { openLibrary() }
                     .keyboardShortcut("o")
+                // **Idempotent and incremental**, so this is safe to press — the engine reuses
+                // cached measurements and reconciles rather than rebuilding.
+                Button("Re-index") { Task { await model.reindex() } }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .disabled(model.library == nil)
             }
 
             // **The culling keys, in the menu bar.**
@@ -46,6 +51,12 @@ struct ChaffApp: App {
                 Divider()
                 Button("Reject") { Task { await culling.toggleReject(in: model) } }
                     .keyboardShortcut("x", modifiers: [])
+                Divider()
+                // **Space, because that is what it is everywhere else.** Finder, Photos, Preview
+                // and every other viewer on the platform use it for "show me this one", and a
+                // culling tool that chose something else would be the odd one out.
+                Button("Look at This One") { model.showLoupe = true }
+                    .keyboardShortcut(.space, modifiers: [])
                 Divider()
                 Button("Undo") { Task { await culling.undo(in: model) } }
                     .keyboardShortcut("z", modifiers: .command)
@@ -71,6 +82,19 @@ struct ChaffApp: App {
                 Button("Write Sidecars") { Task { await model.writeSidecars() } }
                 Button("This Machine…") { showCapabilities = true }
                 Button("Check Tagging Endpoint") { Task { await model.diagnoseTagging() } }
+                Divider()
+                // **A toggle, and it says what it is.** A watcher the user cannot see is one
+                // that re-indexes the grid underneath them with nothing on screen to explain
+                // why the photographs changed.
+                Toggle(
+                    "Watch This Library",
+                    isOn: Binding(
+                        get: { model.watchStatus.running },
+                        set: { on in
+                            Task { on ? await model.startWatching() : await model.stopWatching() }
+                        }
+                    )
+                )
             }
         }
     }

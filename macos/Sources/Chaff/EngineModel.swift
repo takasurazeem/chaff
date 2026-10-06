@@ -50,6 +50,13 @@ final class EngineModel {
     private(set) var sidecarReport: SidecarReport?
     private(set) var endpointReport: EndpointReport?
     var machine: Capabilities?
+    var cacheInfo: ThumbnailCacheInfo?
+    private(set) var watchStatus = WatchStatus(running: false, seen: 0, busy: false)
+    /// Whether the loupe is open.
+    ///
+    /// On the model rather than the view because **the menu opens it and the view shows it** —
+    /// two places that cannot see each other's `@State`.
+    var showLoupe = false
     private(set) var isIndexing = false
     /// `0...1`, or `nil` while the total is unknown.
     ///
@@ -482,6 +489,80 @@ final class EngineModel {
         return (try? await Task.detached(priority: .utility) {
             try engine.photoExplanation(photoId: photoId)
         }.value) ?? []
+    }
+
+    /// What the thumbnail cache holds.
+    func thumbnailCache() async -> ThumbnailCacheInfo? {
+        let engine = self.engine
+        return try? await Task.detached(priority: .utility) {
+            try engine.thumbnailCache()
+        }.value
+    }
+
+    /// Reclaim cached thumbnails, keeping the most recently used.
+    func trimThumbnailCache(keep: UInt32 = 500) async -> UInt32 {
+        let engine = self.engine
+        let removed = (try? await Task.detached(priority: .utility) {
+            try engine.trimThumbnailCache(keep: keep)
+        }.value) ?? 0
+        cacheInfo = await thumbnailCache()
+        return removed
+    }
+
+    /// Index the open library again.
+    ///
+    /// **Idempotent and incremental** — the engine reconciles the catalog against what is on disk
+    /// and reuses cached measurements, so this is cheap when nothing has changed and correct when
+    /// something has. That is what makes it safe as a menu item rather than a thing to be
+    /// careful about.
+    func reindex() async {
+        guard let library else { return }
+        isIndexing = true
+        progress = nil
+        progressLabel = "re-indexing"
+        passStarted = nil
+        lastSample = nil
+        rate = 0
+        defer { isIndexing = false }
+
+        do {
+            let report = try await index(library.root)
+            self.library = report.library
+            photos = try self.engine.photos(libraryId: report.library.id)
+            folders = try self.engine.folders(libraryId: report.library.id)
+            tags = try self.engine.tags(libraryId: report.library.id).map { ($0.name, $0.count) }
+            people = try self.engine.people(libraryId: report.library.id)
+            try await rebuildLookups()
+            progressLabel = ""
+            eta = nil
+        } catch {
+            errorMessage = describe(error)
+        }
+    }
+
+    /// Watch the library for changes on disk.
+    func startWatching() async {
+        guard let library else { return }
+        let engine = self.engine
+        watchStatus = (try? await Task.detached(priority: .utility) {
+            try engine.startWatching(root: library.root, libraryId: library.id)
+        }.value) ?? WatchStatus(running: false, seen: 0, busy: false)
+    }
+
+    /// Stop watching.
+    func stopWatching() async {
+        let engine = self.engine
+        watchStatus = (try? await Task.detached(priority: .utility) {
+            try engine.stopWatching()
+        }.value) ?? WatchStatus(running: false, seen: 0, busy: false)
+    }
+
+    /// Is a library being watched?
+    func refreshWatchStatus() async {
+        let engine = self.engine
+        watchStatus = (try? await Task.detached(priority: .utility) {
+            try engine.watchStatus()
+        }.value) ?? watchStatus
     }
 
     /// Write a decision.
