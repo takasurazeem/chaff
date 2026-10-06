@@ -322,3 +322,47 @@ struct QualityFilterTests {
         #expect(f.isActive, "a quality filter must offer a way back")
     }
 }
+
+
+/// The filter bar's layout rules, as far as they can be tested without a window.
+///
+/// # Why this is worth a test at all
+///
+/// The bar shipped **unreadable**: fourteen chips and three menus in one `HStack` with nothing
+/// preventing compression, so SwiftUI shrank every `Text` until it wrapped one character per
+/// line. "Engine" became a vertical column of six letters.
+///
+/// A layout cannot be asserted from a unit test, but the *reason* it broke can: every element in
+/// that bar needs a floor under its width. This checks that the source has one, which is a coarse
+/// test and the honest one available — the alternative is finding out by looking, which is how
+/// this was found.
+struct FilterBarLayoutTests {
+    private var source: String {
+        // The file, read at test time. A source-level assertion is unusual and appropriate here:
+        // the failure mode is a *missing modifier*, which no runtime value can express.
+        (try? String(
+            contentsOfFile: #filePath
+                .replacingOccurrences(of: "Tests/ChaffTests/FilterTests.swift", with: "Sources/Chaff/Views/FilterBar.swift"),
+            encoding: .utf8
+        )) ?? ""
+    }
+
+    @Test("The bar scrolls rather than compressing")
+    func scrolls() {
+        #expect(
+            source.contains("ScrollView(.horizontal)"),
+            "the filter bar must scroll — without it SwiftUI compresses every chip instead"
+        )
+    }
+
+    @Test("Every compressible element has a width floor")
+    func floors() {
+        // A chip, a group label and the three menus. Each is a thing that becomes unreadable
+        // rather than overflowing.
+        let floors = source.components(separatedBy: ".fixedSize()").count - 1
+        #expect(
+            floors >= 5,
+            "expected a width floor on the chip, the group labels and the menus; found \(floors)"
+        )
+    }
+}

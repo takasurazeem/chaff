@@ -26,7 +26,17 @@ struct FilterBar: View {
     private var qualityCounts: [Filters.Quality: Int] { Filters.qualityCounts(photos) }
 
     var body: some View {
-        HStack(spacing: 10) {
+        // **Scrollable, because the filters do not fit and must not pretend to.**
+        //
+        // The first version was a bare `HStack`, and with fourteen chips and three menus in a
+        // window that is often narrower than that, SwiftUI compressed every `Text` to its minimum
+        // width — which wraps one character per line. "Engine" became a vertical column of six
+        // letters, and the whole bar was unreadable.
+        //
+        // A layout that silently destroys its content is worse than one that overflows: overflow
+        // is visible, and a scroll is the obvious answer to it.
+        ScrollView(.horizontal) {
+            HStack(spacing: 10) {
             // **Two groups, labelled.** "Keep 45" and "Rated 12" are different questions — what
             // the engine thinks and what the user decided — and unlabelled chips side by side
             // read as one list where the numbers contradict each other.
@@ -89,16 +99,19 @@ struct FilterBar: View {
                 yearFacet
             }
 
-            if filters.isActive {
-                Button("Clear") { filters = Filters() }
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .help("Show every photograph again")
+                if filters.isActive {
+                    Button("Clear") { filters = Filters() }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .help("Show every photograph again")
+                }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .scrollIndicators(.hidden)
     }
 
     @ViewBuilder
@@ -111,6 +124,7 @@ struct FilterBar: View {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+                .fixedSize()
                 .accessibilityHidden(true)
             content()
         }
@@ -132,7 +146,10 @@ struct FilterBar: View {
             }
         }
         .labelsHidden()
-        .frame(maxWidth: 170)
+        // `fixedSize` before the frame: a `Picker` with a `maxWidth` and no floor will shrink to
+        // nothing rather than overflow, and an unreadable menu is worse than a wide one.
+        .fixedSize()
+        .frame(maxWidth: 190)
         .accessibilityLabel(title)
     }
 
@@ -145,7 +162,8 @@ struct FilterBar: View {
             }
         }
         .labelsHidden()
-        .frame(maxWidth: 110)
+        .fixedSize()
+        .frame(maxWidth: 130)
         .accessibilityLabel("Year")
     }
 
@@ -184,6 +202,10 @@ struct Chip: View {
             .foregroundStyle(foreground)
         }
         .buttonStyle(.plain)
+        // **Never compress.** A chip is a word and a number; it has no state in which showing
+        // half of each is useful, and without this SwiftUI will shrink it to fit whatever space
+        // is left — which is how "Reject" became a vertical column of six letters.
+        .fixedSize()
         // **The count is part of the label, not decoration.** A screen reader hearing "Reject"
         // and not "Reject, 312" loses the number that makes the chip worth reading.
         .accessibilityLabel("\(label), \(count) photographs")
