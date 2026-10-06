@@ -39,6 +39,13 @@ struct ChaffApp: App {
                 }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(model.selection.isEmpty)
+                Divider()
+                // **Copying filenames, which is what a cull actually needs.** Not the images —
+                // those are already on disk and copying them would duplicate a library. What a
+                // photographer wants is the list, to paste into a message or a folder search.
+                Button("Copy Filenames") { model.copySelectionNames() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .disabled(model.selection.isEmpty)
             }
 
             CommandGroup(after: .newItem) {

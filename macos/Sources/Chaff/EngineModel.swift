@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import chaff_ffiFFI
@@ -122,6 +123,29 @@ final class EngineModel {
     }
 
     /// Open a library, indexing it if it has changed.
+    /// The library opened last, remembered across launches.
+    ///
+    /// **`UserDefaults`, not the engine's settings table.** The engine's settings live in the
+    /// catalog, and the catalog lives *inside* the library — so remembering which library to open
+    /// in the library's own database is a circle. This is application state, and it belongs where
+    /// the application keeps it.
+    private static let lastLibraryKey = "chaff.lastLibrary"
+
+    /// Re-open whatever was open last, if it is still there.
+    ///
+    /// Called once at launch. **A path that no longer exists is not an error** — a folder on an
+    /// unmounted drive, a library that was moved — so it is cleared and the empty state shows
+    /// instead. An alert on launch for a library the user did not ask to open is a worse greeting
+    /// than a window that says "open a folder".
+    func reopenLastLibrary() async {
+        guard let path = UserDefaults.standard.string(forKey: Self.lastLibraryKey) else { return }
+        guard FileManager.default.fileExists(atPath: path) else {
+            UserDefaults.standard.removeObject(forKey: Self.lastLibraryKey)
+            return
+        }
+        await open(URL(fileURLWithPath: path))
+    }
+
     func open(_ url: URL) async {
         isIndexing = true
         errorMessage = nil
@@ -131,6 +155,7 @@ final class EngineModel {
         do {
             let report = try await index(path)
             library = report.library
+            UserDefaults.standard.set(path, forKey: Self.lastLibraryKey)
             photos = try engine.photos(libraryId: report.library.id)
             folders = try engine.folders(libraryId: report.library.id)
             tags = try engine.tags(libraryId: report.library.id).map { ($0.name, $0.count) }
@@ -597,6 +622,23 @@ final class EngineModel {
         watchStatus = (try? await Task.detached(priority: .utility) {
             try engine.watchStatus()
         }.value) ?? watchStatus
+    }
+
+    /// Copy the selected photographs' filenames to the pasteboard.
+    ///
+    /// **Filenames, not the images.** The files are already on disk and copying them would
+    /// duplicate a library; what a photographer wants after a cull is the *list*, to paste into a
+    /// message or a folder search.
+    ///
+    /// In grid order rather than selection order, because a set has no order and the order a user
+    /// sees is the one they mean.
+    func copySelectionNames() {
+        let names = photos
+            .filter { selection.contains($0.id) }
+            .map(\.stem)
+        guard !names.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(names.joined(separator: "\n"), forType: .string)
     }
 
     /// Select every photograph the grid is currently showing.
