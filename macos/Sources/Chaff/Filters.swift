@@ -73,6 +73,48 @@ struct Filters: Equatable {
         }
     }
 
+    /// How the grid is ordered.
+    ///
+    /// # Why the default is the engine's order
+    ///
+    /// The engine returns photographs in a **shoot-relative ranking order** — the best frame of a
+    /// burst first. That is the order a culling session wants: the keeper is at the top of each
+    /// group, and a user scrolling sees the good ones before the near-misses.
+    ///
+    /// Re-sorting by name would destroy that, which is why it is a choice rather than the default.
+    enum Sort: String, CaseIterable, Identifiable {
+        /// The engine's ranking, best first. The default, and the one a cull wants.
+        case ranked
+        case nameAscending
+        case nameDescending
+        /// Newest first, for a shoot where the sequence matters more than the score.
+        case newest
+        case oldest
+        /// Sharpest first — the one to reach for when a burst is too close to call.
+        case sharpest
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .ranked: "Ranked"
+            case .nameAscending: "Name A–Z"
+            case .nameDescending: "Name Z–A"
+            case .newest: "Newest"
+            case .oldest: "Oldest"
+            case .sharpest: "Sharpest"
+            }
+        }
+    }
+
+    var sort: Sort = .ranked
+    /// Filename search. Empty means every photograph.
+    ///
+    /// **Case- and diacritic-insensitive**, which is what a search field means everywhere else on
+    /// the platform — and a photographer typing "eid" should find `Eid`, and "cafe" should find
+    /// `Café`.
+    var search: String = ""
+
     var band: Band = .all
     /// `nil` is every photograph. One value rather than a set, because the four are not
     /// independent — "soft" and "sharp" together is a contradiction, and a UI that allowed it
@@ -87,6 +129,66 @@ struct Filters: Equatable {
     var isActive: Bool {
         band != .all || decision != .all || quality != nil
             || camera != nil || lens != nil || year != nil
+            || !search.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Does a photograph survive the search field?
+    ///
+    /// Searches the **stem**, not the full path: a user looking for `IMG_0133` does not want every
+    /// photograph whose folder happens to contain those characters.
+    func matchesSearch(_ photo: Photo) -> Bool {
+        let needle = search.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return true }
+        return photo.stem.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+
+    /// The order to show a list in.
+    ///
+    /// **Stable for equal keys**, because a sort that reorders ties arbitrarily makes a grid
+    /// reshuffle while the user is looking at it — and `sorted(by:)` in Swift is not guaranteed
+    /// stable, so the tie-break is explicit.
+    func sort(_ photos: [Photo]) -> [Photo] {
+        switch sort {
+        case .ranked:
+            // The engine's order, untouched. Sorting by composite here would be a *different*
+            // order from the one the engine produced, because the engine ranks within a shoot.
+            return photos
+        case .nameAscending:
+            return photos.sorted { ($0.stem, $0.id) < ($1.stem, $1.id) }
+        case .nameDescending:
+            return photos.sorted { ($1.stem, $1.id) < ($0.stem, $0.id) }
+        case .newest:
+            // A photograph with no capture date sorts last rather than first: "unknown" is not
+            // "oldest", and putting the undated ones at the top of a date sort is a surprise.
+            return photos.sorted { a, b in
+                switch (a.capturedAt, b.capturedAt) {
+                case let (x?, y?): return x == y ? a.id < b.id : x > y
+                case (nil, _?): return false
+                case (_?, nil): return true
+                default: return a.id < b.id
+                }
+            }
+        case .oldest:
+            return photos.sorted { a, b in
+                switch (a.capturedAt, b.capturedAt) {
+                case let (x?, y?): return x == y ? a.id < b.id : x < y
+                case (nil, _?): return false
+                case (_?, nil): return true
+                default: return a.id < b.id
+                }
+            }
+        case .sharpest:
+            // **Absent last, again.** A photograph the engine could not measure is not the
+            // sharpest thing in the library.
+            return photos.sorted { a, b in
+                switch (a.focus, b.focus) {
+                case let (x?, y?): return x == y ? a.id < b.id : x > y
+                case (nil, _?): return false
+                case (_?, nil): return true
+                default: return a.id < b.id
+                }
+            }
+        }
     }
 
     /// How many photographs each quality signal holds, for the chips' counts.

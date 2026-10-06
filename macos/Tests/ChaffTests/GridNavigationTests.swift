@@ -20,7 +20,7 @@ struct GridNavigationTests {
             Photo(
                 id: Int64(i), stem: "IMG_\(i)", dir: "/lib", state: "pair", needsReview: false,
                 composite: nil, band: nil, rating: 0, rejected: false,
-                focus: nil, noise: nil, detail: nil, camera: nil, lens: nil, year: nil
+                capturedAt: nil, focus: nil, noise: nil, detail: nil, camera: nil, lens: nil, year: nil
             )
         }
     }

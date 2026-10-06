@@ -24,6 +24,7 @@ struct Inspector: View {
 
     @State private var detail: PhotoDetail?
     @State private var tags: [String] = []
+    @State private var explanation: [String] = []
     @State private var loadFailed = false
 
     /// What the panel is doing, as a value.
@@ -69,6 +70,7 @@ struct Inspector: View {
                 // sunset" and then the photograph's own tags is how a user checks the filter
                 // did what they meant — without it the results are a black box.
                 tags = await model.photoTags(photoId)
+                explanation = await model.photoExplanation(photoId)
             } catch {
                 loadFailed = true
             }
@@ -90,6 +92,18 @@ struct Inspector: View {
 
             if d.composite != nil || !d.terms.isEmpty {
                 Section("Score") {
+                    // **Why this score, in words.** The per-term percentiles below are the
+                    // numbers; this is the sentence on top of them, and it is what a user
+                    // pastes into a message when they disagree with the ranking.
+                    if !explanation.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(explanation, id: \.self) { line in
+                                Text(line).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .textSelection(.enabled)
+                    }
+
                     if let composite = d.composite {
                         LabeledContent("Overall") {
                             HStack(spacing: 6) {

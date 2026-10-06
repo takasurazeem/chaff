@@ -112,6 +112,14 @@ pub struct Photo {
     pub band: Option<String>,
     pub rating: u8,
     pub rejected: bool,
+    /// When the camera recorded it, as a Unix timestamp.
+    ///
+    /// **The camera's own clock, not an instant.** `parse_exif_datetime` treats the camera's local
+    /// wall-clock as if it were UTC, so differences between photographs are correct and the
+    /// absolute moment is not — which is why the inspector labels it "camera clock".
+    ///
+    /// Absent when the file carries no capture date: a stripped JPEG, a scan.
+    pub captured_at: Option<i64>,
     /// Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
     ///
     /// Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
@@ -351,6 +359,7 @@ impl Engine {
                     // Absent rather than zero when a metric was not measured — a raw this build
                     // cannot decode has no focus score, and `Some(0.0)` would file it under
                     // "blurry", which is a claim nobody made.
+                    captured_at: m.and_then(|m| m.captured_at),
                     focus: quality.get(&p.id).and_then(|q| q.focus),
                     noise: quality.get(&p.id).and_then(|q| q.noise),
                     detail: quality.get(&p.id).and_then(|q| q.detail),
@@ -1021,6 +1030,7 @@ impl Engine {
                 .into_iter()
                 .map(|f| FileInfo { name: f.name, path: f.path, role: f.role, size_bytes: f.size_bytes })
                 .collect(),
+            captured_at: d.captured_at,
             focus: quality.focus,
             noise: quality.noise,
             detail: quality.detail,
@@ -1030,7 +1040,6 @@ impl Engine {
             f_number: d.f_number,
             exposure_time: d.exposure_time,
             focal_length: d.focal_length,
-            captured_at: d.captured_at,
             composite: d.composite,
             band: d.band,
             terms: d

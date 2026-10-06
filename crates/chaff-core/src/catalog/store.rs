@@ -2656,6 +2656,12 @@ pub struct PhotoMetadata {
     pub lens: Option<String>,
     /// The year the camera recorded, from its local wall-clock. See `exif.rs`.
     pub year: Option<i32>,
+    /// The camera's own clock, as a Unix timestamp.
+    ///
+    /// **Carried as well as the year**, because a sort by date needs the order *within* a year —
+    /// and two photographs a minute apart on the same day are the case a shoot is actually
+    /// ordered by.
+    pub captured_at: Option<i64>,
 }
 
 /// Record what a decision was made about, so a rename does not orphan it.
@@ -2763,6 +2769,7 @@ pub fn photo_metadata(
             camera: combine_camera(make, model),
             lens: lens.filter(|l| !l.trim().is_empty()),
             year: captured_at.and_then(year_of),
+            captured_at,
         });
     }
     Ok(out)

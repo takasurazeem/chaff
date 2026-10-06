@@ -18,6 +18,41 @@ struct LibraryView: View {
     /// The plan the user is being asked to confirm, if any.
     @State private var pendingPlan: DeletePlan?
 
+    /// Ask for a folder and open it.
+    ///
+    /// The same code path the menu uses, reached from the view — an `NSOpenPanel` is the only way
+    /// to pick a folder, and it belongs to the view layer rather than the engine.
+    private func chooseFolder() async {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Open"
+        panel.message = "Choose a folder of photographs. Chaff reads it in place."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        await model.open(url)
+    }
+
+    /// What to show when nothing is open.
+    ///
+    /// **The first thing a new user sees**, and it was an empty grid with no explanation. An empty
+    /// grid reads as "this library has no photographs" — which is a different statement from "no
+    /// library is open", and the two have different answers.
+    @ViewBuilder
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No library open", systemImage: "photo.on.rectangle.angled")
+        } description: {
+            Text(
+                "Chaff reads a folder of photographs in place. It does not move or copy anything until you ask it to."
+            )
+        } actions: {
+            Button("Open a Folder…") { Task { await chooseFolder() } }
+                .buttonStyle(.borderedProminent)
+            Text("⌘O").font(.caption).foregroundStyle(.tertiary)
+        }
+    }
+
     var body: some View {
         // `@Bindable` for the bindings: `@Environment` hands back the object, and a `Binding`
         // needs the wrapper.
@@ -29,12 +64,23 @@ struct LibraryView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
         } detail: {
             ZStack {
-                if model.photos.isEmpty && !model.isIndexing {
-                    ContentUnavailableView(
-                        "No library open",
-                        systemImage: "photo.on.rectangle.angled",
-                        description: Text("Choose a folder of photographs with ⌘O.")
-                    )
+                // **Two states, not one.** "No library is open" and "this library has no
+                // photographs" are different statements with different answers — the first needs
+                // ⌘O, the second needs an explanation of why a folder full of files produced
+                // nothing. The condition below was one branch for both, so a user who opened an
+                // empty folder was told to open a folder.
+                if model.library == nil {
+                    emptyState
+                } else if model.photos.isEmpty && !model.isIndexing {
+                    ContentUnavailableView {
+                        Label("No photographs here", systemImage: "photo")
+                    } description: {
+                        Text(
+                            "The folder was read and nothing in it looked like a photograph. Raw files this build cannot decode, or a folder that only holds video."
+                        )
+                    } actions: {
+                        Button("Re-index") { Task { await model.reindex() } }
+                    }
                 } else {
                     VStack(spacing: 0) {
                         // **Above the grid, not in a menu.** A filter you have to open a menu to
@@ -173,6 +219,9 @@ struct LibraryView: View {
         } else {
             narrowed = model.photos
         }
-        return narrowed.filter(filters.matches)
+        // **Search and sort last**, because they act on what survived the filters — sorting a
+        // list and then filtering it would reorder the result of the filter, which is the same
+        // thing but does the expensive work twice.
+        return filters.sort(narrowed.filter(filters.matches).filter(filters.matchesSearch))
     }
 }

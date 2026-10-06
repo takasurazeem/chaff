@@ -24,7 +24,7 @@ struct FilterTests {
         Photo(
             id: id, stem: "IMG_\(id)", dir: "/lib", state: "pair", needsReview: false,
             composite: nil, band: band, rating: rating, rejected: rejected,
-            focus: focus, noise: noise, detail: detail,
+            capturedAt: nil, focus: focus, noise: noise, detail: detail,
             camera: camera, lens: lens, year: year
         )
     }
@@ -204,7 +204,7 @@ struct QualityFilterTests {
         Photo(
             id: id, stem: "IMG_\(id)", dir: "/lib", state: "pair", needsReview: false,
             composite: nil, band: nil, rating: 0, rejected: false,
-            focus: focus, noise: noise, detail: detail,
+            capturedAt: nil, focus: focus, noise: noise, detail: detail,
             camera: nil, lens: nil, year: nil
         )
     }
@@ -303,12 +303,12 @@ struct QualityFilterTests {
         let canon = Photo(
             id: 1, stem: "a", dir: "/lib", state: "pair", needsReview: false,
             composite: nil, band: nil, rating: 0, rejected: false,
-            focus: 3, noise: nil, detail: nil, camera: "Canon EOS RP", lens: nil, year: nil
+            capturedAt: nil, focus: 3, noise: nil, detail: nil, camera: "Canon EOS RP", lens: nil, year: nil
         )
         let other = Photo(
             id: 2, stem: "b", dir: "/lib", state: "pair", needsReview: false,
             composite: nil, band: nil, rating: 0, rejected: false,
-            focus: 3, noise: nil, detail: nil, camera: "Nikon Z6", lens: nil, year: nil
+            capturedAt: nil, focus: 3, noise: nil, detail: nil, camera: "Nikon Z6", lens: nil, year: nil
         )
         #expect(f.matches(canon))
         #expect(!f.matches(other), "soft, but not from this camera")
@@ -364,5 +364,131 @@ struct FilterBarLayoutTests {
             floors >= 5,
             "expected a width floor on the chip, the group labels and the menus; found \(floors)"
         )
+    }
+}
+
+
+/// The search field and the sort order.
+///
+/// Search is the control a user reaches for when they know what they are looking for, and sort is
+/// what makes a burst judgeable. Both fail **silently**: a search that matches nothing looks like
+/// an empty library, and a sort that reorders ties arbitrarily makes the grid reshuffle while the
+/// user is looking at it.
+struct SearchAndSortTests {
+    private func photo(
+        id: Int64,
+        stem: String,
+        capturedAt: Int64? = nil,
+        focus: Double? = nil
+    ) -> Photo {
+        Photo(
+            id: id, stem: stem, dir: "/lib", state: "pair", needsReview: false,
+            composite: nil, band: nil, rating: 0, rejected: false,
+            capturedAt: capturedAt, focus: focus, noise: nil, detail: nil,
+            camera: nil, lens: nil, year: nil
+        )
+    }
+
+    @Test("An empty search keeps everything")
+    func emptySearch() {
+        var f = Filters()
+        #expect(f.matchesSearch(photo(id: 1, stem: "IMG_0001")))
+        f.search = "   "
+        #expect(f.matchesSearch(photo(id: 1, stem: "IMG_0001")), "whitespace is not a search")
+        #expect(!f.isActive, "and it does not light up the Clear button")
+    }
+
+    @Test("Search is case- and diacritic-insensitive")
+    func searchIsForgiving() {
+        // What a search field means everywhere else on the platform. A photographer typing "eid"
+        // should find `Eid`, and "cafe" should find `Café`.
+        var f = Filters()
+        f.search = "eid"
+        #expect(f.matchesSearch(photo(id: 1, stem: "EID_0001")))
+        #expect(f.matchesSearch(photo(id: 2, stem: "eid_0002")))
+
+        f.search = "cafe"
+        #expect(f.matchesSearch(photo(id: 3, stem: "Café_0003")))
+    }
+
+    @Test("Search matches a substring, not the whole name")
+    func searchIsASubstring() {
+        // A user types the part they remember. Requiring the whole stem would make the field
+        // useless for exactly the case it exists for.
+        var f = Filters()
+        f.search = "0133"
+        #expect(f.matchesSearch(photo(id: 1, stem: "IMG_0133")))
+        #expect(!f.matchesSearch(photo(id: 2, stem: "IMG_0134")))
+    }
+
+    @Test("Search marks the filter active so Clear appears")
+    func searchIsActive() {
+        var f = Filters()
+        f.search = "x"
+        #expect(f.isActive, "a search must offer a way back")
+    }
+
+    @Test("Ranked is the engine's order, untouched")
+    func rankedIsIdentity() {
+        // **The default, and the one a cull wants**: the engine ranks within a shoot, so the best
+        // frame of a burst is first. Re-sorting by composite here would be a *different* order
+        // from the one the engine produced.
+        var f = Filters()
+        f.sort = .ranked
+        let list = [photo(id: 3, stem: "c"), photo(id: 1, stem: "a"), photo(id: 2, stem: "b")]
+        #expect(f.sort(list).map(\.id) == [3, 1, 2], "unchanged")
+    }
+
+    @Test("Name sorts both ways")
+    func nameSort() {
+        var f = Filters()
+        let list = [photo(id: 1, stem: "b"), photo(id: 2, stem: "a"), photo(id: 3, stem: "c")]
+        f.sort = .nameAscending
+        #expect(f.sort(list).map(\.stem) == ["a", "b", "c"])
+        f.sort = .nameDescending
+        #expect(f.sort(list).map(\.stem) == ["c", "b", "a"])
+    }
+
+    @Test("Date sorts newest and oldest, with undated last")
+    func dateSort() {
+        // **A photograph with no capture date sorts last, not first.** "Unknown" is not "oldest",
+        // and putting the undated ones at the top of a date sort is a surprise.
+        var f = Filters()
+        let list = [
+            photo(id: 1, stem: "a", capturedAt: 100),
+            photo(id: 2, stem: "b", capturedAt: nil),
+            photo(id: 3, stem: "c", capturedAt: 300),
+        ]
+        f.sort = .newest
+        #expect(f.sort(list).map(\.id) == [3, 1, 2], "newest first, undated last")
+        f.sort = .oldest
+        #expect(f.sort(list).map(\.id) == [1, 3, 2], "oldest first, undated still last")
+    }
+
+    @Test("Sharpest sorts by focus, with unmeasured last")
+    func sharpestSort() {
+        // A photograph the engine could not measure is not the sharpest thing in the library.
+        var f = Filters()
+        let list = [
+            photo(id: 1, stem: "a", focus: 20),
+            photo(id: 2, stem: "b", focus: nil),
+            photo(id: 3, stem: "c", focus: 90),
+        ]
+        f.sort = .sharpest
+        #expect(f.sort(list).map(\.id) == [3, 1, 2])
+    }
+
+    @Test("Equal keys do not reshuffle")
+    func tiesAreStable() {
+        // **Swift's `sorted(by:)` is not guaranteed stable**, so a tie has to be broken
+        // explicitly — otherwise the grid reorders itself while the user is looking at it, which
+        // reads as the app losing their place.
+        var f = Filters()
+        f.sort = .newest
+        let list = (1...6).map { photo(id: Int64($0), stem: "IMG_\($0)", capturedAt: 100) }
+        let once = f.sort(list).map(\.id)
+        let twice = f.sort(f.sort(list)).map(\.id)
+        #expect(once == twice, "sorting twice must not change the order")
+        #expect(once == [1, 2, 3, 4, 5, 6], "and the tie-break is the id")
     }
 }

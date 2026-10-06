@@ -37,6 +37,35 @@ struct FilterBar: View {
         // is visible, and a scroll is the obvious answer to it.
         ScrollView(.horizontal) {
             HStack(spacing: 10) {
+                // **Search first, because it is the one that is always in the same place.**
+                // A filter bar that reorders its controls is one a user has to read every time.
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    TextField("Name", text: $filters.search)
+                        .textFieldStyle(.plain)
+                        .font(.caption)
+                        .frame(width: 110)
+                    if !filters.search.isEmpty {
+                        Button {
+                            filters.search = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize()
+                        .help("Clear the search")
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(.quaternary, in: Capsule())
+                .fixedSize()
+                .accessibilityLabel("Search by filename")
+
             // **Two groups, labelled.** "Keep 45" and "Rated 12" are different questions — what
             // the engine thinks and what the user decided — and unlabelled chips side by side
             // read as one list where the numbers contradict each other.
@@ -98,6 +127,16 @@ struct FilterBar: View {
             if facets.years.count > 1 {
                 yearFacet
             }
+
+                Picker("Sort", selection: $filters.sort) {
+                    ForEach(Filters.Sort.allCases) { s in
+                        Text(s.label).tag(s)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .frame(maxWidth: 150)
+                .accessibilityLabel("Sort order")
 
                 if filters.isActive {
                     Button("Clear") { filters = Filters() }

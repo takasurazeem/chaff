@@ -2687,6 +2687,16 @@ public struct Photo: Equatable, Hashable {
     public var rating: UInt8
     public var rejected: Bool
     /**
+     * When the camera recorded it, as a Unix timestamp.
+     *
+     * **The camera's own clock, not an instant.** `parse_exif_datetime` treats the camera's local
+     * wall-clock as if it were UTC, so differences between photographs are correct and the
+     * absolute moment is not — which is why the inspector labels it "camera clock".
+     *
+     * Absent when the file carries no capture date: a stripped JPEG, a scan.
+     */
+    public var capturedAt: Int64?
+    /**
      * Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
      *
      * Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
@@ -2718,6 +2728,15 @@ public struct Photo: Equatable, Hashable {
          * `keep`, `review` or `reject`.
          */band: String?, rating: UInt8, rejected: Bool, 
         /**
+         * When the camera recorded it, as a Unix timestamp.
+         *
+         * **The camera's own clock, not an instant.** `parse_exif_datetime` treats the camera's local
+         * wall-clock as if it were UTC, so differences between photographs are correct and the
+         * absolute moment is not — which is why the inspector labels it "camera clock".
+         *
+         * Absent when the file carries no capture date: a stripped JPEG, a scan.
+         */capturedAt: Int64?, 
+        /**
          * Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
          *
          * Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
@@ -2738,6 +2757,7 @@ public struct Photo: Equatable, Hashable {
         self.band = band
         self.rating = rating
         self.rejected = rejected
+        self.capturedAt = capturedAt
         self.focus = focus
         self.noise = noise
         self.detail = detail
@@ -2771,6 +2791,7 @@ public struct FfiConverterTypePhoto: FfiConverterRustBuffer {
                 band: FfiConverterOptionString.read(from: &buf), 
                 rating: FfiConverterUInt8.read(from: &buf), 
                 rejected: FfiConverterBool.read(from: &buf), 
+                capturedAt: FfiConverterOptionInt64.read(from: &buf), 
                 focus: FfiConverterOptionDouble.read(from: &buf), 
                 noise: FfiConverterOptionDouble.read(from: &buf), 
                 detail: FfiConverterOptionDouble.read(from: &buf), 
@@ -2790,6 +2811,7 @@ public struct FfiConverterTypePhoto: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.band, into: &buf)
         FfiConverterUInt8.write(value.rating, into: &buf)
         FfiConverterBool.write(value.rejected, into: &buf)
+        FfiConverterOptionInt64.write(value.capturedAt, into: &buf)
         FfiConverterOptionDouble.write(value.focus, into: &buf)
         FfiConverterOptionDouble.write(value.noise, into: &buf)
         FfiConverterOptionDouble.write(value.detail, into: &buf)
