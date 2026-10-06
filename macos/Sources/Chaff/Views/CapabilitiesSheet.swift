@@ -47,6 +47,15 @@ struct CapabilitiesSheet: View {
                 ProgressView().controlSize(.small)
             }
 
+            if let summary = model.taggingSummary {
+                Divider()
+                Text("Tagging").font(.headline)
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let report = model.endpointReport {
                 Divider()
                 Text("Tagging endpoint").font(.headline)

@@ -49,6 +49,8 @@ final class EngineModel {
     private(set) var tagReport: TagPassReport?
     private(set) var sidecarReport: SidecarReport?
     private(set) var endpointReport: EndpointReport?
+    /// What will tag, in words — shown where the feature is switched on.
+    var taggingSummary: String?
     var machine: Capabilities?
     var cacheInfo: ThumbnailCacheInfo?
     private(set) var watchStatus = WatchStatus(running: false, seen: 0, busy: false)
@@ -258,9 +260,19 @@ final class EngineModel {
 
     /// Tag photographs.
     ///
-    /// **A configured endpoint is an upgrade, not a requirement.** Without one this runs CLIP on
-    /// this machine, and the report names which tagger ran — "tagged 200 photographs" with no
-    /// model named is a claim the user cannot check.
+    /// # On this machine, always
+    ///
+    /// **Tagging runs locally and needs no network.** The model is 88 MB and ships with the app;
+    /// the vocabulary is 204 phrases and is part of the binary. Nothing is sent anywhere, and
+    /// nothing stops working when a machine on the LAN is asleep.
+    ///
+    /// That is the design, not a fallback. A culling tool whose tagging depends on a server is one
+    /// people stop trusting with a library — the first time it is unavailable the feature is
+    /// simply gone.
+    ///
+    /// A vision endpoint can still be configured, and it is an **upgrade** for anyone who wants
+    /// richer descriptions. It is never required, and the report always names which tagger ran:
+    /// "tagged 200 photographs" with no model named is a claim nobody can check.
     func tag(limit: UInt32 = 200) async {
         guard let library else { return }
         isIndexing = true
@@ -452,27 +464,31 @@ final class EngineModel {
         }.value
     }
 
-    /// Test the tagging endpoint and say what it can do.
+    /// Say what will tag, and check it if there is anything to check.
     ///
-    /// **Before a pass, not after it fails.** A reachable endpoint offering a different model, or
-    /// one that lists a model and refuses a vision request, both produce a pass that fails on
-    /// every photograph — and this is the field that says so first.
+    /// # The on-device answer is not a failure
+    ///
+    /// With no endpoint configured this reports **the local tagger**, not an error and not a
+    /// degraded mode. "CLIP on this machine, 204 phrases" is a complete answer: it is what will
+    /// run, it needs nothing, and it works offline.
+    ///
+    /// Framing it as a fallback — which the first version did, with an alert saying no endpoint
+    /// was configured — makes a working feature read as a broken one.
     func diagnoseTagging() async {
         let endpoint = ProcessInfo.processInfo.environment["CHAFF_VLM"] ?? ""
         guard !endpoint.trimmingCharacters(in: .whitespaces).isEmpty else {
-            // **Said plainly rather than attempted.** With no endpoint the pass uses CLIP, which
-            // is a different tagger with a closed vocabulary — not a broken vision model.
             endpointReport = nil
-            errorMessage = """
-                No vision endpoint is configured, so tagging uses CLIP on this machine — a \
-                different tagger with a fixed vocabulary of about 38 phrases.
+            taggingSummary = """
+                Tagging runs on this machine: CLIP ViT-B/32, 88 MB, choosing between 204 phrases. \
+                No network is used and nothing leaves the computer.
 
-                Set CHAFF_VLM to use a model instead.
+                A vision endpoint can be configured for richer descriptions, and is never required.
                 """
             return
         }
         let model_ = ProcessInfo.processInfo.environment["CHAFF_VLM_MODEL"] ?? "chaff-vlm"
         endpointReport = await diagnoseEndpoint(endpoint, model: model_)
+        taggingSummary = "A vision endpoint is configured and will be used instead of the local tagger."
     }
 
     /// The tags on one photograph, for the inspector.

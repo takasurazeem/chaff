@@ -95,6 +95,10 @@ export function TagPanel({ libraryId, onChanged, onSelectTag, selectedTag }: Pro
 
   return (
     <section aria-label="Tags" className="border-t border-zinc-800 px-2 py-2">
+      <p className="mb-1 text-[10px] leading-snug text-zinc-500">
+        Tagging runs on this machine — CLIP, 88 MB, no network. A vision endpoint
+        is an upgrade, never a requirement.
+      </p>
       <div className="mb-1 flex items-center gap-1">
         <h3 className="text-[10px] uppercase tracking-wide text-zinc-500">Tags</h3>
         <button
