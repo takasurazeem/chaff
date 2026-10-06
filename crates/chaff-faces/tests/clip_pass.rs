@@ -53,18 +53,21 @@ fn the_vocabulary_that_ships_is_usable() {
     );
     let vocab = chaff_faces::clip::Vocabulary::load(&path).expect("the vocabulary must parse");
 
-    // **38, and that is the design, not a shortfall.**
+    // **204, and the number matters less than what it means.**
     //
-    // I first asserted `> 50` — a number I invented rather than measured — and the test failed
-    // on a vocabulary that is correct. The assertion to make is about *shape*, not a count I
-    // guessed: the fallback tagger has a closed vocabulary, and what matters is that it covers
-    // the categories a culling tool is asked about.
+    // This started at 38, which was enough to prove the path worked and not enough to be useful —
+    // "travel" was the tag for a landscape, a street and a suitcase alike, because those were the
+    // only words available. The encoder is unchanged at 88 MB; the list is what a user sees.
+    //
+    // The assertion is an exact count so that a deliberate change has to say why, and a floor so
+    // that the file being wrong is caught rather than shipped.
     assert_eq!(
         vocab.len(),
-        38,
-        "the shipped vocabulary changed size — if that was deliberate, update this and say why \
-         in the commit; if not, the file is wrong"
+        204,
+        "the shipped vocabulary changed size — if that was deliberate, regenerate the embeddings \
+         and update this; if not, the file and the list have diverged"
     );
+    assert!(vocab.len() >= 150, "a vocabulary this small is the 38-phrase one again");
 
     // The *source* list, which is what a person edits, checked for the categories rather than
     // counted. A vocabulary that lost its people or its places would still be 38 phrases if
@@ -174,4 +177,69 @@ fn a_cancelled_pass_stops_and_says_so() {
 
     assert!(report.cancelled, "the report must say it was stopped, not finished");
     assert_eq!(report.tagged, 0, "nothing was tagged after an immediate stop");
+}
+
+#[test]
+fn a_vocabulary_edited_without_regenerating_fails_loudly() {
+    // **The failure mode this guards against is silent and total.** The embeddings are computed
+    // from `VOCABULARY` by a build-time tool and committed as a file. Editing the list without
+    // regenerating pairs new phrases with old vectors — every tag wrong, nothing failing, and the
+    // output still looks like plausible English.
+    //
+    // So the loader checks the count. A file that disagrees is an error, not a best guess.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("vocabulary.bin");
+
+    // A well-formed file holding a *different* number of phrases.
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"CHAFFCLIP1");
+    let wrong = (chaff_faces::clip::VOCABULARY.len() - 1) as u32;
+    bytes.extend_from_slice(&wrong.to_le_bytes());
+    bytes.extend_from_slice(&512u32.to_le_bytes());
+    bytes.resize(bytes.len() + wrong as usize * 512 * 4, 0);
+    std::fs::write(&path, &bytes).unwrap();
+
+    match chaff_faces::clip::Vocabulary::load(&path) {
+        Err(chaff_faces::clip::ClipError::Mismatch { in_file, in_code, .. }) => {
+            assert_eq!(in_file, wrong as usize);
+            assert_eq!(in_code, chaff_faces::clip::VOCABULARY.len());
+        }
+        // `Vocabulary` is not `Debug` — it holds a few hundred thousand floats and a `Debug`
+        // impl would be a trap. The error is what the assertion is about anyway.
+        Err(other) => panic!(
+            "a vocabulary file that disagrees with the list must be refused with a `Mismatch`, \
+             not {other}. Every tag would be wrong and nothing would fail."
+        ),
+        Ok(v) => panic!(
+            "a file holding {} phrases was loaded against a list of {}",
+            v.len(),
+            chaff_faces::clip::VOCABULARY.len()
+        ),
+    }
+}
+
+#[test]
+fn the_shipped_vocabulary_covers_what_a_culling_session_asks() {
+    // **Categories, by name.** A vocabulary that lost its people would still be 204 phrases if
+    // something else were duplicated, and "is there a person in this?" is the first question
+    // anyone asks of a shoot.
+    let words: Vec<&str> = chaff_faces::clip::VOCABULARY.to_vec();
+    for category in [
+        "a person", "a dog", "a beach", "a mountain", "food", "a sunset", "a portrait",
+        "a wedding", "a car", "flowers", "night", "a city street", "a building", "snow",
+    ] {
+        assert!(
+            words.contains(&category),
+            "the vocabulary has lost `{category}` — the fallback tagger covers a closed set of \
+             categories, and one missing is one the user cannot tag by"
+        );
+    }
+
+    // And no duplicates: a repeated phrase costs a row of floats and makes the ranking report the
+    // same tag twice, which reads as a bug.
+    let mut sorted = words.clone();
+    sorted.sort_unstable();
+    let before = sorted.len();
+    sorted.dedup();
+    assert_eq!(before, sorted.len(), "the vocabulary contains a duplicate phrase");
 }

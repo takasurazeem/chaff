@@ -36,6 +36,40 @@ names which one ran.
 if the vision model produced it. "No endpoint is configured; this will use CLIP, which is a
 different tagger" is the honest answer, and the user can then decide.
 
+## Tagging runs on this machine — the server is off limits
+
+**Do not use the Linux model server for anything.** Not for tagging, not for a test, not "just to
+compare". It is the user's, it hosts a different model than it used to, and the application is not
+to depend on it.
+
+**The direction is on-device inference.** The app ships its own small model and tags photographs
+without a network at all. iPhone does this for faces and it is the right shape for this too: a
+culling tool that stops working when a machine on the LAN is asleep is one people stop trusting
+with a library.
+
+### The budget
+
+**500–700 MB is the ceiling for a model the app hosts itself**, and smaller is better. The current
+one is **88 MB** — CLIP ViT-B/32 int8 — which is well inside it and already works.
+
+| model | size | what it does |
+|---|---|---|
+| YuNet | 233 KB | face detection |
+| CLIP vocabulary | 78 KB | the phrases CLIP chooses between |
+| SFace | 38 MB | face recognition — grouping, not naming |
+| **CLIP ViT-B/32 int8** | **88 MB** | **tagging, entirely on this machine** |
+
+### What that means for a change
+
+- **Prefer a better vocabulary over a bigger model.** CLIP's limitation is the 38 phrases it
+  chooses between, not the encoder — the same weights with 400 phrases is a different product at
+  no download cost.
+- **A model above the ceiling needs asking first.** Do not quietly fetch something that takes a
+  gigabyte of someone's disk because it scores better.
+- **Never fall back to a server.** If the on-device path cannot do something, say so. Substituting
+  a remote model and describing the result as if the local one produced it is the failure mode
+  this section exists to prevent.
+
 ## Manual QA — the user drives, always
 
 Build, install, launch, and read logs. Nothing else. Never navigate, click, scroll or type into

@@ -15,6 +15,7 @@ struct LibraryView: View {
     @State private var chosenFolder: String?
     /// A tag or a group the grid is narrowed to — see `Narrowing` for why it is one value.
     @State private var narrowedTo: Narrowing?
+    @State private var filters = Filters()
     /// The plan the user is being asked to confirm, if any.
     @State private var pendingPlan: DeletePlan?
 
@@ -36,7 +37,13 @@ struct LibraryView: View {
                         description: Text("Choose a folder of photographs with ⌘O.")
                     )
                 } else {
-                    PhotoGrid(photos: visible, selection: $selection, cursor: $culling.cursor)
+                    VStack(spacing: 0) {
+                        // **Above the grid, not in a menu.** A filter you have to open a menu to
+                        // see is one you forget is applied — and then the grid looks broken.
+                        FilterBar(filters: $filters, photos: model.photos)
+                        Divider()
+                        PhotoGrid(photos: visible, selection: $selection, cursor: $culling.cursor)
+                    }
                 }
 
                 if model.isIndexing {
@@ -144,19 +151,26 @@ struct LibraryView: View {
         //
         // The failure mode is the bad kind: an empty grid, no error, and a folder that says 2,071
         // photographs.
+        // The folder, the tag or the group first, then the chips — **composed**, because they
+        // answer different questions and a user who selected a folder and then a band means
+        // both.
+        let narrowed: [Photo]
         if let narrowedTo {
-            return model.photos.filter {
+            narrowed = model.photos.filter {
                 narrowedTo.matches(
                     photoId: $0.id,
                     tagsByPhoto: model.tagsByPhoto,
                     peopleByPhoto: model.peopleByPhoto
                 )
             }
+        } else if let folder = chosenFolder, let root = model.library?.root {
+            let absolute = root.hasSuffix("/") ? root + folder : root + "/" + folder
+            narrowed = model.photos.filter {
+                $0.dir == absolute || $0.dir.hasPrefix(absolute + "/")
+            }
+        } else {
+            narrowed = model.photos
         }
-        guard let folder = chosenFolder, let root = model.library?.root else {
-            return model.photos
-        }
-        let absolute = root.hasSuffix("/") ? root + folder : root + "/" + folder
-        return model.photos.filter { $0.dir == absolute || $0.dir.hasPrefix(absolute + "/") }
+        return narrowed.filter(filters.matches)
     }
 }

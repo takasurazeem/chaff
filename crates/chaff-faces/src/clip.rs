@@ -40,22 +40,93 @@ pub const DIMENSIONS: usize = 512;
 ///
 /// Chosen for what people actually filter a photograph library by: subjects, settings,
 /// activities, and the light.
+/// The phrases CLIP chooses between.
+///
+/// # Why this list is the whole feature, and the encoder is not
+///
+/// CLIP is a **ranking** model: it scores an image against a set of phrases and the pass keeps the
+/// best few. The encoder is 88 MB and does not change; this list is what a user actually sees on
+/// their photographs.
+///
+/// The first version had **38 phrases** — enough to prove the path worked and not enough to be
+/// useful. "Travel" was the tag for a landscape, a street and a suitcase alike, because those were
+/// the only words available. The list below is the same weights with a vocabulary worth having.
+///
+/// # How it is organised
+///
+/// By **what a photographer looks for**, not by taxonomy. A culling session asks "are there people
+/// in this?", "is this the reception or the ceremony?", "did I get the bird?" — so the phrases are
+/// grouped the way those questions are, and a few near-synonyms are kept where CLIP scores them
+/// differently. Duplicates cost nothing but a row of floats; a missing phrase is a photograph
+/// nobody can find.
+///
+/// # Changing it
+///
+/// The embeddings are **precomputed and committed** — CLIP's text side needs a BPE tokenizer and a
+/// second 61 MB model, and both are build-time tools. After editing this list:
+///
+/// ```text
+/// cargo run -p chaff-faces --example clip_vocab -- \
+///     tokenizer.json text_model_int8.onnx models/clip/vocabulary.bin
+/// ```
+///
+/// The vision encoder is unchanged, so nothing else needs rebuilding. A stale `vocabulary.bin`
+/// fails loudly: `Vocabulary::load` checks that the file's phrase count matches this list.
 pub const VOCABULARY: &[&str] = &[
-    // People
-    "a person", "a group of people", "a child", "a baby", "a crowd",
-    // Animals
-    "a dog", "a cat", "a bird", "a horse", "a wild animal",
-    // Places
-    "a beach", "a mountain", "a forest", "a city street", "a building",
-    "a room indoors", "a garden", "a lake or river", "a desert", "snow",
-    // Things
-    "food", "a car", "a boat", "flowers", "a book or document", "artwork",
-    // Activities
-    "a wedding", "a party", "a concert", "sport", "travel",
-    // Light and time
-    "a sunset or sunrise", "night", "fog or mist", "a portrait",
-    // Photographic
-    "a close-up", "a wide landscape", "a still life",
+    // ---- People ----
+    "a person", "a group of people", "a crowd of people", "a child", "a baby",
+    "a family", "a couple", "a man", "a woman", "an elderly person",
+    "a portrait", "a selfie", "people at a party", "people at a wedding",
+    "a bride and groom", "people at a concert", "people playing sport",
+    "people sitting at a table", "people standing", "people walking",
+    "a person smiling", "a person looking at the camera", "a person from behind",
+    // ---- Animals ----
+    "a dog", "a puppy", "a cat", "a kitten", "a bird", "a bird in flight",
+    "a horse", "a cow", "a sheep", "a wild animal", "an insect", "a butterfly",
+    "a fish", "a pet", "wildlife",
+    // ---- Places: outside ----
+    "a beach", "a rocky coast", "a mountain", "a snow-capped mountain", "a hill",
+    "a forest", "a single tree", "a field", "a meadow", "a desert", "a canyon",
+    "a lake", "a river", "a waterfall", "the sea", "a harbour", "a garden",
+    "a park", "a city street", "a village", "a farm", "a bridge",
+    "a road", "a path or trail", "a campsite",
+    // ---- Places: inside ----
+    "a room indoors", "a kitchen", "a living room", "a bedroom", "a bathroom",
+    "a restaurant", "a cafe", "a bar", "a shop", "an office", "a museum",
+    "a church", "a stadium", "an airport", "a train station", "a hotel room",
+    "a library", "a classroom", "a hospital", "a workshop",
+    // ---- Buildings and structures ----
+    "a building", "a house", "a skyscraper", "a ruin", "a castle", "a temple",
+    "a bridge at night", "a monument", "a fence", "a wall", "a staircase",
+    "a doorway", "a window", "a roof",
+    // ---- Things ----
+    "food", "a meal on a plate", "a drink", "a cup of coffee", "a cake",
+    "fruit", "vegetables", "a car", "a motorcycle", "a bicycle", "a bus",
+    "a train", "an aeroplane", "a boat", "a truck", "a tractor",
+    "flowers", "a bouquet of flowers", "a houseplant", "a book", "a document",
+    "a screen", "a computer", "a phone", "a camera", "a musical instrument",
+    "a guitar", "a painting", "a sculpture", "artwork", "a sign", "a map",
+    "clothing", "jewellery", "a tool", "furniture", "a lamp", "a candle",
+    "a toy", "a balloon", "a flag", "money", "a bottle", "a bag",
+    // ---- Activities and events ----
+    "a wedding", "a birthday party", "a dinner party", "a concert",
+    "a music performance", "sport", "a football match", "running",
+    "cycling", "swimming", "skiing", "climbing", "fishing", "cooking",
+    "reading", "working", "shopping", "a protest", "a parade", "fireworks",
+    "travel", "a holiday", "a picnic", "a market", "a festival",
+    // ---- Light, weather and time ----
+    "a sunset", "a sunrise", "golden hour", "blue hour", "night",
+    "a night sky", "stars", "the moon", "clouds", "a storm", "rain",
+    "snow", "fog or mist", "a rainbow", "backlit", "silhouette",
+    "harsh sunlight", "soft light", "shadow", "reflection",
+    // ---- Photographic character ----
+    "a close-up", "a macro photograph", "a wide landscape", "a still life",
+    "an abstract photograph", "a black and white photograph", "a blurry photograph",
+    "a dark photograph", "a bright photograph", "a photograph of text",
+    "a screenshot", "a diagram or chart",
+    // ---- Water and sky ----
+    "a waterfall in a forest", "waves", "a swimming pool", "a fountain",
+    "a sky with clouds", "a clear blue sky",
 ];
 
 /// The committed vocabulary embeddings.
@@ -86,6 +157,17 @@ impl Vocabulary {
         let expected = 18 + count * dim * 4;
         if bytes.len() != expected {
             return Err(ClipError::Format(path.to_path_buf()));
+        }
+
+        // **The file and the list must agree.** The embeddings are computed from `VOCABULARY` by
+        // a build-time tool, so editing the list without regenerating the file would pair new
+        // phrases with old vectors — plausible nonsense, every tag wrong, nothing failing.
+        if count != VOCABULARY.len() {
+            return Err(ClipError::Mismatch {
+                file: path.to_path_buf(),
+                in_file: count,
+                in_code: VOCABULARY.len(),
+            });
         }
 
         let mut vectors = Vec::with_capacity(count * dim);
@@ -275,6 +357,16 @@ pub enum ClipError {
     Io { path: PathBuf, reason: String },
     #[error("{0} is not a vocabulary file this build can read")]
     Format(PathBuf),
+    #[error(
+        "{file} holds {in_file} phrases and this build expects {in_code} — the vocabulary was \
+         edited without regenerating the file. Regenerate it with `cargo run -p chaff-faces \
+         --example clip_vocab -- tokenizer.json text_model_int8.onnx models/clip/vocabulary.bin`."
+    )]
+    Mismatch {
+        file: PathBuf,
+        in_file: usize,
+        in_code: usize,
+    },
 }
 
 #[cfg(test)]
