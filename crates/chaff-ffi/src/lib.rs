@@ -112,6 +112,15 @@ pub struct Photo {
     pub band: Option<String>,
     pub rating: u8,
     pub rejected: bool,
+    /// Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
+    ///
+    /// Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
+    /// depth-of-field portrait is not marked blurry. What was missing was any way to filter on it.
+    pub focus: Option<f64>,
+    /// Sensor noise, as a percentile. **High is noisy** — the one metric where more is worse.
+    pub noise: Option<f64>,
+    /// Resolved detail. Low means the frame is soft or the subject is small.
+    pub detail: Option<f64>,
     pub camera: Option<String>,
     pub lens: Option<String>,
     pub year: Option<i32>,
@@ -314,6 +323,15 @@ impl Engine {
             .map_err(|e| ChaffError::engine("decisions", e))?;
         let metadata = store::photo_metadata(&conn, library_id)
             .map_err(|e| ChaffError::engine("metadata", e))?;
+        // **One query for the whole library**, not one per photograph: a grid asks for the list
+        // once, and 3,000 queries to build it is the difference between instant and a visible
+        // pause.
+        let quality =
+            store::quality_for_library(&conn, library_id, chaff_core::pipeline::SCORER_VERSION)
+                .map_err(|e| ChaffError::engine("photos", e))?;
+        // **One query for the whole library**, not one per photograph: a grid asks for the list
+        // once, and 3,000 queries to build it is the difference between instant and a visible
+        // pause.
 
         Ok(rows
             .into_iter()
@@ -330,6 +348,12 @@ impl Engine {
                     band: composite.map(|c| band_of(c).to_string()),
                     rating: d.rating.get(),
                     rejected: d.rejected,
+                    // Absent rather than zero when a metric was not measured — a raw this build
+                    // cannot decode has no focus score, and `Some(0.0)` would file it under
+                    // "blurry", which is a claim nobody made.
+                    focus: quality.get(&p.id).and_then(|q| q.focus),
+                    noise: quality.get(&p.id).and_then(|q| q.noise),
+                    detail: quality.get(&p.id).and_then(|q| q.detail),
                     camera: m.and_then(|m| m.camera.clone()),
                     lens: m.and_then(|m| m.lens.clone()),
                     year: m.and_then(|m| m.year),
@@ -522,6 +546,15 @@ pub struct PhotoDetail {
     pub needs_review: bool,
     pub files: Vec<FileInfo>,
 
+    /// Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
+    ///
+    /// Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
+    /// depth-of-field portrait is not marked blurry. What was missing was any way to filter on it.
+    pub focus: Option<f64>,
+    /// Sensor noise, as a percentile. **High is noisy** — the one metric where more is worse.
+    pub noise: Option<f64>,
+    /// Resolved detail. Low means the frame is soft or the subject is small.
+    pub detail: Option<f64>,
     pub camera: Option<String>,
     pub lens: Option<String>,
     pub iso: Option<u32>,
@@ -965,6 +998,11 @@ impl Engine {
         let conn = self.lock()?;
         let d = pipeline::photo_detail(&conn, photo_id)
             .map_err(|e| ChaffError::engine("photos", e))?;
+        // The percentiles for this one photograph. `photo_detail` already carries them as
+        // `terms`, but those are `(label, percentile)` pairs for display — this is the same
+        // numbers keyed by what they measure, so a caller can compare rather than print.
+        let quality = store::quality_for_photo(&conn, photo_id, chaff_core::pipeline::SCORER_VERSION)
+            .map_err(|e| ChaffError::engine("photos", e))?;
 
         Ok(PhotoDetail {
             id: d.photo_id,
@@ -977,6 +1015,9 @@ impl Engine {
                 .into_iter()
                 .map(|f| FileInfo { name: f.name, path: f.path, role: f.role, size_bytes: f.size_bytes })
                 .collect(),
+            focus: quality.focus,
+            noise: quality.noise,
+            detail: quality.detail,
             camera: d.camera,
             lens: d.lens,
             iso: d.iso,

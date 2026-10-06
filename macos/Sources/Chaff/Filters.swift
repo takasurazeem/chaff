@@ -31,7 +31,53 @@ struct Filters: Equatable {
         var label: String { rawValue.capitalized }
     }
 
+    /// **A quality signal, derived from a measurement rather than from a model.**
+    ///
+    /// The engine has measured sharpness and noise since the beginning — `scoring/focus.rs` is a
+    /// real blur metric, built so a shallow-depth-of-field portrait is *not* marked blurry. What
+    /// was missing was any way to act on it: the numbers appeared in the inspector, one
+    /// photograph at a time, and a library of 3,000 could not be narrowed to the soft ones.
+    ///
+    /// **The thresholds are percentiles within the shoot**, which is what makes them comparable
+    /// at all — an absolute sharpness number means nothing without knowing the lens, the subject
+    /// and the light. "Softer than 90% of the frames taken alongside it" is a statement a user can
+    /// act on.
+    enum Quality: String, CaseIterable, Identifiable {
+        /// The softest tenth of the shoot.
+        case soft
+        /// The noisiest tenth — the one metric where *more* is worse.
+        case noisy
+        /// The least detailed tenth: soft, or the subject is small in frame.
+        case lowDetail
+        /// The sharpest quarter, which is where a keeper usually comes from.
+        case sharp
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .soft: "Soft"
+            case .noisy: "Noisy"
+            case .lowDetail: "Low detail"
+            case .sharp: "Sharp"
+            }
+        }
+
+        var help: String {
+            switch self {
+            case .soft: "The softest tenth of this shoot"
+            case .noisy: "The noisiest tenth of this shoot"
+            case .lowDetail: "The least detailed tenth of this shoot"
+            case .sharp: "The sharpest quarter of this shoot"
+            }
+        }
+    }
+
     var band: Band = .all
+    /// `nil` is every photograph. One value rather than a set, because the four are not
+    /// independent — "soft" and "sharp" together is a contradiction, and a UI that allowed it
+    /// would show an empty grid for a reason nobody could see.
+    var quality: Quality?
     var decision: Decision = .all
     /// `nil` means every camera — **not the empty string**, which would be a camera named "".
     var camera: String?
@@ -39,7 +85,27 @@ struct Filters: Equatable {
     var year: Int32?
 
     var isActive: Bool {
-        band != .all || decision != .all || camera != nil || lens != nil || year != nil
+        band != .all || decision != .all || quality != nil
+            || camera != nil || lens != nil || year != nil
+    }
+
+    /// How many photographs each quality signal holds, for the chips' counts.
+    ///
+    /// Counted against the **unfiltered** list, like the band counts, so the numbers describe the
+    /// library rather than the filter.
+    static func qualityCounts(_ photos: [Photo]) -> [Quality: Int] {
+        var out: [Quality: Int] = [:]
+        for q in Quality.allCases {
+            out[q] = photos.count { photo in
+                switch q {
+                case .soft: (photo.focus ?? 101) <= 10
+                case .noisy: (photo.noise ?? -1) >= 90
+                case .lowDetail: (photo.detail ?? 101) <= 10
+                case .sharp: (photo.focus ?? -1) >= 75
+                }
+            }
+        }
+        return out
     }
 
     /// Does a photograph survive the filter?
@@ -59,6 +125,22 @@ struct Filters: Equatable {
         case .unrated: if photo.rating > 0 || photo.rejected { return false }
         case .rated: if photo.rating == 0 { return false }
         case .rejected: if !photo.rejected { return false }
+        }
+
+        // **Absent is not zero.** A photograph with no focus score is one the engine could not
+        // measure — a raw this build cannot decode — and it belongs in none of these. Treating it
+        // as `0` would file every unreadable raw under "Soft", which is a claim nobody made.
+        if let quality {
+            switch quality {
+            case .soft:
+                guard let f = photo.focus, f <= 10 else { return false }
+            case .noisy:
+                guard let n = photo.noise, n >= 90 else { return false }
+            case .lowDetail:
+                guard let d = photo.detail, d <= 10 else { return false }
+            case .sharp:
+                guard let f = photo.focus, f >= 75 else { return false }
+            }
         }
 
         if let camera, photo.camera != camera { return false }

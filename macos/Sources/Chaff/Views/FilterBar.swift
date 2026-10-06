@@ -23,6 +23,7 @@ struct FilterBar: View {
     private var facets: (cameras: [String], lenses: [String], years: [Int32]) {
         Filters.facets(photos)
     }
+    private var qualityCounts: [Filters.Quality: Int] { Filters.qualityCounts(photos) }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -48,6 +49,29 @@ struct FilterBar: View {
                         active: filters.decision == decision,
                         tone: decision == .rejected ? .reject : .neutral
                     ) { filters.decision = decision }
+                }
+            }
+
+            // **Quality, which is measured rather than guessed.**
+            //
+            // The engine has always measured sharpness and noise; this is the first way to act on
+            // it. The counts come from percentiles within the shoot, which is what makes them
+            // comparable at all — an absolute sharpness number means nothing without knowing the
+            // lens, the subject and the light.
+            group("Quality", role: "Filter by measured sharpness and noise") {
+                ForEach(Filters.Quality.allCases) { q in
+                    Chip(
+                        label: q.label,
+                        count: qualityCounts[q] ?? 0,
+                        active: filters.quality == q,
+                        tone: q == .soft || q == .noisy || q == .lowDetail ? .warn : .keep
+                    ) {
+                        // Tapping the active chip clears it — the same toggle the band chips do
+                        // not have, because these are a single choice among four rather than a
+                        // view onto a partition.
+                        filters.quality = filters.quality == q ? nil : q
+                    }
+                    .help(q.help)
                 }
             }
 
@@ -136,7 +160,10 @@ struct FilterBar: View {
 
 /// One filter, with its count.
 struct Chip: View {
-    enum Tone { case neutral, keep, reject }
+    /// `warn` is for a chip that describes a problem — soft, noisy, low detail. Amber rather
+    /// than red: a soft photograph is not an error, and colouring it like a rejection would
+    /// suggest the application had decided something it has not.
+    enum Tone { case neutral, keep, reject, warn }
 
     let label: String
     let count: Int
@@ -169,6 +196,7 @@ struct Chip: View {
         case .neutral: return AnyShapeStyle(.tint.opacity(0.25))
         case .keep: return AnyShapeStyle(Color.green.opacity(0.25))
         case .reject: return AnyShapeStyle(Color.red.opacity(0.25))
+        case .warn: return AnyShapeStyle(Color.orange.opacity(0.25))
         }
     }
 
@@ -178,6 +206,7 @@ struct Chip: View {
         case .neutral: return AnyShapeStyle(.primary)
         case .keep: return AnyShapeStyle(Color.green)
         case .reject: return AnyShapeStyle(Color.red)
+        case .warn: return AnyShapeStyle(Color.orange)
         }
     }
 }

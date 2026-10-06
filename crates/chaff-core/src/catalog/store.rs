@@ -2047,6 +2047,108 @@ pub fn composites(
     Ok(rows.collect::<Result<std::collections::HashMap<_, _>, _>>()?)
 }
 
+/// The quality percentiles for one photograph.
+///
+/// `None` means the metric was not measured — a raw this build cannot decode — which is
+/// **different from zero** and must not be filtered as though it were a low score.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Quality {
+    /// Sharpness, as a percentile within the shoot. Low is soft.
+    pub focus: Option<f64>,
+    /// Sensor noise, as a percentile within the shoot. **High is noisy** — the one metric where
+    /// the direction is inverted, because "more noise" is worse.
+    pub noise: Option<f64>,
+    /// Resolved detail. Low means the frame is soft or the subject is small.
+    pub detail: Option<f64>,
+}
+
+/// Per-photograph **quality percentiles**, keyed by photo id.
+///
+/// # Why this exists
+///
+/// The engine already measures focus (sharpness) and noise for every photograph, and has since
+/// the beginning — `scoring/focus.rs` is a real blur metric, deliberately built so that a
+/// shallow-depth-of-field portrait is **not** marked blurry. What was missing is any way to *act*
+/// on it: the numbers appeared in the inspector, one photograph at a time, and a library of
+/// 3,000 could not be narrowed to the ones that were soft.
+///
+/// A user asked for exactly this: *"if an image is too blurry or too noisy if it could tag those
+/// images and then I could filter those images by tag and then decide whether or not I want to
+/// keep those images."*
+///
+/// # Why these are not tags
+///
+/// They are **derived from a measurement**, and the measurement is a *percentile within the
+/// shoot* — so the same photograph is "blurry" beside a sharp shoot and "fine" beside a soft one.
+/// A stored tag would be a second source of truth that goes stale the moment anything is
+/// re-scored, and it would go stale silently.
+///
+/// Computed at read time instead. It is one indexed query and the result cannot disagree with the
+/// numbers it came from.
+pub fn quality_for_library(
+    conn: &Connection,
+    library_id: i64,
+    scorer_version: i64,
+) -> Result<std::collections::HashMap<i64, Quality>, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT s.photo_id, s.metric, s.value
+           FROM score s
+           JOIN photo p ON p.id = s.photo_id
+          WHERE p.library_id = ?1
+            AND s.scorer_version = ?2
+            AND s.metric IN ('focus', 'noise', 'detail')",
+    )?;
+    let rows = stmt.query_map(params![library_id, scorer_version], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, f64>(2)?))
+    })?;
+
+    let mut out: std::collections::HashMap<i64, Quality> = std::collections::HashMap::new();
+    for row in rows {
+        let (photo_id, metric, value) = row?;
+        let q = out.entry(photo_id).or_default();
+        match metric.as_str() {
+            "focus" => q.focus = Some(value),
+            "noise" => q.noise = Some(value),
+            "detail" => q.detail = Some(value),
+            _ => {}
+        }
+    }
+    Ok(out)
+}
+
+/// The quality percentiles for one photograph.
+///
+/// The same query as `quality_for_library`, narrowed. Kept separate rather than filtering the
+/// library-wide map: the inspector asks about one photograph while the grid asks about all of
+/// them, and making the single case scan the whole library would put a full query behind every
+/// selection.
+pub fn quality_for_photo(
+    conn: &Connection,
+    photo_id: i64,
+    scorer_version: i64,
+) -> Result<Quality, CatalogError> {
+    let mut stmt = conn.prepare(
+        "SELECT metric, value FROM score
+          WHERE photo_id = ?1 AND scorer_version = ?2
+            AND metric IN ('focus', 'noise', 'detail')",
+    )?;
+    let rows = stmt.query_map(params![photo_id, scorer_version], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+    })?;
+
+    let mut q = Quality::default();
+    for row in rows {
+        let (metric, value) = row?;
+        match metric.as_str() {
+            "focus" => q.focus = Some(value),
+            "noise" => q.noise = Some(value),
+            "detail" => q.detail = Some(value),
+            _ => {}
+        }
+    }
+    Ok(q)
+}
+
 /// Remove scores from an older scorer version.
 ///
 /// Explicit rather than automatic: keeping a previous version's numbers is how a

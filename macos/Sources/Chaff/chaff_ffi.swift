@@ -2686,6 +2686,21 @@ public struct Photo: Equatable, Hashable {
     public var band: String?
     public var rating: UInt8
     public var rejected: Bool
+    /**
+     * Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
+     *
+     * Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
+     * depth-of-field portrait is not marked blurry. What was missing was any way to filter on it.
+     */
+    public var focus: Double?
+    /**
+     * Sensor noise, as a percentile. **High is noisy** — the one metric where more is worse.
+     */
+    public var noise: Double?
+    /**
+     * Resolved detail. Low means the frame is soft or the subject is small.
+     */
+    public var detail: Double?
     public var camera: String?
     public var lens: String?
     public var year: Int32?
@@ -2701,7 +2716,19 @@ public struct Photo: Equatable, Hashable {
          */composite: Double?, 
         /**
          * `keep`, `review` or `reject`.
-         */band: String?, rating: UInt8, rejected: Bool, camera: String?, lens: String?, year: Int32?) {
+         */band: String?, rating: UInt8, rejected: Bool, 
+        /**
+         * Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
+         *
+         * Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
+         * depth-of-field portrait is not marked blurry. What was missing was any way to filter on it.
+         */focus: Double?, 
+        /**
+         * Sensor noise, as a percentile. **High is noisy** — the one metric where more is worse.
+         */noise: Double?, 
+        /**
+         * Resolved detail. Low means the frame is soft or the subject is small.
+         */detail: Double?, camera: String?, lens: String?, year: Int32?) {
         self.id = id
         self.stem = stem
         self.dir = dir
@@ -2711,6 +2738,9 @@ public struct Photo: Equatable, Hashable {
         self.band = band
         self.rating = rating
         self.rejected = rejected
+        self.focus = focus
+        self.noise = noise
+        self.detail = detail
         self.camera = camera
         self.lens = lens
         self.year = year
@@ -2741,6 +2771,9 @@ public struct FfiConverterTypePhoto: FfiConverterRustBuffer {
                 band: FfiConverterOptionString.read(from: &buf), 
                 rating: FfiConverterUInt8.read(from: &buf), 
                 rejected: FfiConverterBool.read(from: &buf), 
+                focus: FfiConverterOptionDouble.read(from: &buf), 
+                noise: FfiConverterOptionDouble.read(from: &buf), 
+                detail: FfiConverterOptionDouble.read(from: &buf), 
                 camera: FfiConverterOptionString.read(from: &buf), 
                 lens: FfiConverterOptionString.read(from: &buf), 
                 year: FfiConverterOptionInt32.read(from: &buf)
@@ -2757,6 +2790,9 @@ public struct FfiConverterTypePhoto: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.band, into: &buf)
         FfiConverterUInt8.write(value.rating, into: &buf)
         FfiConverterBool.write(value.rejected, into: &buf)
+        FfiConverterOptionDouble.write(value.focus, into: &buf)
+        FfiConverterOptionDouble.write(value.noise, into: &buf)
+        FfiConverterOptionDouble.write(value.detail, into: &buf)
         FfiConverterOptionString.write(value.camera, into: &buf)
         FfiConverterOptionString.write(value.lens, into: &buf)
         FfiConverterOptionInt32.write(value.year, into: &buf)
@@ -2794,6 +2830,21 @@ public struct PhotoDetail: Equatable, Hashable {
     public var state: String
     public var needsReview: Bool
     public var files: [FileInfo]
+    /**
+     * Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
+     *
+     * Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
+     * depth-of-field portrait is not marked blurry. What was missing was any way to filter on it.
+     */
+    public var focus: Double?
+    /**
+     * Sensor noise, as a percentile. **High is noisy** — the one metric where more is worse.
+     */
+    public var noise: Double?
+    /**
+     * Resolved detail. Low means the frame is soft or the subject is small.
+     */
+    public var detail: Double?
     public var camera: String?
     public var lens: String?
     public var iso: UInt32?
@@ -2821,7 +2872,19 @@ public struct PhotoDetail: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, stem: String, dir: String, state: String, needsReview: Bool, files: [FileInfo], camera: String?, lens: String?, iso: UInt32?, fNumber: Double?, exposureTime: Double?, focalLength: Double?, 
+    public init(id: Int64, stem: String, dir: String, state: String, needsReview: Bool, files: [FileInfo], 
+        /**
+         * Sharpness, as a percentile within this photograph's shoot. **Low is soft.**
+         *
+         * Already measured — `scoring/focus.rs` is a real blur metric, built so a shallow
+         * depth-of-field portrait is not marked blurry. What was missing was any way to filter on it.
+         */focus: Double?, 
+        /**
+         * Sensor noise, as a percentile. **High is noisy** — the one metric where more is worse.
+         */noise: Double?, 
+        /**
+         * Resolved detail. Low means the frame is soft or the subject is small.
+         */detail: Double?, camera: String?, lens: String?, iso: UInt32?, fNumber: Double?, exposureTime: Double?, focalLength: Double?, 
         /**
          * **The camera's own clock, not an instant.**
          *
@@ -2840,6 +2903,9 @@ public struct PhotoDetail: Equatable, Hashable {
         self.state = state
         self.needsReview = needsReview
         self.files = files
+        self.focus = focus
+        self.noise = noise
+        self.detail = detail
         self.camera = camera
         self.lens = lens
         self.iso = iso
@@ -2876,6 +2942,9 @@ public struct FfiConverterTypePhotoDetail: FfiConverterRustBuffer {
                 state: FfiConverterString.read(from: &buf), 
                 needsReview: FfiConverterBool.read(from: &buf), 
                 files: FfiConverterSequenceTypeFileInfo.read(from: &buf), 
+                focus: FfiConverterOptionDouble.read(from: &buf), 
+                noise: FfiConverterOptionDouble.read(from: &buf), 
+                detail: FfiConverterOptionDouble.read(from: &buf), 
                 camera: FfiConverterOptionString.read(from: &buf), 
                 lens: FfiConverterOptionString.read(from: &buf), 
                 iso: FfiConverterOptionUInt32.read(from: &buf), 
@@ -2898,6 +2967,9 @@ public struct FfiConverterTypePhotoDetail: FfiConverterRustBuffer {
         FfiConverterString.write(value.state, into: &buf)
         FfiConverterBool.write(value.needsReview, into: &buf)
         FfiConverterSequenceTypeFileInfo.write(value.files, into: &buf)
+        FfiConverterOptionDouble.write(value.focus, into: &buf)
+        FfiConverterOptionDouble.write(value.noise, into: &buf)
+        FfiConverterOptionDouble.write(value.detail, into: &buf)
         FfiConverterOptionString.write(value.camera, into: &buf)
         FfiConverterOptionString.write(value.lens, into: &buf)
         FfiConverterOptionUInt32.write(value.iso, into: &buf)

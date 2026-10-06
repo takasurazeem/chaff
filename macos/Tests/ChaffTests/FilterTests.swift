@@ -14,6 +14,9 @@ struct FilterTests {
         band: String? = nil,
         rating: UInt8 = 0,
         rejected: Bool = false,
+        focus: Double? = nil,
+        noise: Double? = nil,
+        detail: Double? = nil,
         camera: String? = nil,
         lens: String? = nil,
         year: Int32? = nil
@@ -21,6 +24,7 @@ struct FilterTests {
         Photo(
             id: id, stem: "IMG_\(id)", dir: "/lib", state: "pair", needsReview: false,
             composite: nil, band: band, rating: rating, rejected: rejected,
+            focus: focus, noise: noise, detail: detail,
             camera: camera, lens: lens, year: year
         )
     }
@@ -181,5 +185,140 @@ struct FilterTests {
         f = Filters()
         f.year = 2026
         #expect(f.isActive)
+    }
+}
+
+
+/// The quality signals: soft, noisy, low detail, sharp.
+///
+/// # What these are
+///
+/// The engine has measured sharpness and noise since the beginning. `scoring/focus.rs` is a real
+/// blur metric — deliberately built so a shallow-depth-of-field portrait is *not* marked blurry.
+/// These filters are the first way to act on those numbers across a library.
+///
+/// **The thresholds are percentiles within the shoot**, which is what makes them comparable: an
+/// absolute sharpness number means nothing without knowing the lens, the subject and the light.
+struct QualityFilterTests {
+    private func photo(id: Int64, focus: Double? = nil, noise: Double? = nil, detail: Double? = nil) -> Photo {
+        Photo(
+            id: id, stem: "IMG_\(id)", dir: "/lib", state: "pair", needsReview: false,
+            composite: nil, band: nil, rating: 0, rejected: false,
+            focus: focus, noise: noise, detail: detail,
+            camera: nil, lens: nil, year: nil
+        )
+    }
+
+    @Test("Soft keeps the softest tenth and nothing else")
+    func soft() {
+        var f = Filters()
+        f.quality = .soft
+        #expect(f.matches(photo(id: 1, focus: 5)), "the 5th percentile is soft")
+        #expect(f.matches(photo(id: 2, focus: 10)), "the boundary is included")
+        #expect(!f.matches(photo(id: 3, focus: 11)), "just outside is not")
+        #expect(!f.matches(photo(id: 4, focus: 90)))
+    }
+
+    @Test("Noisy is the one metric where more is worse")
+    func noisy() {
+        // **The direction that is easy to get backwards.** Every other term is "higher is
+        // better"; noise is not, and a filter that treated it like the others would show the
+        // *cleanest* frames under "Noisy".
+        var f = Filters()
+        f.quality = .noisy
+        #expect(f.matches(photo(id: 1, noise: 95)), "the 95th percentile is noisy")
+        #expect(f.matches(photo(id: 2, noise: 90)), "the boundary is included")
+        #expect(!f.matches(photo(id: 3, noise: 89)))
+        #expect(!f.matches(photo(id: 4, noise: 5)), "a clean frame is not noisy")
+    }
+
+    @Test("An unmeasured metric belongs to no quality filter")
+    func absentIsNotZero() {
+        // **The distinction the feature rests on.** A photograph with no focus score is one the
+        // engine could not measure — a raw this build cannot decode. Treating it as `0` would
+        // file every unreadable raw under "Soft", which is a claim nobody made, and would hide
+        // real photographs from the other three filters too.
+        let unmeasured = photo(id: 1)
+        for q in Filters.Quality.allCases {
+            var f = Filters()
+            f.quality = q
+            #expect(
+                !f.matches(unmeasured),
+                "\(q.label) matched a photograph with no measurement"
+            )
+        }
+    }
+
+    @Test("A photograph measured for focus but not noise is filtered on what exists")
+    func partialMeasurement() {
+        // A real case: `detail` needs a decode that `focus` does not. A photograph can have one
+        // and not the other, and each filter should answer about the metric it names.
+        let partial = photo(id: 1, focus: 3, noise: nil)
+
+        var f = Filters()
+        f.quality = .soft
+        #expect(f.matches(partial), "focus was measured and it is soft")
+
+        f.quality = .noisy
+        #expect(!f.matches(partial), "noise was not measured, so it is not noisy")
+    }
+
+    @Test("Sharp is the top quarter")
+    func sharp() {
+        var f = Filters()
+        f.quality = .sharp
+        #expect(f.matches(photo(id: 1, focus: 80)))
+        #expect(f.matches(photo(id: 2, focus: 75)), "the boundary is included")
+        #expect(!f.matches(photo(id: 3, focus: 74)))
+    }
+
+    @Test("The counts describe the library and partition nothing")
+    func counts() {
+        // Unlike band, the four are **not** a partition — a photograph at the 50th percentile is
+        // in none of them, and one cannot be both soft and sharp. That is why the counts do not
+        // have to add up, and why this asserts values rather than a sum.
+        let photos = [
+            photo(id: 1, focus: 2),          // soft
+            photo(id: 2, focus: 95),         // sharp
+            photo(id: 3, focus: 50),         // neither
+            photo(id: 4, noise: 99),         // noisy
+            photo(id: 5),                    // unmeasured
+        ]
+        let counts = Filters.qualityCounts(photos)
+        #expect(counts[.soft] == 1)
+        #expect(counts[.sharp] == 1)
+        #expect(counts[.noisy] == 1)
+        #expect(counts[.lowDetail] == 0)
+        // The unmeasured photograph is in none of them, which is the point.
+        #expect(counts.values.reduce(0, +) == 3)
+    }
+
+    @Test("Quality composes with the other filters")
+    func composes() {
+        // A user who selects a camera and then "Soft" means both — the soft frames *from that
+        // camera*, which is how a lens problem gets found.
+        var f = Filters()
+        f.quality = .soft
+        f.camera = "Canon EOS RP"
+        let canon = Photo(
+            id: 1, stem: "a", dir: "/lib", state: "pair", needsReview: false,
+            composite: nil, band: nil, rating: 0, rejected: false,
+            focus: 3, noise: nil, detail: nil, camera: "Canon EOS RP", lens: nil, year: nil
+        )
+        let other = Photo(
+            id: 2, stem: "b", dir: "/lib", state: "pair", needsReview: false,
+            composite: nil, band: nil, rating: 0, rejected: false,
+            focus: 3, noise: nil, detail: nil, camera: "Nikon Z6", lens: nil, year: nil
+        )
+        #expect(f.matches(canon))
+        #expect(!f.matches(other), "soft, but not from this camera")
+    }
+
+    @Test("Quality marks the filter active so Clear appears")
+    func active() {
+        var f = Filters()
+        #expect(!f.isActive)
+        f.quality = .soft
+        #expect(f.isActive, "a quality filter must offer a way back")
     }
 }
