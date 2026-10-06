@@ -100,6 +100,9 @@ struct LibraryView: View {
         // The loupe pages through **what the grid is showing**, not the whole library — paging
         // past the end of a filtered view into photographs the filter excluded is how a user
         // rates something they were not looking at.
+        // The grid's visible list, published for Select All. See `visibleIds`.
+        .onChange(of: visible.map(\.id)) { _, ids in model.visibleIds = ids }
+        .onAppear { model.visibleIds = visible.map(\.id) }
         .sheet(isPresented: $model.showLoupe) {
             Loupe(photos: visible, isPresented: $model.showLoupe)
         }

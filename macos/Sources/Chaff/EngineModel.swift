@@ -599,6 +599,21 @@ final class EngineModel {
         }.value) ?? watchStatus
     }
 
+    /// Select every photograph the grid is currently showing.
+    ///
+    /// **What is showing, not the whole library.** A Select All that ignored the filter would
+    /// select 3,000 photographs while the user looked at 40 — and the next keystroke would act on
+    /// all of them. The grid publishes what it is showing; this reads it.
+    func selectAll() {
+        selection = Set(visibleIds)
+    }
+
+    /// The ids the grid is currently showing, published by the grid itself.
+    ///
+    /// The model cannot compute this: the filter bar's state lives in the library view, and a
+    /// second copy of the filter logic here would drift from the one that draws the grid.
+    var visibleIds: [Int64] = []
+
     /// Write a decision.
     func setDecision(photoId: Int64, rating: UInt8, rejected: Bool) async throws {
         let engine = self.engine

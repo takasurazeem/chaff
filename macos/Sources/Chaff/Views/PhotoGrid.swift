@@ -73,21 +73,107 @@ struct PhotoGrid: View {
     /// Wide enough that a tile is legible, narrow enough that a row holds several.
     private let tileWidth = Tile.width
 
+    /// How many tiles fit on a row at a given width.
+    ///
+    /// The same arithmetic `GridItem(.adaptive(minimum:maximum:))` does — a tile is at least
+    /// `tileWidth` and the spacing is 8 — so the number here matches what the grid actually lays
+    /// out. A separate guess would make up-arrow land on a different row than the one above.
+    private func columnCount(in width: CGFloat) -> Int {
+        let usable = width - 16 // the 8-point padding on each side
+        return max(1, Int((usable + 8) / (tileWidth + 8)))
+    }
+
+    /// Move the cursor, and the selection with it.
+    private func move(_ direction: GridNavigation.Move, extending: Bool) {
+        // A cursor that has never been set starts at the top rather than doing nothing — pressing
+        // an arrow in a fresh library should show you the first photograph.
+        guard let current = cursor.flatMap({ id in photos.firstIndex { $0.id == id } }) else {
+            guard let first = GridNavigation.destination(from: 0, move: .first, count: photos.count, columns: columns)
+            else { return }
+            apply(index: first, extending: false)
+            return
+        }
+        guard let next = GridNavigation.destination(
+            from: current, move: direction, count: photos.count, columns: columns
+        ) else { return }
+        apply(index: next, extending: extending)
+    }
+
+    private func apply(index: Int, extending: Bool) {
+        let result = GridNavigation.selection(
+            after: index, photos: photos, anchor: anchor, extending: extending
+        )
+        selection = result.ids
+        anchor = result.anchor
+        cursor = photos[index].id
+    }
+
+    /// How many tiles fit on a row, measured from the geometry.
+    ///
+    /// Up and down cannot be derived from the photograph list — they depend on the window width
+    /// and the tile size — so the grid measures it and the navigation arithmetic uses it.
+    @State private var columns = 1
+    /// Where a shift-extended range started, so extending and contracting works.
+    @State private var anchor: Int64?
+
     var body: some View {
-        ScrollView {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: tileWidth, maximum: tileWidth * 1.6), spacing: 8)],
-                spacing: 8
-            ) {
-                ForEach(photos, id: \.id) { photo in
-                    Tile(photo: photo, isSelected: selection.contains(photo.id))
-                        .onTapGesture {
-                            selection = [photo.id]
-                            cursor = photo.id
-                        }
+        GeometryReader { geo in
+            ScrollView {
+                LazyVGrid(
+                    columns: [
+                        GridItem(
+                            .adaptive(minimum: tileWidth, maximum: tileWidth * 1.6),
+                            spacing: 8
+                        )
+                    ],
+                    spacing: 8
+                ) {
+                    ForEach(photos, id: \.id) { photo in
+                        Tile(photo: photo, isSelected: selection.contains(photo.id))
+                            .onTapGesture {
+                                // **A click sets the anchor**, so a following shift-arrow extends
+                                // from where the user actually clicked rather than from wherever
+                                // the cursor last was.
+                                selection = [photo.id]
+                                cursor = photo.id
+                                anchor = photo.id
+                            }
+                    }
+                }
+                .padding(8)
+            }
+            // **The culling loop, which did not exist.**
+            //
+            // `1`–`5` in the menu rate the *cursor*, and the cursor could only be set by
+            // clicking — so you could rate a photograph and then had to reach for the mouse to
+            // reach the next one. For a tool whose whole purpose is going through thousands of
+            // frames, that is the difference between usable and not.
+            //
+            // The arrows arrive through `onMoveCommand`, which is the platform's own path for
+            // them: a grid inside a scroll view does not reliably see arrow keys as key presses,
+            // because the scroll view consumes them first.
+            .onMoveCommand { direction in
+                switch direction {
+                case .left: move(.left, extending: false)
+                case .right: move(.right, extending: false)
+                case .up: move(.up, extending: false)
+                case .down: move(.down, extending: false)
+                @unknown default: break
                 }
             }
-            .padding(8)
+            .onKeyPress(.home) { move(.first, extending: false); return .handled }
+            .onKeyPress(.end) { move(.last, extending: false); return .handled }
+            .onKeyPress(.pageUp) { move(.pageUp, extending: false); return .handled }
+            .onKeyPress(.pageDown) { move(.pageDown, extending: false); return .handled }
+            .onKeyPress(.escape) {
+                // **Clearing the selection, which is how a user says "never mind"** after
+                // selecting twelve frames for a delete and thinking better of it.
+                selection = []
+                anchor = nil
+                return .handled
+            }
+            .onAppear { columns = columnCount(in: geo.size.width) }
+            .onChange(of: geo.size.width) { _, width in columns = columnCount(in: width) }
         }
         // The same mistake as the navigator's: `.background` is opaque, so this flattened the
         // editor pane against a colour instead of letting it sit on the window's material.

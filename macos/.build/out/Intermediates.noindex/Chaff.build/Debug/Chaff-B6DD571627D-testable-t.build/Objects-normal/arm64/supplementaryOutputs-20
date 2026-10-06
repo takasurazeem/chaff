@@ -1,0 +1,23 @@
+{
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/StatusBar.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/StatusBar.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/StatusBar.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/StatusBar.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/StatusBar.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/StatusBar.swiftdeps"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/TrashPanel.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/TrashPanel.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/TrashPanel.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/TrashPanel.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/TrashPanel.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/TrashPanel.swiftdeps"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/chaff_ffi.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/chaff_ffi.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/chaff_ffi.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/chaff_ffi.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/chaff_ffi.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-B6DD571627D-testable-t.build/Objects-normal/arm64/chaff_ffi.swiftdeps"
+  }
+}

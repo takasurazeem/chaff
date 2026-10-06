@@ -27,6 +27,20 @@ struct ChaffApp: App {
             // The keyboard is how culling is done — a rating on every frame — and shortcuts a
             // user cannot discover are shortcuts they do not use. `CommandGroup` puts them
             // where macOS users look for them, and gives them a place to be remapped later.
+            // **Select All, where the platform puts it.** A culling tool is used in bursts —
+            // select a folder's worth, reject the lot, move on — and without this the only way to
+            // select forty frames is forty shift-clicks.
+            CommandGroup(after: .pasteboard) {
+                Button("Select All") { model.selectAll() }
+                    .keyboardShortcut("a", modifiers: .command)
+                    .disabled(model.library == nil)
+                Button("Deselect All") {
+                    model.selection = []
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(model.selection.isEmpty)
+            }
+
             CommandGroup(after: .newItem) {
                 Button("Open Library…") { openLibrary() }
                     .keyboardShortcut("o")

@@ -1,4 +1,11 @@
 {
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FlowRow.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.swiftdeps"
+  },
   "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/IndexingOverlay.swift" : {
     "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/IndexingOverlay.swiftconstvalues",
     "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/IndexingOverlay.d",
@@ -12,12 +19,5 @@
     "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Inspector.dia",
     "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Inspector.o",
     "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Inspector.swiftdeps"
-  },
-  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Inspector/InspectorState.swift" : {
-    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/InspectorState.swiftconstvalues",
-    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/InspectorState.d",
-    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/InspectorState.dia",
-    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/InspectorState.o",
-    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/InspectorState.swiftdeps"
   }
 }
