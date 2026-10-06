@@ -16,6 +16,7 @@ struct ChaffApp: App {
                 .sheet(isPresented: $showTrash) { TrashPanel() }
                 .sheet(isPresented: $showFaceReview) { FaceReview() }
                 .sheet(isPresented: $showCapabilities) { CapabilitiesSheet() }
+                .sheet(isPresented: $model.showCompare) { CompareSheet() }
                 // A photo tool wants the room. The default window is sized for a form.
                 .frame(minWidth: 900, minHeight: 600)
         }
@@ -57,6 +58,15 @@ struct ChaffApp: App {
                 // culling tool that chose something else would be the odd one out.
                 Button("Look at This One") { model.showLoupe = true }
                     .keyboardShortcut(.space, modifiers: [])
+                // **`C`, and it compares the selection.** Two to four frames side by side, which
+                // is the only way to judge a burst — arrowing between them one at a time makes
+                // you remember the last one instead of seeing them together.
+                Button("Compare Selected") {
+                    culling.comparing = Array(model.selection.prefix(4))
+                    model.showCompare = true
+                }
+                .keyboardShortcut("c", modifiers: [])
+                .disabled(model.selection.count < 2 || model.selection.count > 4)
                 Divider()
                 Button("Undo") { Task { await culling.undo(in: model) } }
                     .keyboardShortcut("z", modifiers: .command)

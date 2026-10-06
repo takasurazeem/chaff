@@ -111,3 +111,38 @@ struct DescribeTests {
         #expect(message.contains("IMG_0133.CR3"), "a not-found that does not name the file is useless")
     }
 }
+
+
+/// The comparison set.
+///
+/// Comparing is a **third question** from the cursor and the selection: the cursor is what `3`
+/// rates, the selection is what a delete would move, and this is what sits side by side. Reusing
+/// the selection would mean opening Compare and deleting the same four frames with one keystroke.
+@MainActor
+struct CompareTests {
+    @Test("The comparison set is separate from the cursor and the selection")
+    func separateState() {
+        let culling = Culling()
+        culling.cursor = 7
+        culling.comparing = [1, 2]
+        // Setting one must not disturb the other — they are three questions, not one.
+        #expect(culling.cursor == 7)
+        #expect(culling.comparing == [1, 2])
+    }
+
+    @Test("The comparison set is empty until it is filled")
+    func startsEmpty() {
+        // An empty set means Compare opens on "Nothing to compare" rather than on four arbitrary
+        // frames, which is the honest state.
+        #expect(Culling().comparing.isEmpty)
+    }
+
+    @Test("The order is the order they were chosen in")
+    func orderIsPreserved() {
+        // Left to right is the order the user picked, and a set would scramble it — which for a
+        // burst means the frames are not in the sequence they were shot in.
+        let culling = Culling()
+        culling.comparing = [9, 3, 5]
+        #expect(culling.comparing == [9, 3, 5])
+    }
+}

@@ -57,7 +57,19 @@ one is **88 MB** — CLIP ViT-B/32 int8 — which is well inside it and already 
 | YuNet | 233 KB | face detection |
 | CLIP vocabulary | 78 KB | the phrases CLIP chooses between |
 | SFace | 38 MB | face recognition — grouping, not naming |
-| **CLIP ViT-B/32 int8** | **88 MB** | **tagging, entirely on this machine** |
+| **CLIP ViT-B/32 int8** | **88 MB** | **categorization, entirely on this machine — the MVP model** |
+
+### MVP: one model, and it is CLIP
+
+**Do not add a second categorization model for MVP.** The user's words: *"for MVP let's keep only
+one lite model."*
+
+CLIP at 88 MB is it. It categorizes — 217 phrases, people, places, animals, activities, scene
+types — and it runs in ~26 ms a photograph with no network. That is the feature.
+
+**A VLM for captions is deliberately not in the MVP.** It would produce richer descriptions
+("the dog asleep on the passenger seat" rather than "a dog") and it costs a tokenizer, a KV cache
+and a generation loop through `ort` — a real project, not a model swap. Deferred, not forgotten.
 
 ### What that means for a change
 

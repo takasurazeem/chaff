@@ -59,6 +59,14 @@ final class EngineModel {
     /// On the model rather than the view because **the menu opens it and the view shows it** —
     /// two places that cannot see each other's `@State`.
     var showLoupe = false
+    /// Whether the comparison is open. See `showLoupe` for why these live here.
+    var showCompare = false
+    /// The grid's selection.
+    ///
+    /// **On the model because the menu and the view both need it.** The menu decides whether
+    /// Compare is enabled and what it compares; the grid decides what a delete would move. Two
+    /// copies would drift, and the symptom would be a Compare that opens on the wrong frames.
+    var selection: Set<Int64> = []
     private(set) var isIndexing = false
     /// `0...1`, or `nil` while the total is unknown.
     ///

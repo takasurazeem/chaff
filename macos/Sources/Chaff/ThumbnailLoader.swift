@@ -27,13 +27,26 @@ actor ThumbnailLoader {
 
     /// A larger render, for the loupe.
     func loupe(for id: Int64) async -> NSImage? {
+        await sized(id, "loupe")
+    }
+
+    /// The 2048-pixel render, for judging focus at 100%.
+    ///
+    /// **A different question from the loupe's.** The loupe answers "is this the photograph I
+    /// meant?"; zoom answers "is it sharp?" — and the second cannot be answered from a 1024-pixel
+    /// render of a 6000-pixel frame, because everything looks sharp at a sixth of its size.
+    func zoom(for id: Int64) async -> NSImage? {
+        await sized(id, "zoom")
+    }
+
+    private func sized(_ id: Int64, _ size: String) async -> NSImage? {
         // One unwrap: `try?` **flattens** in modern Swift, so a throwing call returning `String?`
         // gives `String?` and not `String??`. The grid's loader learned this already.
-        guard let path = try? EngineHolder.shared.thumbnailPath(for: id, size: "loupe") else {
+        guard let path = try? EngineHolder.shared.thumbnailPath(for: id, size: size) else {
             return nil
         }
-        // Decoded off the main actor, like the grid's. A 1024-pixel decode is ~4 MB of pixels and
-        // doing it in `body` is what turns paging through a shoot into a slideshow.
+        // Decoded off the main actor, like the grid's. A 2048-pixel decode is ~16 MB of pixels,
+        // and doing it in `body` is what turns paging through a shoot into a slideshow.
         return NSImage(contentsOfFile: path)
     }
 

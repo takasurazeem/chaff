@@ -1,0 +1,23 @@
+{
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Navigator/Navigator.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Navigator.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Navigator.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Navigator.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Navigator.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/Navigator.swiftdeps"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Navigator/PeopleList.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PeopleList.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PeopleList.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PeopleList.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PeopleList.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PeopleList.swiftdeps"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/Navigator/PersonActions.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PersonActions.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PersonActions.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PersonActions.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PersonActions.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/PersonActions.swiftdeps"
+  }
+}

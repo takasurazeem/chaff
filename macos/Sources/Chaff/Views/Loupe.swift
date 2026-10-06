@@ -9,11 +9,24 @@ import chaff_ffiFFI
 /// keep it. Focus, expression and the moment are all judgements that need the frame at size —
 /// and a culling tool that only shows tiles is one people open a second application beside.
 ///
-/// # What it does not do
+/// # Zoom, and why it is a different render rather than a bigger window
 ///
-/// It does not zoom to 100%. The engine has a 2048-pixel `Zoom` size and it is the right call for
-/// judging focus, but it is a second interaction (a click, a pan, a way back) and half a feature
-/// done is worse than one deferred. Filed rather than half-built.
+/// The loupe answers *"is this the photograph I meant?"* — 1024 pixels is plenty. Zoom answers
+/// *"is it sharp?"*, and **that cannot be answered from a downscaled render**, because everything
+/// looks sharp at a sixth of its size. So `Z` fetches the engine's 2048-pixel `Zoom` size and
+/// shows it at 100%, which is the only way to see what the sensor actually recorded.
+///
+/// It is one key, not a gesture, because a trackpad pinch is not available to everyone and a
+/// culling session is a keyboard activity.
+/// What the loupe is currently showing — the photograph and which render of it.
+///
+/// A single `id` for `.task(id:)`, because two separate tasks would race: moving the cursor while
+/// zoomed would start both a loupe and a zoom load, and whichever finished last would win.
+private struct Load: Equatable {
+    let cursor: Int64?
+    let zoomed: Bool
+}
+
 struct Loupe: View {
     @Environment(EngineModel.self) private var model
     @Environment(Culling.self) private var culling
@@ -25,6 +38,8 @@ struct Loupe: View {
 
     @State private var image: NSImage?
     @State private var loading = true
+    /// True when the 2048-pixel render is being shown at 100%.
+    @State private var zoomed = false
 
     /// Where the cursor is within `photos`.
     private var index: Int? {
@@ -46,10 +61,25 @@ struct Loupe: View {
 
             if let photo {
                 if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .padding(40)
+                    // **At 100%, not fitted.** A "zoom" that scales to fit is the same picture
+                    // with a different label; the point is to see the pixels the sensor
+                    // recorded. Scrollable, because at 2048 pixels on a laptop screen it will
+                    // not all fit.
+                    if zoomed {
+                        ScrollView([.horizontal, .vertical]) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .frame(
+                                    width: image.size.width,
+                                    height: image.size.height
+                                )
+                        }
+                    } else {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(40)
+                    }
                 } else if loading {
                     ProgressView().controlSize(.large).tint(.white)
                 } else {
@@ -81,6 +111,9 @@ struct Loupe: View {
                                 .foregroundStyle(.yellow)
                         }
                         Spacer()
+                        if zoomed {
+                            Text("100%").font(.caption).foregroundStyle(.orange)
+                        }
                         Text("\((index ?? 0) + 1) of \(photos.count)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -109,18 +142,28 @@ struct Loupe: View {
             Task { await rate(n, photo: photo) }
             return .handled
         }
+        // **`Z`, because it is what every viewer on the platform uses for zoom.**
+        .onKeyPress(keys: ["z", "Z"]) { _ in
+            zoomed.toggle()
+            return .handled
+        }
         .onKeyPress(keys: ["x", "X"]) { _ in
             guard let photo else { return .ignored }
             Task { await reject(photo: photo) }
             return .handled
         }
-        .task(id: culling.cursor) {
+        // Reloads when the cursor moves **or** the zoom changes, because they are different
+        // renders of the same photograph and the wrong one is a lie about what the sensor
+        // recorded.
+        .task(id: Load(cursor: culling.cursor, zoomed: zoomed)) {
             guard let id = culling.cursor else {
                 image = nil
                 return
             }
             loading = true
-            image = await ThumbnailLoader.shared.loupe(for: id)
+            image = zoomed
+                ? await ThumbnailLoader.shared.zoom(for: id)
+                : await ThumbnailLoader.shared.loupe(for: id)
             loading = false
         }
     }

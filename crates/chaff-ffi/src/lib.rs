@@ -429,6 +429,12 @@ impl Engine {
 
         let kind = match size.as_str() {
             "loupe" => chaff_core::thumb::ThumbSize::Loupe,
+            // **2048, for judging focus.** Everything looks sharp at a sixth of its size, which
+            // is why a 1024-pixel render cannot answer "is this in focus?" about a 6000-pixel
+            // frame.
+            "zoom" => chaff_core::thumb::ThumbSize::Zoom,
+            // An unknown size is the grid rather than an error: a caller asking for something
+            // this build does not have should get a thumbnail, not nothing.
             _ => chaff_core::thumb::ThumbSize::Grid,
         };
         let cache = self.cache()?;

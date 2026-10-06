@@ -11,7 +11,6 @@ import chaff_ffiFFI
 struct LibraryView: View {
     @Environment(EngineModel.self) private var model
     @Environment(Culling.self) private var culling
-    @State private var selection: Set<Int64> = []
     @State private var chosenFolder: String?
     /// A tag or a group the grid is narrowed to — see `Narrowing` for why it is one value.
     @State private var narrowedTo: Narrowing?
@@ -42,7 +41,7 @@ struct LibraryView: View {
                         // see is one you forget is applied — and then the grid looks broken.
                         FilterBar(filters: $filters, photos: model.photos)
                         Divider()
-                        PhotoGrid(photos: visible, selection: $selection, cursor: $culling.cursor)
+                        PhotoGrid(photos: visible, selection: $model.selection, cursor: $culling.cursor)
                     }
                 }
 
@@ -60,7 +59,7 @@ struct LibraryView: View {
                 StatusBar(
                     shown: visible.count,
                     total: model.photos.count,
-                    selection: selection.count,
+                    selection: model.selection.count,
                     narrowing: narrowedTo?.label
                 )
             }
@@ -108,7 +107,7 @@ struct LibraryView: View {
             // The engine takes one photograph's detail in one call. The panel follows the
             // **selection**, falling back to nothing rather than to the cursor: an inspector
             // describing a photograph the user has not chosen is one they cannot trust.
-            Inspector(photoId: selection.count == 1 ? selection.first : nil)
+            Inspector(photoId: model.selection.count == 1 ? model.selection.first : nil)
                 .inspectorColumnWidth(min: 240, ideal: 300, max: 420)
         }
     }
@@ -120,7 +119,7 @@ struct LibraryView: View {
     /// from — a selection that cannot be moved is refused before the sheet offers a button.
     private func beginDelete() {
         guard let root = model.library?.root else { return }
-        let ids = Array(selection)
+        let ids = Array(model.selection)
         guard !ids.isEmpty else { return }
 
         Task {

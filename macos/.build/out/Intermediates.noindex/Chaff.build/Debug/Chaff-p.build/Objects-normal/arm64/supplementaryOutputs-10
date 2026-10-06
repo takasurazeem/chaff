@@ -1,0 +1,23 @@
+{
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FaceReview.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FaceReview.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FaceReview.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FaceReview.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FaceReview.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FaceReview.swiftdeps"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FilterBar.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FilterBar.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FilterBar.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FilterBar.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FilterBar.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FilterBar.swiftdeps"
+  },
+  "/Users/takasurazeem/Developer/indie/photo_culling/macos/Sources/Chaff/Views/FlowRow.swift" : {
+    "const-values" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.swiftconstvalues",
+    "dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.d",
+    "diagnostics" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.dia",
+    "object" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.o",
+    "swift-dependencies" : "/Users/takasurazeem/Developer/indie/photo_culling/macos/.build/out/Intermediates.noindex/Chaff.build/Debug/Chaff-p.build/Objects-normal/arm64/FlowRow.swiftdeps"
+  }
+}

@@ -26,6 +26,14 @@ final class Culling {
     /// four photographs at once, which is never what someone pressing `3` means.
     var cursor: Int64?
 
+    /// The photographs being compared, in selection order.
+    ///
+    /// **Separate from `cursor` and from the grid's selection**, because comparing is a third
+    /// question: the cursor is what `3` rates, the selection is what a delete would move, and
+    /// this is what sits side by side. Reusing the selection would mean opening Compare and
+    /// deleting the same four frames with one keystroke.
+    var comparing: [Int64] = []
+
     private(set) var undoDepth = 0
     private var undoStack: [Action] = []
     private let limit = 500
