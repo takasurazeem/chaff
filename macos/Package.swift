@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 // The native macOS shell.
@@ -17,26 +17,15 @@ let package = Package(
     // **macOS 26, so the system gives the chrome Liquid Glass.**
     //
     // This was `.v14`, chosen without thinking, and it is the whole reason the app looked like a
-    // macOS 14 window on a macOS 27 machine: the deployment target is what asks the system for
-    // the compatibility appearance. Toolbars, sidebars and inspectors adopt the new material
-    // automatically once the app declares it can use it.
+    // macOS 14 window on a macOS 27 machine: the deployment floor is what asks the system for
+    // the compatibility appearance — Glass is granted from the *linked* SDK, and SwiftPM links
+    // the SDK matching the floor no matter which SDK the toolchain itself carries. An
+    // intermediate try held the floor at 14 and forced the `sdk` field past 26 with an
+    // `-platform_version` linker flag; the 27 runtime did not treat that as adoption, so the
+    // floor itself is the only knob that moved the chrome.
     //
-    // The cost is real and worth stating: this no longer runs on macOS 14 or 15. Given the
-    // machine it is built for is on 27, that is a trade worth making — and the Tauri build
-    // remains for anything older.
-    // **macOS 14, with the newer APIs availability-gated.**
-    //
-    // This was briefly `.macOS("26.0")` — a hard floor — because that is what makes the system
-    // hand the chrome Liquid Glass. It works and it drops every user on 14 or 15 to get a
-    // material on a toolbar.
-    //
-    // The deployment target says what you *require*; availability says what you *prefer*.
-    // Conflating them charges the cost to people who did nothing but not upgrade.
-    //
-    // Everything newer lives behind `#available` in `Compatibility.swift`, so the checks are in
-    // one file rather than scattered through layout code where a missed one is a crash on an
-    // older machine instead of a compile error.
-    platforms: [.macOS(.v14)],
+    // `swift-tools-version` was 6.0 and could not name `.v26` — it had to be 6.2 to say this.
+    platforms: [.macOS(.v26)],
     products: [
         .executable(name: "Chaff", targets: ["Chaff"])
     ],
@@ -83,7 +72,35 @@ let package = Package(
         .executableTarget(
             name: "Chaff",
             dependencies: ["chaff_ffiFFI"],
-            path: "Sources/Chaff"
+            path: "Sources/Chaff",
+            linkerSettings: [
+                // **Link with the SDK the toolchain actually carries, not the floor's.**
+                //
+                // With the floor at 26, SwiftPM still linked the binary as `sdk 26.0` — the
+                // SDK field is pinned to the deployment value, not to the newest SDK in the
+                // instalaltion, and this build's Mac runs 27.0. A new OS release adopts
+                // apps linked with its own SDK; Xcode's own chrome on this same machine is
+                // glassy where a `sdk 26.0`-linked binary was not. The flag re-pairs them:
+                // minos stays the floor the `platforms` line declares, and the sdk field
+                // becomes the newest SDK present so the runtime treats the binary as
+                // built-with-that-SDK.
+                //
+                // # Why a flag and not the obvious question
+                //
+                // `swift build --sdk` did not reach the link step when tried against a 14
+                // floor: SwiftPM composes its own `-platform_version` from the platform
+                // declaration. This override comes *after* SwiftPM's and wins.
+                //
+                // # Upkeep
+                //
+                // The `27.0` must track the SDK on the machine building. When the toolchain
+                // moves past it, bump this and rebuild — the symptom of a stale value is the
+                // chrome quietly losing the current design.
+                .unsafeFlags([
+                    "-Xlinker", "-platform_version",
+                    "-Xlinker", "macos", "-Xlinker", "26.0", "-Xlinker", "27.0",
+                ]),
+            ]
         ),
         .testTarget(
             name: "ChaffTests",

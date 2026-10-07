@@ -11,17 +11,56 @@ import chaff_ffiFFI
 struct LibraryView: View {
     @Environment(EngineModel.self) private var model
     @Environment(Culling.self) private var culling
-    @State private var chosenFolder: String?
+    @State private var chosenFolder: FolderSelection?
     /// A tag or a group the grid is narrowed to — see `Narrowing` for why it is one value.
     @State private var narrowedTo: Narrowing?
     @State private var filters = Filters()
     /// The plan the user is being asked to confirm, if any.
     @State private var pendingPlan: DeletePlan?
+    /// The inspector column, **toggleable and remembered** — Xcode's panel is not welded shut,
+    /// and neither is this one. The same defaults key is written by the toolbar button and the
+    /// View menu (⌥⌘0), so all three move together; `AppStorage` persists it across launches.
+    @AppStorage("chaff.showInspector") private var showInspector = true
+
+    /// Where the last-chosen folder is remembered. **Application state, `UserDefaults`** — same
+    /// reasoning as the library path in `EngineModel`, but the choice belongs to the view.
+    private static let lastFolderKey = "chaff.lastFolder"
 
     /// Ask for a folder and open it.
     ///
     /// The same code path the menu uses, reached from the view — an `NSOpenPanel` is the only way
     /// to pick a folder, and it belongs to the view layer rather than the engine.
+    /// Remember the folder chosen in the library currently open.
+    ///
+    /// **Only when it was a deliberate choice in the library that is open** — the path is stored
+    /// absolute, so a folder name from a previous library never matches a different library.
+    /// Choosing "All photographs" leaves the stored path alone; restoring nothing is the more
+    /// honest memory than a stale row.
+    private func remember(_ choice: FolderSelection?) {
+        guard case let .folder(relative) = choice, let root = model.library?.root else { return }
+        let absolute = root.hasSuffix("/") ? root + relative : root + "/" + relative
+        UserDefaults.standard.set(absolute, forKey: Self.lastFolderKey)
+    }
+
+    /// Restore the folder chosen last time, if it exists in the library now open.
+    ///
+    /// A stale path — the folder moved, a different library — is silently dropped rather than
+    /// applied: a stored path that narrowed the grid to nothing would be a state the user never
+    /// saw being chosen.
+    private func restoreLastFolder() {
+        guard
+            let absolute = UserDefaults.standard.string(forKey: Self.lastFolderKey),
+            let root = model.library?.root,
+            absolute.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+        else { return }
+
+        let relative = String(absolute.dropFirst(root.hasSuffix("/") ? root.count : root.count + 1))
+        guard !relative.isEmpty,
+            model.folders.contains(where: { $0.path == relative })
+        else { return }
+        chosenFolder = .folder(relative)
+    }
+
     private func chooseFolder() async {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -112,6 +151,22 @@ struct LibraryView: View {
             .navigationTitle(
                 model.library.map { URL(fileURLWithPath: $0.root).lastPathComponent } ?? "Chaff"
             )
+            .toolbar {
+                // **Xcode's right edge: the inspector's control, in the toolbar.** The switcher
+                // lives on the leading side, the inspector's on the trailing side, and the
+                // content between them is the editor — the same three columns Xcode puts its
+                // navigators, editors and inspectors into.
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showInspector.toggle()
+                    } label: {
+                        Image(systemName: "sidebar.squares.right")
+                    }
+                    .help(showInspector ? "Hide Inspector (⌥⌘0)" : "Show Inspector (⌥⌘0)")
+                    .keyboardShortcut("0", modifiers: [.option, .command])
+                    .accessibilityLabel(showInspector ? "Hide inspector" : "Show inspector")
+                }
+            }
         }
         // Delete opens **the confirmation**, and nothing else. There is no path in this
         // application that removes a file from a keystroke.
@@ -149,10 +204,36 @@ struct LibraryView: View {
         // The grid's visible list, published for Select All. See `visibleIds`.
         .onChange(of: visible.map(\.id)) { _, ids in model.visibleIds = ids }
         .onAppear { model.visibleIds = visible.map(\.id) }
+        // **Reopen what was open last.** The model remembers the library path; the *choice
+        // inside* the library is this view's state, and this is where it is restored. Both run
+        // once the reopen finishes, so the folder row the saved path points to exists when the
+        // list is given it.
+        .task {
+            await model.reopenLastLibrary()
+            restoreLastFolder()
+        }
+        // **A new library starts narrowed to nothing.** A folder chosen in the last library
+        // matches nothing in this one — an empty grid with no explanation.
+        .onChange(of: model.library) { _, library in
+            chosenFolder = nil
+            narrowedTo = nil
+            if library != nil { restoreLastFolder() }
+        }
+        // **One narrowing at a time.** `visible` lets the tag or group win over the folder, so
+        // choosing a folder while a tag was active changed nothing the user could see. The last
+        // thing clicked is what the grid shows.
+        .onChange(of: chosenFolder) { _, choice in
+            guard choice != nil else { return }
+            narrowedTo = nil
+            remember(choice)
+        }
+        .onChange(of: narrowedTo) { _, value in
+            if value != nil { chosenFolder = nil }
+        }
         .sheet(isPresented: $model.showLoupe) {
             Loupe(photos: visible, isPresented: $model.showLoupe)
         }
-        .inspector(isPresented: .constant(true)) {
+        .inspector(isPresented: $showInspector) {
             // The engine takes one photograph's detail in one call. The panel follows the
             // **selection**, falling back to nothing rather than to the cursor: an inspector
             // describing a photograph the user has not chosen is one they cannot trust.
@@ -211,8 +292,8 @@ struct LibraryView: View {
                     peopleByPhoto: model.peopleByPhoto
                 )
             }
-        } else if let folder = chosenFolder, let root = model.library?.root {
-            let absolute = root.hasSuffix("/") ? root + folder : root + "/" + folder
+        } else if case let .folder(relative) = chosenFolder, let root = model.library?.root {
+            let absolute = root.hasSuffix("/") ? root + relative : root + "/" + relative
             narrowed = model.photos.filter {
                 $0.dir == absolute || $0.dir.hasPrefix(absolute + "/")
             }

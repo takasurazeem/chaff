@@ -21,12 +21,16 @@ import chaff_ffiFFI
 /// occasionally. At the bottom it is out of the way and still one click from the list.
 struct Navigator: View {
     @Environment(EngineModel.self) private var model
-    @Binding var chosenFolder: String?
+    @Binding var chosenFolder: FolderSelection?
     /// What the grid is narrowed to, when it is narrowed by a tag or a group rather than a
     /// folder. **One selection, not two** — a folder and a tag at once is a filter combination
     /// nothing in the interface explains, and the status line can only describe one.
     @Binding var narrowedTo: Narrowing?
-    @State private var mode: Mode = .folders
+    /// The navigator shown, **remembered across launches** like Xcode remembers which navigator
+    /// was last showing. On `AppStorage`, not `@State`, so the Cull menu's ⌘1–⌘3 items — which
+    /// write the same key — move this picker in both directions: the menu cannot reach another
+    /// view's `@State`, but application defaults are reachable from both.
+    @AppStorage("chaff.navigatorMode") private var mode: Mode = .folders
     @State private var filter = ""
 
     enum Mode: String, CaseIterable, Identifiable {
@@ -52,6 +56,28 @@ struct Navigator: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // **The switcher, pinned to the top of the sidebar itself.**
+            //
+            // It had lived in the window toolbar — and Xcode's does *not*: the reference
+            // window shows the navigator's icon row as a strip inside the sidebar's own top,
+            // under the traffic lights, with the window toolbar belonging to the wider
+            // window's controls. A control at the top of the column it governs also reads
+            // better: the segmented bar-makers here, and the filter below narrows them.
+            HStack(spacing: 4) {
+                Picker("Navigator", selection: $mode) {
+                    ForEach(Mode.allCases) { m in
+                        Image(systemName: m.symbol)
+                            .help("\(m.help) (⌘\(Mode.allCases.firstIndex(of: m)! + 1))")
+                            .accessibilityLabel(m.help)
+                            .tag(m)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -78,46 +104,6 @@ struct Navigator: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
         }
-        // **The switcher lives in the toolbar, as Xcode's does.**
-        //
-        // It was a `Picker` inside the sidebar's own stack, below the toolbar — which renders as
-        // a segmented control floating in the sidebar rather than as part of the window's chrome.
-        // Xcode puts the navigator switcher in the toolbar, and that is the difference the user
-        // saw: a control in the chrome gets the chrome's treatment, and one inside a content pane
-        // gets none.
-        //
-        // `ToolbarItem(placement: .navigation)` is the leading edge of the window's toolbar on
-        // macOS, which is where the traffic lights' row ends and the navigator's controls begin.
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Picker("Navigator", selection: $mode) {
-                    ForEach(Mode.allCases) { m in
-                        // **A label, not only `.help()`.**
-                        //
-                        // `.help()` is a tooltip — it appears on hover and is not read by
-                        // VoiceOver as the control's name. An icon-only segment with no
-                        // `accessibilityLabel` announces as "button", so a screen reader user
-                        // hears three identical buttons and cannot tell folders from people.
-                        Image(systemName: m.symbol)
-                            .help(m.help)
-                            .accessibilityLabel(m.help)
-                            .tag(m)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-        }
-
-        // **No background here, and that is the point.**
-        //
-        // This was `.background(.background)` — and `.background` as a style is the *opaque*
-        // window colour, not a material. Painting it over a sidebar replaces the system's
-        // translucent treatment with flat grey, which is exactly what the Liquid Glass guidance
-        // warns about: "using opaque backgrounds behind glass defeats the translucency effect."
-        //
-        // I added the line to give the navigator a background. The sidebar already has one, and
-        // it is the one the system draws.
     }
 
     @ViewBuilder

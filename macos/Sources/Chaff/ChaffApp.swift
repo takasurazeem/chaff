@@ -8,6 +8,13 @@ struct ChaffApp: App {
     @State private var showFaceReview = false
     @State private var showCapabilities = false
 
+    // **The panel state, in the menu bar.** These write the same defaults keys the views read
+    // — `Navigator`'s picker and `LibraryView`'s inspector — which is the only way a menu item
+    // and a view control can observe each other without threading state upward through
+    // bindings. Changing any one updates all.
+    @AppStorage("chaff.navigatorMode") private var navigatorModeRaw = Navigator.Mode.folders.rawValue
+    @AppStorage("chaff.showInspector") private var showInspector = true
+
     var body: some Scene {
         WindowGroup {
             LibraryView()
@@ -46,6 +53,24 @@ struct ChaffApp: App {
                 Button("Copy Filenames") { model.copySelectionNames() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(model.selection.isEmpty)
+            }
+
+            // **The layout, where Xcode puts it.**
+            //
+            // Xcode switches its navigators with ⌘1–⌘9 and its panels with ⌥⌘0 (inspector)
+            // and ⌥⌘Y (debug area) — real shortcuts, not decorations, and a culling tool used
+            // mostly from the keyboard gains when its own chrome obeys them.
+            //
+            // They sit in the View menu, appended after the sidebar group SwiftUI supplies
+            // there.
+            CommandGroup(after: .sidebar) {
+                ForEach(Array(Navigator.Mode.allCases.enumerated()), id: \.element) { index, m in
+                    Button(m.help) { navigatorModeRaw = m.rawValue }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                }
+                Divider()
+                Toggle("Show Inspector", isOn: $showInspector)
+                    .keyboardShortcut("0", modifiers: [.option, .command])
             }
 
             CommandGroup(after: .newItem) {

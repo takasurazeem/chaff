@@ -138,6 +138,9 @@ final class EngineModel {
     /// instead. An alert on launch for a library the user did not ask to open is a worse greeting
     /// than a window that says "open a folder".
     func reopenLastLibrary() async {
+        // **Only from nothing.** The task that calls this runs when the window appears, and a
+        // re-appearance must not re-index over the library the user is looking at.
+        guard library == nil else { return }
         guard let path = UserDefaults.standard.string(forKey: Self.lastLibraryKey) else { return }
         guard FileManager.default.fileExists(atPath: path) else {
             UserDefaults.standard.removeObject(forKey: Self.lastLibraryKey)
